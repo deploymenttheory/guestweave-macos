@@ -12,7 +12,6 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -66,7 +65,7 @@ func (tartCodec) Pull(ctx context.Context, source BlobSource, manifest OCIManife
 	progress := logging.NewDownloadProgress(diskCompressedSize)
 	logging.NewProgressObserver(progress).Log(logging.DefaultLogger())
 
-	if err := (DiskV2{}).Pull(ctx, source, diskLayers, objcutil.NSURLFromPath(destination.DiskPath),
+	if err := (DiskV2{}).Pull(ctx, source, diskLayers, destination.DiskPath,
 		concurrency, progress, localLayerCache, deduplicate); err != nil {
 		return nil, err
 	}

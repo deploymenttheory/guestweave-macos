@@ -5,6 +5,7 @@ package command
 
 import (
 	"context"
+	"os"
 	"runtime"
 	"strings"
 
@@ -76,7 +77,7 @@ func (c *CreateCommand) Run(ctx context.Context) error {
 	}
 
 	cleanup := func() {
-		_, _ = foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(tmpVMDir.BaseURL)
+		_ = os.RemoveAll(tmpVMDir.BaseURL)
 	}
 
 	if c.FromIPSW != "" {

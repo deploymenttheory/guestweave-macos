@@ -10,25 +10,21 @@ import (
 	"syscall"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // PIDLock ports tart's PIDLock class.
 type PIDLock struct {
-	URL *foundation.NSURL
-	fd  int
+	Path string
+	fd   int
 }
 
 // NewPIDLock ports PIDLock.init(lockURL:).
-func NewPIDLock(lockURL *foundation.NSURL) (*PIDLock, error) {
-	path := objcutil.GoStr(lockURL.Path())
-	fd, err := syscall.Open(path, syscall.O_RDWR, 0)
+func NewPIDLock(lockPath string) (*PIDLock, error) {
+	fd, err := syscall.Open(lockPath, syscall.O_RDWR, 0)
 	if err != nil {
-		return nil, weaveerrors.ErrPIDLockMissing("failed to open lock file %s: %v", path, err)
+		return nil, weaveerrors.ErrPIDLockMissing("failed to open lock file %s: %v", lockPath, err)
 	}
-	return &PIDLock{URL: lockURL, fd: fd}, nil
+	return &PIDLock{Path: lockPath, fd: fd}, nil
 }
 
 // Close releases the file descriptor (Swift's deinit).
@@ -39,25 +35,25 @@ func (l *PIDLock) Close() error {
 // Trylock attempts a non-blocking write lock; false means another process
 // holds it.
 func (l *PIDLock) Trylock() (bool, error) {
-	locked, _, err := l.lockWrapper(syscall.F_SETLK, syscall.F_WRLCK, "failed to lock "+objcutil.GoStr(l.URL.Path()))
+	locked, _, err := l.lockWrapper(syscall.F_SETLK, syscall.F_WRLCK, "failed to lock "+l.Path)
 	return locked, err
 }
 
 // Lock blocks until the write lock is acquired.
 func (l *PIDLock) Lock() error {
-	_, _, err := l.lockWrapper(syscall.F_SETLKW, syscall.F_WRLCK, "failed to lock "+objcutil.GoStr(l.URL.Path()))
+	_, _, err := l.lockWrapper(syscall.F_SETLKW, syscall.F_WRLCK, "failed to lock "+l.Path)
 	return err
 }
 
 // Unlock releases the lock.
 func (l *PIDLock) Unlock() error {
-	_, _, err := l.lockWrapper(syscall.F_SETLK, syscall.F_UNLCK, "failed to unlock "+objcutil.GoStr(l.URL.Path()))
+	_, _, err := l.lockWrapper(syscall.F_SETLK, syscall.F_UNLCK, "failed to unlock "+l.Path)
 	return err
 }
 
 // PID returns the process ID currently holding the lock.
 func (l *PIDLock) PID() (int32, error) {
-	_, result, err := l.lockWrapper(syscall.F_GETLK, syscall.F_RDLCK, "failed to get lock "+objcutil.GoStr(l.URL.Path())+" status")
+	_, result, err := l.lockWrapper(syscall.F_GETLK, syscall.F_RDLCK, "failed to get lock "+l.Path+" status")
 	if err != nil {
 		return 0, err
 	}

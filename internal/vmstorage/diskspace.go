@@ -65,7 +65,7 @@ func EnsureDiskSpace(requiredBytes uint64, initiator prune.Prunable) error {
 	if err != nil {
 		return err
 	}
-	cachePath := objcutil.GoStr(config.WeaveCacheDir.Path())
+	cachePath := config.WeaveCacheDir
 
 	// Make room if we can.
 	if err := ReclaimIfNeeded(requiredBytes, initiator); err != nil {

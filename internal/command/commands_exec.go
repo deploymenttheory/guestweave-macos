@@ -9,11 +9,11 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	"github.com/deploymenttheory/weave/internal/terminal"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	"github.com/deploymenttheory/weave/internal/agentrpc"
 )
 
@@ -57,13 +56,12 @@ func (c *ExecCommand) Run(ctx context.Context) error {
 
 	// Change the current working directory to the VM's base directory to
 	// work around the 104-byte Unix domain socket path limitation.
-	controlSocketURL := vmDir.ControlSocketURL()
-	if baseURL := controlSocketURL.BaseURL(); baseURL != nil {
-		foundation.NSFileManagerDefaultManager().ChangeCurrentDirectoryPath(baseURL.Path())
+	controlSocketPath := vmDir.ControlSocketURL()
+	if dir := filepath.Dir(controlSocketPath); dir != "" {
+		_ = os.Chdir(dir)
 	}
-	controlSocketPath := objcutil.GoStr(controlSocketURL.RelativePath())
 
-	conn, err := grpc.NewClient("unix://"+controlSocketPath,
+	conn, err := grpc.NewClient("unix://"+filepath.Base(controlSocketPath),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return weaveerrors.ErrGeneric("Failed to connect to the VM using its control socket: %v, is the Tart Guest Agent running?", err)

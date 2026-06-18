@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // Progress abstracts Foundation's Progress for the observer.
@@ -44,15 +42,6 @@ func (p *DownloadProgress) FractionCompleted() float64 {
 func (p *DownloadProgress) IsFinished() bool {
 	return p.TotalUnitCount > 0 && p.completedUnitCount.Load() >= p.TotalUnitCount
 }
-
-// NSProgressWrapper adapts a Foundation NSProgress (e.g. from
-// VZMacOSInstaller) to the Progress interface.
-type NSProgressWrapper struct {
-	Inner *foundation.NSProgress
-}
-
-func (p *NSProgressWrapper) FractionCompleted() float64 { return p.Inner.FractionCompleted() }
-func (p *NSProgressWrapper) IsFinished() bool           { return p.Inner.IsFinished() }
 
 // ProgressObserver ports tart's ProgressObserver class.
 type ProgressObserver struct {

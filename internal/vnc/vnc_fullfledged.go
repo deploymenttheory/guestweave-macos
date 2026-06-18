@@ -12,11 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/passphrase"
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 )
@@ -56,7 +54,7 @@ func NewFullFledgedVNC(vm *weavevm.VM, password string) *FullFledgedVNC {
 	return &FullFledgedVNC{Password: password, vnc: vnc}
 }
 
-func (v *FullFledgedVNC) WaitForURL(ctx context.Context, netBridged bool) (*foundation.NSURL, error) {
+func (v *FullFledgedVNC) WaitForURL(ctx context.Context, netBridged bool) (string, error) {
 	for {
 		// Port is 0 shortly after start(), but will be initialized later.
 		var port uint16
@@ -64,15 +62,14 @@ func (v *FullFledgedVNC) WaitForURL(ctx context.Context, netBridged bool) (*foun
 			port = purego.Send[uint16](v.vnc, purego.RegisterName("port"))
 		})
 		if port != 0 {
-			return foundation.NSURLURLWithString(objcutil.NSStr(
-				fmt.Sprintf("vnc://:%s@127.0.0.1:%d", v.Password, port))), nil
+			return fmt.Sprintf("vnc://:%s@127.0.0.1:%d", v.Password, port), nil
 		}
 
 		// Wait 50 ms.
 		select {
 		case <-time.After(50 * time.Millisecond):
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return "", ctx.Err()
 		}
 	}
 }

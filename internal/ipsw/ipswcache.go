@@ -4,18 +4,17 @@
 package ipsw
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/prune"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // IPSWCache ports tart's IPSWCache class.
 type IPSWCache struct {
-	BaseURL *foundation.NSURL
+	BaseURL string
 }
 
 var _ prune.PrunableStorage = (*IPSWCache)(nil)
@@ -26,32 +25,29 @@ func NewIPSWCache() (*IPSWCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	baseURL := config.WeaveCacheDir.URLByAppendingPathComponentIsDirectory(objcutil.NSStr("IPSWs"), true)
-	if _, err := foundation.NSFileManagerDefaultManager().
-		CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(baseURL, true, nil); err != nil {
+	baseURL := filepath.Join(config.WeaveCacheDir, "IPSWs")
+	if err := os.MkdirAll(baseURL, 0o755); err != nil {
 		return nil, err
 	}
 	return &IPSWCache{BaseURL: baseURL}, nil
 }
 
 // LocationFor ports IPSWCache.locationFor(fileName:).
-func (c *IPSWCache) LocationFor(fileName string) *foundation.NSURL {
-	return c.BaseURL.URLByAppendingPathComponentIsDirectory(objcutil.NSStr(fileName), false)
+func (c *IPSWCache) LocationFor(fileName string) string {
+	return filepath.Join(c.BaseURL, fileName)
 }
 
 // Prunables ports IPSWCache.prunables(): every *.ipsw file in the cache.
 func (c *IPSWCache) Prunables() ([]prune.Prunable, error) {
-	entries, err := foundation.NSFileManagerDefaultManager().
-		ContentsOfDirectoryAtURLIncludingPropertiesForKeysOptionsError(
-			c.BaseURL, objcutil.EmptyNSArray[*foundation.NSString](), 0)
+	entries, err := os.ReadDir(c.BaseURL)
 	if err != nil {
 		return nil, err
 	}
 
 	var prunables []prune.Prunable
-	for _, url := range objcutil.NSArrayURLs(entries) {
-		if strings.HasSuffix(objcutil.GoStr(url.LastPathComponent()), ".ipsw") {
-			prunables = append(prunables, prune.NewPrunableURL(url))
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".ipsw") {
+			prunables = append(prunables, prune.NewPrunableURL(filepath.Join(c.BaseURL, entry.Name())))
 		}
 	}
 	return prunables, nil

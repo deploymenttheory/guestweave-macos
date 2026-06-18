@@ -76,9 +76,9 @@ func (c *ConfigCommand) runGet(settings *weaveconfig.Settings) error {
 	if defaultStorage == "" {
 		defaultStorage = "<unset>"
 	}
-	fmt.Printf("Home directory: %s\n", objcutil.GoStr(config.WeaveHomeDir.Path()))
+	fmt.Printf("Home directory: %s\n", config.WeaveHomeDir)
 	fmt.Printf("Default storage: %s\n", defaultStorage)
-	fmt.Printf("Cache directory: %s\n", objcutil.GoStr(config.WeaveCacheDir.Path()))
+	fmt.Printf("Cache directory: %s\n", config.WeaveCacheDir)
 
 	host, organization := "ghcr.io", "<unset>"
 	if settings.Registry != nil {
@@ -200,7 +200,7 @@ func (c *ConfigCommand) runCache(settings *weaveconfig.Settings, args []string) 
 		if err != nil {
 			return err
 		}
-		fmt.Println(objcutil.GoStr(config.WeaveCacheDir.Path()))
+		fmt.Println(config.WeaveCacheDir)
 		return nil
 	case 2:
 		path := objcutil.ExpandTilde(args[1])

@@ -5,6 +5,7 @@ package command
 
 import (
 	"context"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -13,10 +14,10 @@ import (
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/diskimage"
+	"github.com/deploymenttheory/weave/internal/fsutil"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 )
 
@@ -91,14 +92,12 @@ func (c *SetCommand) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		temporaryDiskURL := config.WeaveTmpDir.URLByAppendingPathComponent(
-			objcutil.NSStr("set-disk-" + objcutil.GoStr(foundation.NSUUIDUUID().UUIDString())))
+		temporaryDiskPath := filepath.Join(config.WeaveTmpDir, "set-disk-"+fsutil.UUID())
 
-		if _, err := foundation.NSFileManagerDefaultManager().
-			CopyItemAtURLToURLError(objcutil.NSURLFromPath(c.Disk), temporaryDiskURL); err != nil {
+		if err := fsutil.CopyItem(c.Disk, temporaryDiskPath); err != nil {
 			return err
 		}
-		if err := vmstorage.FileManagerReplaceItem(vmDir.DiskURL(), temporaryDiskURL); err != nil {
+		if err := vmstorage.FileManagerReplaceItem(vmDir.DiskURL(), temporaryDiskPath); err != nil {
 			return err
 		}
 	}

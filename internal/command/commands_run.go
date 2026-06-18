@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/controlsocket"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/fetcher"
+	"github.com/deploymenttheory/weave/internal/fsutil"
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
 	"github.com/deploymenttheory/weave/internal/macaddress"
 	weavenetwork "github.com/deploymenttheory/weave/internal/network"
@@ -531,13 +533,13 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 
 	resume := false
 	if weaveplatform.MacOSAtLeast(14) &&
-		foundation.NSFileManagerDefaultManager().FileExistsAtPath(vmDir.StateURL().Path()) {
+		fsutil.Exists(vmDir.StateURL()) {
 		fmt.Println("restoring VM state from a snapshot...")
 		if err := vm.RestoreMachineStateFrom(vmDir.StateURL()); err != nil {
 			fail(err)
 			return
 		}
-		if _, err := foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(vmDir.StateURL()); err != nil {
+		if err := os.RemoveAll(vmDir.StateURL()); err != nil {
 			fail(err)
 			return
 		}
@@ -591,22 +593,22 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 		// Record the VNC endpoint so other processes (the MCP screen tools)
 		// can connect to drive or view this VM by name; clear it on exit.
 		endpointPath := vmDir.VNCEndpointPath()
-		_ = os.WriteFile(endpointPath, []byte(objcutil.GoStr(vncURL.AbsoluteString())), 0o600)
+		_ = os.WriteFile(endpointPath, []byte(vncURL), 0o600)
 		defer os.Remove(endpointPath)
 
 		_, onCI := objcutil.EnvironmentValue("CI")
 		if c.NoGraphics || onCI || c.ShowScreen {
-			fmt.Printf("VNC server is running at %s\n", objcutil.GoStr(vncURL.AbsoluteString()))
+			fmt.Printf("VNC server is running at %s\n", vncURL)
 		} else {
-			fmt.Printf("Opening %s...\n", objcutil.GoStr(vncURL.AbsoluteString()))
-			appkit.NSWorkspaceSharedWorkspace().OpenURL(vncURL)
+			fmt.Printf("Opening %s...\n", vncURL)
+			appkit.NSWorkspaceSharedWorkspace().OpenURL(foundation.NSURLURLWithString(objcutil.NSStr(vncURL)))
 		}
 
 		// View-only screen viewer: a dedicated VNC client continuously
 		// captures the screen and serves it as MJPEG to a browser, with no
 		// path for the operator to send input into the guest.
 		if c.ShowScreen {
-			if match := unattended.VNCURLPattern.FindStringSubmatch(objcutil.GoStr(vncURL.AbsoluteString())); match != nil {
+			if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
 				if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
 					if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
 						go screenviewer.StreamVNCToViewer(ctx, match[2], viewerPort, match[1], server)
@@ -1052,15 +1054,13 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 		if err != nil {
 			return nil, err
 		}
-		clonedDiskURL := config.WeaveTmpDir.URLByAppendingPathComponent(
-			objcutil.NSStr("run-disk-" + objcutil.GoStr(foundation.NSUUIDUUID().UUIDString())))
+		clonedDiskPath := filepath.Join(config.WeaveTmpDir, "run-disk-"+fsutil.UUID())
 
-		if _, err := foundation.NSFileManagerDefaultManager().
-			CopyItemAtURLToURLError(vmDir.DiskURL(), clonedDiskURL); err != nil {
+		if err := fsutil.CopyItem(vmDir.DiskURL(), clonedDiskPath); err != nil {
 			return nil, err
 		}
 
-		cloneLock, err := weavelock.NewFileLock(clonedDiskURL)
+		cloneLock, err := weavelock.NewFileLock(clonedDiskPath)
 		if err != nil {
 			return nil, err
 		}
@@ -1070,7 +1070,7 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 
 		diskImageAttachment, err := virtualization.VZDiskImageStorageDeviceAttachmentFromID(
 			objcutil.AllocClass("VZDiskImageStorageDeviceAttachment")).
-			InitWithURLReadOnlyError(clonedDiskURL, options.readOnly)
+			InitWithURLReadOnlyError(objcutil.NSURLFromPath(clonedDiskPath), options.readOnly)
 		if err != nil {
 			return nil, err
 		}
@@ -1084,7 +1084,7 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 	// Error out if the disk is locked by the host (e.g. it was mounted in
 	// Finder), see cirruslabs/tart#323.
 	if !options.readOnly {
-		diskLock, err := weavelock.NewFileLock(diskFileURL)
+		diskLock, err := weavelock.NewFileLock(expandedDiskPath)
 		if err == nil {
 			acquired, lockErr := diskLock.Trylock()
 			if lockErr == nil && !acquired {
@@ -1295,8 +1295,8 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 	}
 
 	// Cache the downloaded archive by URL digest.
-	cachePath := objcutil.GoStr(config.WeaveCacheDir.URLByAppendingPathComponent(
-		objcutil.NSStr("dir-archive-" + strings.TrimPrefix(oci.DigestHash([]byte(s.path)), "sha256:") + ".tgz")).Path())
+	cachePath := filepath.Join(config.WeaveCacheDir,
+		"dir-archive-"+strings.TrimPrefix(oci.DigestHash([]byte(s.path)), "sha256:")+".tgz")
 
 	if _, err := os.Stat(cachePath); err != nil {
 		fmt.Printf("Downloading %s...\n", s.path)
@@ -1353,13 +1353,11 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 		fmt.Printf("Using cached archive for %s...\n", s.path)
 	}
 
-	temporaryLocation := config.WeaveTmpDir.URLByAppendingPathComponent(
-		objcutil.NSStr(objcutil.GoStr(foundation.NSUUIDUUID().UUIDString()) + ".volume"))
-	temporaryPath := objcutil.GoStr(temporaryLocation.Path())
+	temporaryPath := filepath.Join(config.WeaveTmpDir, fsutil.UUID()+".volume")
 	if err := os.MkdirAll(temporaryPath, 0o755); err != nil {
 		return nil, err
 	}
-	tmpLock, err := weavelock.NewFileLock(temporaryLocation)
+	tmpLock, err := weavelock.NewFileLock(temporaryPath)
 	if err != nil {
 		return nil, err
 	}
@@ -1374,7 +1372,7 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 
 	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
 	task.SetExecutableURL(tarURL)
-	task.SetCurrentDirectoryURL(temporaryLocation)
+	task.SetCurrentDirectoryURL(objcutil.NSURLFromPath(temporaryPath))
 	task.SetArguments(objcutil.NSStringArray([]string{"-xzf", cachePath}))
 
 	if _, err := task.LaunchAndReturnError(); err != nil {
@@ -1389,7 +1387,7 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 	fmt.Println("Unarchived into a temporary directory!")
 
 	return virtualization.VZSharedDirectoryFromID(objcutil.AllocClass("VZSharedDirectory")).
-		InitWithURLReadOnly(temporaryLocation, s.readOnly), nil
+		InitWithURLReadOnly(objcutil.NSURLFromPath(temporaryPath), s.readOnly), nil
 }
 
 // rosettaDirectoryShare ports Run.rosettaDirectoryShare().

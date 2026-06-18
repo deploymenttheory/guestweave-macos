@@ -5,6 +5,7 @@ package command
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	weaveregistry "github.com/deploymenttheory/weave/internal/registry"
@@ -15,8 +16,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/oci"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // CloneCommand ports the Clone command.
@@ -90,7 +89,7 @@ func (c *CloneCommand) Run(ctx context.Context) error {
 	}
 
 	cleanup := func() {
-		_, _ = foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(tmpVMDir.BaseURL)
+		_ = os.RemoveAll(tmpVMDir.BaseURL)
 	}
 
 	// Acquire a global lock.

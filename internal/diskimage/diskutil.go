@@ -40,13 +40,13 @@ func (i *ImageInfo) TotalBytes() (int, error) {
 
 // DiskutilImageCreate ports Diskutil.imageCreate(diskURL:sizeGB:): creates a
 // blank ASIF disk image.
-func DiskutilImageCreate(diskURL *foundation.NSURL, sizeGB uint16) error {
+func DiskutilImageCreate(diskPath string, sizeGB uint16) error {
 	_, _, err := DiskutilRun([]string{
 		"image", "create", "blank",
 		"--format", "ASIF",
 		"--size", fmt.Sprintf("%dG", sizeGB),
 		"--volumeName", "Weave",
-		objcutil.GoStr(diskURL.Path()),
+		diskPath,
 	})
 	if err != nil {
 		return weaveerrors.ErrFailedToCreateDisk("Failed to create ASIF disk image: %v", err)
@@ -55,10 +55,10 @@ func DiskutilImageCreate(diskURL *foundation.NSURL, sizeGB uint16) error {
 }
 
 // DiskutilImageInfo ports Diskutil.imageInfo(_:).
-func DiskutilImageInfo(diskURL *foundation.NSURL) (*ImageInfo, error) {
+func DiskutilImageInfo(diskPath string) (*ImageInfo, error) {
 	stdoutData, _, err := DiskutilRun([]string{
 		"image", "info", "--plist",
-		objcutil.GoStr(diskURL.Path()),
+		diskPath,
 	})
 	if err != nil {
 		return nil, err

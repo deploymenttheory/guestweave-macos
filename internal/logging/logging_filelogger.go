@@ -16,7 +16,6 @@ import (
 	"time"
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 const (
@@ -49,7 +48,7 @@ func LogsDir() string {
 	if err != nil {
 		return ""
 	}
-	dir := filepath.Join(objcutil.GoStr(config.WeaveHomeDir.Path()), "logs")
+	dir := filepath.Join(config.WeaveHomeDir, "logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ""
 	}

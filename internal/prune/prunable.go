@@ -5,8 +5,6 @@ package prune
 
 import (
 	"time"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // PrunableStorage ports tart's PrunableStorage protocol.
@@ -17,7 +15,7 @@ type PrunableStorage interface {
 // Prunable ports tart's Prunable protocol: a resource that the prune command
 // can garbage-collect, ordered by access date.
 type Prunable interface {
-	URL() *foundation.NSURL
+	Path() string
 	Delete() error
 	AccessDate() (time.Time, error)
 	// SizeBytes is the size on disk as seen in Finder, including empty blocks.

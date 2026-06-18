@@ -23,13 +23,13 @@ import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 )
 
-func tempFileURL(t *testing.T, contents string) *foundation.NSURL {
+func tempFileURL(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "file.txt")
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return foundation.NSURLFileURLWithPath(objcutil.NSStr(path))
+	return path
 }
 
 func TestResolveBinaryPath(t *testing.T) {
@@ -57,8 +57,8 @@ func TestPrunableURLSizesAndAccessDate(t *testing.T) {
 	if accessDate, err := prunable.AccessDate(); err != nil || accessDate.IsZero() {
 		t.Fatalf("AccessDate = %v, %v", accessDate, err)
 	}
-	if err := prune.URLUpdateAccessDate(url, time.Now()); err != nil {
-		t.Fatalf("URLUpdateAccessDate: %v", err)
+	if err := prune.UpdateAccessDate(url, time.Now()); err != nil {
+		t.Fatalf("UpdateAccessDate: %v", err)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestFileLockAndPIDLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := weavelock.NewPIDLock(foundation.NSURLFileURLWithPath(objcutil.NSStr("/nonexistent/lock"))); err == nil {
+	if _, err := weavelock.NewPIDLock("/nonexistent/lock"); err == nil {
 		t.Fatal("expected PIDLockMissing error")
 	}
 }
@@ -193,7 +193,7 @@ func TestVMDirectoryLifecycle(t *testing.T) {
 	if err := dir.ResizeDisk(1, diskimage.DiskImageFormatRaw); err != nil {
 		t.Fatal(err)
 	}
-	for _, url := range []string{objcutil.GoStr(dir.ConfigURL().Path()), objcutil.GoStr(dir.NvramURL().Path())} {
+	for _, url := range []string{dir.ConfigURL(), dir.NvramURL()} {
 		if err := os.WriteFile(url, []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}

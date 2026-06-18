@@ -28,14 +28,13 @@ import (
 	"github.com/deploymenttheory/weave/internal/telemetry"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 // VMStorageOCI ports tart's VMStorageOCI class.
 type VMStorageOCI struct {
-	BaseURL *foundation.NSURL
+	BaseURL string
 }
 
 var _ prune.PrunableStorage = (*VMStorageOCI)(nil)
@@ -47,7 +46,7 @@ func NewVMStorageOCI() (*VMStorageOCI, error) {
 		return nil, err
 	}
 	return &VMStorageOCI{
-		BaseURL: config.WeaveCacheDir.URLByAppendingPathComponentIsDirectory(objcutil.NSStr("OCIs"), true),
+		BaseURL: filepath.Join(config.WeaveCacheDir, "OCIs"),
 	}, nil
 }
 
@@ -66,7 +65,7 @@ func percentDecodeName(s string) string {
 }
 
 func (s *VMStorageOCI) basePath() string {
-	return objcutil.GoStr(s.BaseURL.Path())
+	return s.BaseURL
 }
 
 // vmPath ports URL.appendingRemoteName(_:).
@@ -74,8 +73,8 @@ func (s *VMStorageOCI) vmPath(name oci.RemoteName) string {
 	return filepath.Join(s.basePath(), percentEncodeHost(name.Host), filepath.FromSlash(name.Namespace), name.Reference.Value)
 }
 
-func (s *VMStorageOCI) vmURL(name oci.RemoteName) *foundation.NSURL {
-	return objcutil.NSURLFromPath(s.vmPath(name))
+func (s *VMStorageOCI) vmURL(name oci.RemoteName) string {
+	return s.vmPath(name)
 }
 
 // hostDirectoryPath ports URL.appendingHost(_:).
@@ -110,7 +109,7 @@ func (s *VMStorageOCI) Open(name oci.RemoteName, accessDate time.Time) (*vmdirec
 		return nil, err
 	}
 
-	if err := prune.URLUpdateAccessDate(vmDir.BaseURL, accessDate); err != nil {
+	if err := prune.UpdateAccessDate(vmDir.BaseURL, accessDate); err != nil {
 		return nil, err
 	}
 
@@ -136,7 +135,7 @@ func (s *VMStorageOCI) Move(name oci.RemoteName, from *vmdirectory.VMDirectory) 
 		return err
 	}
 
-	return FileManagerReplaceItem(objcutil.NSURLFromPath(targetPath), from.BaseURL)
+	return FileManagerReplaceItem(targetPath, from.BaseURL)
 }
 
 // Delete ports VMStorageOCI.delete(_:).
@@ -170,7 +169,7 @@ func (s *VMStorageOCI) GC() error {
 			return os.Remove(path)
 		}
 
-		vmDir := vmdirectory.NewVMDirectory(objcutil.NSURLFromPath(resolved))
+		vmDir := vmdirectory.NewVMDirectory(resolved)
 		if !vmDir.Initialized() {
 			return nil
 		}
@@ -193,7 +192,7 @@ func (s *VMStorageOCI) GC() error {
 	// Perform garbage collection for digest-based images with no incoming
 	// references.
 	for basePath, incRefCount := range refCounts {
-		vmDir := vmdirectory.NewVMDirectory(objcutil.NSURLFromPath(basePath))
+		vmDir := vmdirectory.NewVMDirectory(basePath)
 		if !vmDir.IsExplicitlyPulled() && incRefCount == 0 {
 			if err := os.RemoveAll(basePath); err != nil {
 				return err
@@ -221,7 +220,7 @@ func (s *VMStorageOCI) List() ([]OCIVMEntry, error) {
 			return nil
 		}
 
-		vmDir := vmdirectory.NewVMDirectory(objcutil.NSURLFromPath(path))
+		vmDir := vmdirectory.NewVMDirectory(path)
 		if !vmDir.Initialized() {
 			return nil
 		}
@@ -297,7 +296,7 @@ func (s *VMStorageOCI) Pull(ctx context.Context, name oci.RemoteName, source wea
 		return err
 	}
 
-	lock, err := weavelock.NewFileLock(objcutil.NSURLFromPath(hostDirectoryPath))
+	lock, err := weavelock.NewFileLock(hostDirectoryPath)
 	if err != nil {
 		return err
 	}
@@ -378,7 +377,7 @@ func (s *VMStorageOCI) Pull(ctx context.Context, name oci.RemoteName, source wea
 			return tmpVMDir.PullFromRegistry(ctx, source, manifest, concurrency, localLayerCache, deduplicate)
 		})
 		if err != nil {
-			_, _ = foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(tmpVMDir.BaseURL)
+			_ = os.RemoveAll(tmpVMDir.BaseURL)
 			return err
 		}
 
@@ -469,7 +468,7 @@ func (s *VMStorageOCI) ChooseLocalLayerCache(ctx context.Context, name oci.Remot
 			continue
 		}
 
-		manifestJSON, err := os.ReadFile(objcutil.GoStr(entry.VMDir.ManifestURL().Path()))
+		manifestJSON, err := os.ReadFile(entry.VMDir.ManifestURL())
 		if err != nil {
 			continue
 		}

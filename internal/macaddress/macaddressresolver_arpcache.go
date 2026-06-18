@@ -5,15 +5,13 @@
 package macaddress
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"net/netip"
+	"os/exec"
 	"regexp"
 	"strings"
-
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 // ARPCacheError covers the three error structs from ARPCache.swift.
@@ -30,34 +28,22 @@ type ARPCache struct {
 
 // NewARPCache ports ARPCache.init(): runs "arp -an" and captures its output.
 func NewARPCache() (*ARPCache, error) {
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	task.SetExecutableURL(objcutil.NSURLFromPath("/usr/sbin/arp"))
-	task.SetArguments(objcutil.NSStringArray([]string{"-an"}))
+	cmd := exec.Command("/usr/sbin/arp", "-an")
+	var combined bytes.Buffer
+	cmd.Stdout = &combined
+	cmd.Stderr = &combined
 
-	pipe := foundation.NSPipePipe()
-	task.SetStandardOutput(pipe.Ptr())
-	task.SetStandardError(pipe.Ptr())
-	task.SetStandardInput(foundation.NSFileHandleFileHandleWithNullDevice().Ptr())
-
-	if _, err := task.LaunchAndReturnError(); err != nil {
-		return nil, err
-	}
-
-	outputNSData, err := pipe.FileHandleForReading().ReadDataToEndOfFileAndReturnError()
-	if err != nil {
-		return nil, err
-	}
-	output := objcutil.NSDataToBytes(outputNSData)
+	runErr := cmd.Run()
+	output := combined.Bytes()
 	if len(output) == 0 {
 		return nil, &ARPCacheError{Message: "arp command yielded invalid output: empty output"}
 	}
 
-	task.WaitUntilExit()
-
-	if !(task.TerminationReason() == foundation.NSTaskTerminationReasonExit && task.TerminationStatus() == 0) {
+	if runErr != nil {
 		reason := "uncaught signal"
-		if task.TerminationReason() == foundation.NSTaskTerminationReasonExit {
-			reason = fmt.Sprintf("exit code %d", task.TerminationStatus())
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			reason = fmt.Sprintf("exit code %d", exitErr.ExitCode())
 		}
 		return nil, &ARPCacheError{Message: "arp command failed: " + reason}
 	}

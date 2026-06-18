@@ -10,6 +10,7 @@ package vmconfig
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
@@ -18,7 +19,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 )
 
@@ -114,12 +114,12 @@ func NewVMConfigFromJSON(data []byte) (*VMConfig, error) {
 }
 
 // NewVMConfigFromURL ports VMConfig.init(fromURL:).
-func NewVMConfigFromURL(url *foundation.NSURL) (*VMConfig, error) {
-	data, err := foundation.NSDataDataWithContentsOfURLOptionsError(url, 0)
+func NewVMConfigFromURL(path string) (*VMConfig, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return NewVMConfigFromJSON(objcutil.NSDataToBytes(data))
+	return NewVMConfigFromJSON(data)
 }
 
 // ToJSON ports VMConfig.toJSON(): compact JSON with sorted keys.
@@ -128,7 +128,7 @@ func (c *VMConfig) ToJSON() ([]byte, error) {
 }
 
 // Save ports VMConfig.save(toURL:): pretty-printed JSON written atomically.
-func (c *VMConfig) Save(toURL *foundation.NSURL) error {
+func (c *VMConfig) Save(toPath string) error {
 	object, err := c.jsonObject()
 	if err != nil {
 		return err
@@ -137,8 +137,13 @@ func (c *VMConfig) Save(toURL *foundation.NSURL) error {
 	if err != nil {
 		return err
 	}
-	if !objcutil.BytesToNSData(data).WriteToURLAtomically(toURL, true) {
-		return weaveerrors.ErrGeneric("failed to write VM configuration to %s", objcutil.GoStr(toURL.Path()))
+	// Write atomically (temp + rename) to match WriteToURLAtomically.
+	tmp := toPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return weaveerrors.ErrGeneric("failed to write VM configuration to %s: %v", toPath, err)
+	}
+	if err := os.Rename(tmp, toPath); err != nil {
+		return weaveerrors.ErrGeneric("failed to write VM configuration to %s: %v", toPath, err)
 	}
 	return nil
 }

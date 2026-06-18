@@ -1,61 +1,59 @@
-// Port of tart's Config.swift: resolves the tart home tree (honouring
+// Port of tart's Config.swift: resolves the weave home tree (honouring
 // WEAVE_HOME), creates the cache and tmp directories, and garbage-collects
-// stale tmp entries. All file-system work goes through NSFileManager.
+// stale tmp entries. Paths are plain strings managed with os/path/filepath.
 //go:build darwin
 
 package config
 
 import (
-	"strings"
+	"os"
+	"path/filepath"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // Config mirrors tart's Config struct.
 type Config struct {
-	WeaveHomeDir  *foundation.NSURL
-	WeaveCacheDir *foundation.NSURL
-	WeaveTmpDir   *foundation.NSURL
+	WeaveHomeDir  string
+	WeaveCacheDir string
+	WeaveTmpDir   string
 }
 
 // NewConfig ports Config.init().
 func NewConfig() (*Config, error) {
-	var weaveHomeDir *foundation.NSURL
+	var weaveHomeDir string
 
 	// Resolution order: WEAVE_HOME env var, then the settings file's default
 	// storage location, then ~/.weave.
-	if customWeaveHome, ok := objcutil.EnvironmentValue("WEAVE_HOME"); ok {
-		weaveHomeDir = foundation.NSURLFileURLWithPathIsDirectory(objcutil.NSStr(customWeaveHome), true)
+	if customWeaveHome := os.Getenv("WEAVE_HOME"); customWeaveHome != "" {
+		weaveHomeDir = customWeaveHome
 		if err := validateWeaveHome(weaveHomeDir); err != nil {
 			return nil, err
 		}
 	} else if settingsHome, ok := settingsOrWarn().DefaultStoragePath(); ok {
-		weaveHomeDir = foundation.NSURLFileURLWithPathIsDirectory(objcutil.NSStr(settingsHome), true)
+		weaveHomeDir = settingsHome
 		if err := validateWeaveHome(weaveHomeDir); err != nil {
 			return nil, err
 		}
 	} else {
-		weaveHomeDir = foundation.NSFileManagerDefaultManager().
-			HomeDirectoryForCurrentUser().
-			URLByAppendingPathComponentIsDirectory(objcutil.NSStr(".weave"), true)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		weaveHomeDir = filepath.Join(home, ".weave")
 	}
 
-	fileManager := foundation.NSFileManagerDefaultManager()
-
-	weaveCacheDir := weaveHomeDir.URLByAppendingPathComponentIsDirectory(objcutil.NSStr("cache"), true)
+	weaveCacheDir := filepath.Join(weaveHomeDir, "cache")
 	if cacheDir := settingsOrWarn().CacheDir; cacheDir != "" {
-		weaveCacheDir = foundation.NSURLFileURLWithPathIsDirectory(objcutil.NSStr(cacheDir), true)
+		weaveCacheDir = cacheDir
 	}
-	if _, err := fileManager.CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(weaveCacheDir, true, nil); err != nil {
+	if err := os.MkdirAll(weaveCacheDir, 0o755); err != nil {
 		return nil, err
 	}
 
-	weaveTmpDir := weaveHomeDir.URLByAppendingPathComponentIsDirectory(objcutil.NSStr("tmp"), true)
-	if _, err := fileManager.CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(weaveTmpDir, true, nil); err != nil {
+	weaveTmpDir := filepath.Join(weaveHomeDir, "tmp")
+	if err := os.MkdirAll(weaveTmpDir, 0o755); err != nil {
 		return nil, err
 	}
 
@@ -69,16 +67,18 @@ func NewConfig() (*Config, error) {
 // GC ports Config.gc(): removes every tmp-directory entry whose flock can be
 // acquired — i.e. whose creating process has finished or crashed.
 func (c *Config) GC() error {
-	fileManager := foundation.NSFileManagerDefaultManager()
-
-	entries, err := fileManager.ContentsOfDirectoryAtURLIncludingPropertiesForKeysOptionsError(
-		c.WeaveTmpDir, objcutil.EmptyNSArray[*foundation.NSString](), 0)
+	entries, err := os.ReadDir(c.WeaveTmpDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 
-	for _, entry := range objcutil.NSArrayURLs(entries) {
-		lock, err := weavelock.NewFileLock(entry)
+	for _, entry := range entries {
+		path := filepath.Join(c.WeaveTmpDir, entry.Name())
+
+		lock, err := weavelock.NewFileLock(path)
 		if err != nil {
 			return err
 		}
@@ -93,7 +93,7 @@ func (c *Config) GC() error {
 			continue
 		}
 
-		if _, err := fileManager.RemoveItemAtURLError(entry); err != nil {
+		if err := os.RemoveAll(path); err != nil {
 			_ = lock.Close()
 			return err
 		}
@@ -108,32 +108,12 @@ func (c *Config) GC() error {
 	return nil
 }
 
-// ConfigJSONWritingOptions mirrors Config.jsonEncoder()'s .sortedKeys setting
-// for use with NSJSONSerialization wherever tart serialised via JSONEncoder.
-func ConfigJSONWritingOptions() foundation.NSJSONWritingOptions {
-	return foundation.NSJSONWritingSortedKeys
-}
-
-// validateWeaveHome ports Config.validateWeaveHome: walks every path component
-// of url from the root down, creating each missing directory one level at a
-// time so a clear error names the exact component that cannot be created.
-func validateWeaveHome(url *foundation.NSURL) error {
-	fileManager := foundation.NSFileManagerDefaultManager()
-	components := objcutil.NSArrayStrings(url.PathComponents())
-
-	for i := range components {
-		descendingPath := strings.Join(components[:i+1], "/")
-		descendingURL := foundation.NSURLFileURLWithPath(objcutil.NSStr(descendingPath))
-
-		if fileManager.FileExistsAtPath(descendingURL.Path()) {
-			continue
-		}
-
-		if _, err := fileManager.CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(descendingURL, false, nil); err != nil {
-			return weaveerrors.ErrGeneric("WEAVE_HOME is invalid: %s does not exist, yet we can't create it: %v",
-				objcutil.GoStr(descendingURL.Path()), err)
-		}
+// validateWeaveHome creates weaveHome and any missing parents, naming the path
+// when it cannot be created.
+func validateWeaveHome(path string) error {
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return weaveerrors.ErrGeneric(
+			"WEAVE_HOME is invalid: %s does not exist, yet we can't create it: %v", path, err)
 	}
-
 	return nil
 }

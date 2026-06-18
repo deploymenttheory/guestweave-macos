@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	"github.com/deploymenttheory/weave/internal/fsutil"
 	"github.com/deploymenttheory/weave/internal/logging"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 
@@ -72,10 +73,10 @@ func decompressLZ4(data []byte) ([]byte, error) {
 }
 
 // Push ports DiskV2.push(diskURL:registry:chunkSizeMb:concurrency:progress:).
-func (DiskV2) Push(ctx context.Context, diskURL *foundation.NSURL, registry *Registry,
+func (DiskV2) Push(ctx context.Context, diskPath string, registry *Registry,
 	chunkSizeMb int, concurrency uint, progress *logging.DownloadProgress) ([]OCIManifestLayer, error) {
 	// Open and map the disk file.
-	file, err := os.Open(objcutil.GoStr(diskURL.Path()))
+	file, err := os.Open(diskPath)
 	if err != nil {
 		return nil, err
 	}
@@ -179,26 +180,22 @@ func pushDiskLayer(ctx context.Context, data []byte, registry *Registry,
 // Pull ports DiskV2.pull(registry:diskLayers:diskURL:concurrency:progress:
 // localLayerCache:deduplicate:).
 func (DiskV2) Pull(ctx context.Context, source BlobSource, diskLayers []OCIManifestLayer,
-	diskURL *foundation.NSURL, concurrency uint, progress *logging.DownloadProgress,
+	diskPath string, concurrency uint, progress *logging.DownloadProgress,
 	localLayerCache *LocalLayerCache, deduplicate bool) error {
-	diskPath := objcutil.GoStr(diskURL.Path())
-
 	// Support resumable pulls.
-	pullResumed := foundation.NSFileManagerDefaultManager().FileExistsAtPath(diskURL.Path())
+	pullResumed := fsutil.Exists(diskPath)
 
 	if !pullResumed {
 		if deduplicate && localLayerCache != nil {
 			// Clone the local layer cache's disk and use it as a base,
 			// potentially reducing the space usage since some blocks won't
 			// be written at all.
-			if _, err := foundation.NSFileManagerDefaultManager().
-				CopyItemAtURLToURLError(localLayerCache.DiskURL, diskURL); err != nil {
+			if err := fsutil.CopyItem(localLayerCache.DiskURL, diskPath); err != nil {
 				return err
 			}
 		} else {
 			// Otherwise create an empty disk.
-			if !foundation.NSFileManagerDefaultManager().
-				CreateFileAtPathContentsAttributes(diskURL.Path(), objcutil.BytesToNSData(nil), nil) {
+			if err := os.WriteFile(diskPath, nil, 0o644); err != nil {
 				return ErrOCIFailedToCreateVmFile
 			}
 		}
@@ -256,7 +253,7 @@ func (DiskV2) Pull(ctx context.Context, source BlobSource, diskLayers []OCIManif
 
 			err := pullDiskLayer(ctx, source, diskLayer, diskPath, fsBlockSize, pullResumed,
 				diskWritingOffset, uncompressedLayerSize, uncompressedLayerContentDigest,
-				index, progress, localLayerCache, deduplicate, diskURL)
+				index, progress, localLayerCache, deduplicate)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -275,11 +272,10 @@ func (DiskV2) Pull(ctx context.Context, source BlobSource, diskLayers []OCIManif
 func pullDiskLayer(ctx context.Context, source BlobSource, diskLayer OCIManifestLayer,
 	diskPath string, fsBlockSize uint64, pullResumed bool,
 	diskWritingOffset uint64, uncompressedLayerSize uint64, uncompressedLayerContentDigest string,
-	index int, progress *logging.DownloadProgress, localLayerCache *LocalLayerCache, deduplicate bool,
-	diskURL *foundation.NSURL) error {
+	index int, progress *logging.DownloadProgress, localLayerCache *LocalLayerCache, deduplicate bool) error {
 	// No need to fetch and decompress anything if we've already done so.
 	if pullResumed {
-		hash, err := DigestHashURLChunk(diskURL, diskWritingOffset, uncompressedLayerSize)
+		hash, err := DigestHashURLChunk(diskPath, diskWritingOffset, uncompressedLayerSize)
 		if err == nil && hash == uncompressedLayerContentDigest {
 			progress.Add(int64(diskLayer.Size))
 			return nil

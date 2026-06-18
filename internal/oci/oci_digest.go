@@ -11,9 +11,6 @@ import (
 	"hash"
 	"io"
 	"os"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 var (
@@ -45,8 +42,8 @@ func DigestHash(data []byte) string {
 }
 
 // DigestHashURL ports Digest.hash(_ url:).
-func DigestHashURL(url *foundation.NSURL) (string, error) {
-	file, err := os.Open(objcutil.GoStr(url.Path()))
+func DigestHashURL(path string) (string, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
@@ -61,8 +58,8 @@ func DigestHashURL(url *foundation.NSURL) (string, error) {
 
 // DigestHashURLChunk ports Digest.hash(_ url:offset:size:): the digest of a
 // size-byte chunk at offset.
-func DigestHashURLChunk(url *foundation.NSURL, offset uint64, size uint64) (string, error) {
-	file, err := os.Open(objcutil.GoStr(url.Path()))
+func DigestHashURLChunk(path string, offset uint64, size uint64) (string, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
