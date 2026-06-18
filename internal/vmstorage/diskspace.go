@@ -5,7 +5,7 @@
 // the disk to ENOSPC mid-transfer.
 //
 // Capacity is read against the actual filesystem via the Foundation
-// framework: the idiomatic URL wrapper (opinionated/idiomatic/foundation) is
+// framework: the idiomatic URL wrapper (opinionated/idiomatic/framework/foundation) is
 // unwrapped onto NSURL's volume resource values, preferring
 // NSURLVolumeAvailableCapacityForImportantUsageKey — Apple's recommended
 // "how much can a user-initiated operation really write" figure, which
@@ -23,7 +23,7 @@ import (
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	idiomaticfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/foundation"
+	idiomaticfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 )
 
 // AvailableCapacityBytes returns the volume capacity available for a

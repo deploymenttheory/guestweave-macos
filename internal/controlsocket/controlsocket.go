@@ -20,7 +20,7 @@ import (
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/library/oslog"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/oslog"
 )
 
 // VirtioSocketConnector is the slice of VM.connect(toPort:) that

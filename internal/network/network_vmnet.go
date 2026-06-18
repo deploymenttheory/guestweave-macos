@@ -19,15 +19,14 @@ import (
 	"runtime"
 	"unsafe"
 
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	vmnet "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/vmnet"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 )
 
 // buildVmnetNIC constructs a vmnet-direct NIC.
-func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddress) (NIC, error) {
+func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, error) {
 	mode, err := vmnetOperatingMode(nicConfig.VmnetMode)
 	if err != nil {
 		return NIC{}, err
@@ -80,11 +79,8 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddres
 				"the com.apple.vm.networking entitlement or root", netStatus.String())
 	}
 
-	attachment := virtualization.VZVmnetNetworkDeviceAttachmentFromID(
-		objcutil.AllocClass("VZVmnetNetworkDeviceAttachment")).InitWithNetwork(netPtr)
-
 	return NIC{
-		Attachment: &attachment.VZNetworkDeviceAttachment,
+		Attachment: idvirt.NewVmnetNetworkDeviceAttachmentWithNetwork(netPtr),
 		MAC:        mac,
 		engine:     &vmnetEngine{network: netPtr},
 	}, nil

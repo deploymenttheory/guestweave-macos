@@ -49,7 +49,7 @@ import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/virtualization"
+	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // Error types ported from VM.swift.
@@ -758,10 +758,10 @@ func craftConfiguration(diskURL *foundation.NSURL, nvramURL *foundation.NSURL,
 	// own attachment and MAC address (multi-NIC with per-NIC properties).
 	networkDeviceIDs := make([]purego.ID, 0, len(topology.NICs()))
 	for _, nic := range topology.NICs() {
-		vio := idiomatic.NewVirtioNetworkDeviceConfiguration().Unwrap()
-		vio.SetAttachment(nic.Attachment)
-		vio.SetMACAddress(nic.MAC)
-		networkDeviceIDs = append(networkDeviceIDs, vio.Ptr())
+		vio := idiomatic.NewVirtioNetworkDeviceConfiguration().
+			WithAttachment(nic.Attachment).
+			WithMACAddress(nic.MAC)
+		networkDeviceIDs = append(networkDeviceIDs, vio.ID())
 	}
 	configuration.SetNetworkDevices(objcutil.NSArrayFromIDs[*virtualization.VZNetworkDeviceConfiguration](networkDeviceIDs...))
 

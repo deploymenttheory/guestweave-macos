@@ -18,17 +18,16 @@ import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // buildSoftnetNIC constructs a softnet NIC: it spawns the softnet helper over a
 // datagram socketpair and wraps the VM-side file handle in a
 // VZFileHandleNetworkDeviceAttachment. The helper's lifecycle is driven by the
 // returned NIC's engine.
-func buildSoftnetNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddress) (NIC, error) {
+func buildSoftnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, error) {
 	var args []string
 	if nicConfig.SoftnetHostMode {
 		args = append(args, "--vm-net-type", "host")
@@ -43,7 +42,7 @@ func buildSoftnetNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddr
 		args = append(args, "--expose", nicConfig.SoftnetExpose)
 	}
 
-	softnet, err := NewSoftnet(objcutil.GoStr(mac.String()), args...)
+	softnet, err := NewSoftnet(mac.String(), args...)
 	if err != nil {
 		return NIC{}, err
 	}
@@ -103,12 +102,11 @@ func NewSoftnet(vmMACAddress string, extraArguments ...string) (*Softnet, error)
 		return nil, err
 	}
 
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
+	task := idfoundation.NewTask().Unwrap()
 	task.SetExecutableURL(executableURL)
 	arguments := append([]string{"--vm-fd", "0", "--vm-mac-address", vmMACAddress}, extraArguments...)
 	task.SetArguments(objcutil.NSStringArray(arguments))
-	stdinHandle := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-		InitWithFileDescriptorCloseOnDealloc(softnetFD, false)
+	stdinHandle := idfoundation.NewFileHandleWithFileDescriptorCloseOnDealloc(softnetFD, false).Unwrap()
 	task.SetStandardInput(stdinHandle.Ptr())
 
 	return &Softnet{
@@ -176,12 +174,9 @@ func setSocketBuffers(fd int, sizeBytes int) error {
 
 // attachment builds the VM-side VZFileHandleNetworkDeviceAttachment over the
 // softnet socketpair.
-func (s *Softnet) attachment() *virtualization.VZNetworkDeviceAttachment {
-	fileHandle := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-		InitWithFileDescriptorCloseOnDealloc(s.VMFD, false)
-	attachment := virtualization.VZFileHandleNetworkDeviceAttachmentFromID(
-		objcutil.AllocClass("VZFileHandleNetworkDeviceAttachment")).InitWithFileHandle(fileHandle)
-	return &attachment.VZNetworkDeviceAttachment
+func (s *Softnet) attachment() idvirt.NetworkDeviceAttachmentProvider {
+	fileHandle := idfoundation.NewFileHandleWithFileDescriptorCloseOnDealloc(s.VMFD, false).Unwrap()
+	return idvirt.NewFileHandleNetworkDeviceAttachmentWithFileHandle(fileHandle)
 }
 
 // SoftnetConfigureSUIDBitIfNeeded ports Softnet.configureSUIDBitIfNeeded().
@@ -211,7 +206,7 @@ func SoftnetConfigureSUIDBitIfNeeded() error {
 		return softnetInitializationFailed("sudo not found in PATH")
 	}
 
-	probe := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
+	probe := idfoundation.NewTask().Unwrap()
 	probe.SetExecutableURL(sudoExecutableURL)
 	probe.SetArguments(objcutil.NSStringArray([]string{"--non-interactive", "softnet", "--help"}))
 	if _, err := probe.LaunchAndReturnError(); err != nil {
@@ -226,7 +221,7 @@ func SoftnetConfigureSUIDBitIfNeeded() error {
 	// the user for the password required to run chown & chmod.
 	fmt.Fprintln(os.Stderr, "Softnet requires a Sudo password to set the SUID bit on the Softnet executable, please enter it below.")
 
-	elevate := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
+	elevate := idfoundation.NewTask().Unwrap()
 	elevate.SetExecutableURL(sudoExecutableURL)
 	elevate.SetArguments(objcutil.NSStringArray([]string{
 		"sh", "-c",
