@@ -152,7 +152,7 @@ func TestVMConfigJSONRoundtrip(t *testing.T) {
 	}
 
 	config := vmconfig.NewVMConfig(&vmconfig.LinuxPlatform{}, 2, 2*1024*1024*1024, nil, diskimage.DiskImageFormatRaw)
-	originalMAC := objcutil.GoStr(config.MACAddress.String())
+	originalMAC := config.MACAddress.String()
 
 	data, err := config.ToJSON()
 	if err != nil {
@@ -164,7 +164,7 @@ func TestVMConfigJSONRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := objcutil.GoStr(decoded.MACAddress.String()); got != originalMAC {
+	if got := decoded.MACAddress.String(); got != originalMAC {
 		t.Fatalf("mac roundtrip: %q != %q", got, originalMAC)
 	}
 	if decoded.OS != weaveplatform.OSLinux || decoded.CPUCount != 2 || decoded.MemorySize != 2*1024*1024*1024 {

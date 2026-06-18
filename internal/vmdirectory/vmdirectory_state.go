@@ -20,7 +20,6 @@ import (
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/fsutil"
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
@@ -206,7 +205,7 @@ func (d *VMDirectory) MACAddress() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return objcutil.GoStr(config.MACAddress.String()), nil
+	return config.MACAddress.String(), nil
 }
 
 // RegenerateMACAddress ports VMDirectory.regenerateMACAddress().
@@ -216,7 +215,7 @@ func (d *VMDirectory) RegenerateMACAddress() error {
 		return err
 	}
 
-	config.MACAddress = idvirt.RandomLocallyAdministeredAddress().Unwrap()
+	config.MACAddress = idvirt.RandomLocallyAdministeredAddress()
 	// Cleanup state if any.
 	_ = os.RemoveAll(d.StateURL())
 

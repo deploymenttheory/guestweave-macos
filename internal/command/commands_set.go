@@ -19,6 +19,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // SetCommand ports the Set command.
@@ -73,7 +74,7 @@ func (c *SetCommand) Run(ctx context.Context) error {
 	vmConfig.DisplayRefit = c.DisplayRefit
 
 	if c.RandomMAC {
-		vmConfig.MACAddress = virtualization.VZMACAddressRandomLocallyAdministeredAddress()
+		vmConfig.MACAddress = idvirt.RandomLocallyAdministeredAddress()
 	}
 
 	if c.RandomSerial && runtime.GOARCH == "arm64" {

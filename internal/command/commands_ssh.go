@@ -19,7 +19,6 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	weavessh "github.com/deploymenttheory/weave/internal/ssh"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 )
@@ -55,7 +54,7 @@ func (c *SSHCommand) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	vmMACAddress, ok := macaddress.NewMACAddress(objcutil.GoStr(vmConfig.MACAddress.String()))
+	vmMACAddress, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String())
 	if !ok {
 		return weaveerrors.ErrGeneric("failed to parse VM's MAC address")
 	}

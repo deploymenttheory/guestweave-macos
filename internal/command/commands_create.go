@@ -151,7 +151,7 @@ func (c *CreateCommand) persistNetworkProfile(vmDir *vmdirectory.VMDirectory) er
 		return err
 	}
 
-	primaryMAC := objcutil.GoStr(config.MACAddress.String())
+	primaryMAC := config.MACAddress.String()
 	for i := range nics {
 		switch {
 		case nics[i].IsPrimary:

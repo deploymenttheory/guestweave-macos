@@ -19,6 +19,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // writeLumeConfig builds a weave VMConfig from a lume image's description
@@ -32,11 +33,11 @@ func (d *VMDirectory) writeLumeConfig(description *oci.VMDescription) error {
 
 	// Keep the image's MAC when present (tart pull semantics: clone
 	// regenerates per-VM); fall back to a random one.
-	var macAddress *virtualization.VZMACAddress
+	var macAddress *idvirt.MACAddress
 	if description.MACAddress != "" {
-		macAddress = virtualization.VZMACAddressFromID(objcutil.AllocClass("VZMACAddress")).
-			InitWithString(objcutil.NSStr(description.MACAddress))
-		if macAddress == nil {
+		macAddress = idvirt.NewMACAddressWithString(description.MACAddress)
+		if macAddress.Unwrap() == nil {
+			macAddress = nil
 			logging.DefaultLogger().AppendNewLine("warning: lume image carries a malformed MAC address; generating a random one")
 		}
 	}

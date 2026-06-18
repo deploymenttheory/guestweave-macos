@@ -131,7 +131,7 @@ func resolveTopology(vmConfig *vmconfig.VMConfig, options VMOptions) (*weavenetw
 		nics = append([]vmconfig.NICConfig(nil), nics...)
 	}
 
-	primaryMAC := objcutil.GoStr(vmConfig.MACAddress.String())
+	primaryMAC := vmConfig.MACAddress.String()
 	boundPrimary := false
 	for i := range nics {
 		if nics[i].IsPrimary && !boundPrimary {

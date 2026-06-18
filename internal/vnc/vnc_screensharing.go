@@ -11,7 +11,6 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 // ScreenSharingVNC ports tart's ScreenSharingVNC class.
@@ -26,7 +25,7 @@ func NewScreenSharingVNC(vmConfig *vmconfig.VMConfig) *ScreenSharingVNC {
 }
 
 func (v *ScreenSharingVNC) WaitForURL(ctx context.Context, netBridged bool) (string, error) {
-	vmMACAddress, ok := macaddress.NewMACAddress(objcutil.GoStr(v.VMConfig.MACAddress.String()))
+	vmMACAddress, ok := macaddress.NewMACAddress(v.VMConfig.MACAddress.String())
 	if !ok {
 		return "", weaveerrors.ErrGeneric("failed to parse VM's MAC address")
 	}
