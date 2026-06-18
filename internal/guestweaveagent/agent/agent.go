@@ -10,7 +10,7 @@ import (
 	"io"
 	"runtime"
 
-	"github.com/deploymenttheory/weave/internal/guestagent/proto"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
 )
 
 // Version is reported to the host on the hello handshake so it can redeploy the

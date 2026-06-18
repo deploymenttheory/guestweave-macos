@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/deploymenttheory/weave/internal/guestagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestagent/agentbin"
-	"github.com/deploymenttheory/weave/internal/guestagent/proto"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/agentbin"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
 	weavessh "github.com/deploymenttheory/weave/internal/ssh"
 )
 

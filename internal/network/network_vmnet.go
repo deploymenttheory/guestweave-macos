@@ -19,7 +19,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	vmnet "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/vmnet"
+	vmnet "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vmnet"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
@@ -33,7 +33,7 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 	}
 
 	var status vmnet.Vmnet_return_t
-	config := vmnet.VmnetNetworkConfigurationCreate(mode, &status)
+	config := vmnet.NetworkConfigurationCreate(mode, &status)
 	if config == nil || status != vmnet.VMNET_SUCCESS {
 		return NIC{}, weaveerrors.ErrGeneric(
 			"failed to create vmnet network configuration (status %s); the vmnet "+
@@ -45,7 +45,7 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 		if nicConfig.BridgedInterface == "" {
 			return NIC{}, weaveerrors.ErrGeneric("vmnet bridged mode requires a host interface name")
 		}
-		if rc := vmnet.VmnetNetworkConfigurationSetExternalInterface(config, nicConfig.BridgedInterface); rc != vmnet.VMNET_SUCCESS {
+		if rc := vmnet.NetworkConfigurationSetExternalInterface(config, nicConfig.BridgedInterface); rc != vmnet.VMNET_SUCCESS {
 			return NIC{}, weaveerrors.ErrGeneric("failed to set vmnet external interface %q (status %s)",
 				nicConfig.BridgedInterface, rc.String())
 		}
@@ -54,7 +54,7 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 	if nicConfig.VmnetSubnet != "" && nicConfig.VmnetMask != "" {
 		subnet := cString(nicConfig.VmnetSubnet)
 		mask := cString(nicConfig.VmnetMask)
-		rc := vmnet.VmnetNetworkConfigurationSetIpv4Subnet(config,
+		rc := vmnet.NetworkConfigurationSetIpv4Subnet(config,
 			unsafe.Pointer(&subnet[0]), unsafe.Pointer(&mask[0]))
 		runtime.KeepAlive(subnet)
 		runtime.KeepAlive(mask)
@@ -65,14 +65,14 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 	}
 
 	if nicConfig.VmnetNoDHCP {
-		vmnet.VmnetNetworkConfigurationDisableDhcp(config)
+		vmnet.NetworkConfigurationDisableDhcp(config)
 	}
 	if nicConfig.VmnetNoNAT {
-		vmnet.VmnetNetworkConfigurationDisableNat44(config)
+		vmnet.NetworkConfigurationDisableNat44(config)
 	}
 
 	netStatus := vmnet.VMNET_SUCCESS
-	netPtr := vmnet.VmnetNetworkCreate(config, &netStatus)
+	netPtr := vmnet.NetworkCreate(config, &netStatus)
 	if netPtr == nil || netStatus != vmnet.VMNET_SUCCESS {
 		return NIC{}, weaveerrors.ErrGeneric(
 			"failed to create vmnet network (status %s); the vmnet engine requires "+
