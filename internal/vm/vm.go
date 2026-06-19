@@ -7,7 +7,7 @@
 //   - Generated *CompletionHandler bindings panic under purego, so every
 //     async call builds its block manually (see fetcher.go for the pattern).
 //   - All VZVirtualMachine access is dispatched to the main queue via
-//     dispatch.RunOnMainThread (bindings/runtime/cgo), matching the @MainActor annotations.
+//     mainthread.Do (opinionated/custom/mainthread), matching the @MainActor annotations.
 //go:build darwin
 
 package vm
@@ -47,8 +47,8 @@ import (
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
@@ -256,7 +256,7 @@ func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
 // attachVirtualMachine creates the VZVirtualMachine on the main queue and
 // installs the delegate (Swift: VZVirtualMachine(configuration:) + delegate).
 func (vm *VM) attachVirtualMachine() {
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfiguration(vm.Configuration.Unwrap())
 
 		delegateID := purego.ID(vmDelegateClass()).Send(purego.RegisterName("new"))
@@ -370,7 +370,7 @@ func (vm *VM) InFinalState() bool {
 
 func (vm *VM) machineState() idiomatic.VZVirtualMachineState {
 	var state idiomatic.VZVirtualMachineState
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		state = vm.VirtualMachine.State()
 	})
 	return state
@@ -485,7 +485,7 @@ func loadMacOSRestoreImage(ctx context.Context, ipswPath string) (*idiomatic.Mac
 // install ports VM.install(_:): runs VZMacOSInstaller with progress logging.
 func (vm *VM) install(ctx context.Context, ipswPath string) error {
 	var installer *idiomatic.MacOSInstaller
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		installer = idiomatic.NewMacOSInstallerWithVirtualMachineRestoreImageURL(
 			vm.VirtualMachine.Unwrap(), ipswPath)
 	})
@@ -502,7 +502,7 @@ func (vm *VM) install(ctx context.Context, ipswPath string) error {
 			errCh <- nil
 		}
 	})
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		installer.ID().Send(purego.RegisterName("installWithCompletionHandler:"), block)
 	})
 
@@ -562,7 +562,7 @@ func (vm *VM) Start(recovery bool, shouldResume bool) error {
 // interface used by ControlSocket.
 func (vm *VM) Connect(ctx context.Context, toPort uint32) (*idiomatic.VirtioSocketConnection, error) {
 	var socketDeviceID purego.ID
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		devices := vm.VirtualMachine.SocketDevices()
 		if len(devices) > 0 {
 			socketDeviceID = devices[0].ID()
@@ -591,7 +591,7 @@ func (vm *VM) Connect(ctx context.Context, toPort uint32) (*idiomatic.VirtioSock
 		}
 		resultCh <- result{connection: idiomatic.VirtioSocketConnectionFromID(purego.Retain(connectionID))}
 	})
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		socketDeviceID.Send(purego.RegisterName("connectToPort:completionHandler:"), toPort, block)
 	})
 
@@ -640,7 +640,7 @@ func (vm *VM) startMachine(recovery bool) error {
 		}
 	})
 
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		startOptions := idiomatic.NewMacOSVirtualMachineStartOptions()
 		startOptions.SetStartUpFromMacOSRecovery(recovery)
 		vm.VirtualMachine.ID().Send(
@@ -669,7 +669,7 @@ func (vm *VM) SendErrorCompletion(selector string) error {
 			errCh <- nil
 		}
 	})
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		vm.VirtualMachine.ID().Send(purego.RegisterName(selector), block)
 	})
 	return <-errCh

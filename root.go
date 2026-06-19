@@ -1,6 +1,5 @@
-// Port of tart's Root.swift command dispatch (the ArgumentParser
-// configuration becomes hand-rolled flag.FlagSet parsing with interleaved
-// positional arguments).
+// Command dispatcher (the ArgumentParser configuration becomes hand-rolled
+// flag.FlagSet parsing with interleaved positional arguments).
 //go:build darwin
 
 package main

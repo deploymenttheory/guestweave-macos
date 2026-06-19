@@ -7,8 +7,8 @@
 package vm
 
 import (
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
 
 // startMachineWithRecoveryPrivateAPI ports the VZVirtualMachine.start(_
@@ -32,7 +32,7 @@ func (vm *VM) startMachineWithRecoveryPrivateAPI(recovery bool) error {
 		}
 	})
 
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		options := purego.ID(purego.GetClass("_VZVirtualMachineStartOptions")).Send(purego.RegisterName("new"))
 		options.Send(purego.RegisterName("setBootMacOSRecovery:"), recovery)
 		vm.VirtualMachine.ID().Send(

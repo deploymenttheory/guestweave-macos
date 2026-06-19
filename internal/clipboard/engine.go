@@ -33,7 +33,7 @@ import (
 	weavessh "github.com/deploymenttheory/weave/internal/ssh"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
 
 const (
@@ -126,7 +126,7 @@ func (e *Engine) Run(ctx context.Context) {
 // clipboard so nothing is synced at startup.
 func (e *Engine) initHostState() {
 	var payload wire.Payload
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		e.lastHostChangeCount = macpb.ChangeCount()
 		payload = macpb.Read(e.allowedSet, e.policy.MaxBytes())
 	})
@@ -195,20 +195,20 @@ func (e *Engine) sync(ctx context.Context) {
 
 func hostChangeCount() uint64 {
 	var cc uint64
-	dispatch.RunOnMainThread(func() { cc = macpb.ChangeCount() })
+	mainthread.Do(func() { cc = macpb.ChangeCount() })
 	return cc
 }
 
 func (e *Engine) captureHost() wire.Payload {
 	var payload wire.Payload
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		payload = macpb.Read(e.allowedSet, e.policy.MaxBytes())
 	})
 	return payload
 }
 
 func (e *Engine) applyHost(payload wire.Payload) {
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		_ = macpb.Write(payload, e.stageDir)
 		e.lastHostChangeCount = macpb.ChangeCount()
 	})

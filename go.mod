@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/deploymenttheory/go-bindings-macosplatform v0.8.2
+	github.com/deploymenttheory/go-bindings-macosplatform v0.9.0
 	github.com/getkin/kin-openapi v0.140.0
 	github.com/getsentry/sentry-go v0.47.0
 	github.com/getsentry/sentry-go/otel v0.47.0

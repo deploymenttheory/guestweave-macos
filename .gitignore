@@ -28,17 +28,6 @@
 coverage.out
 coverage.html
 
-# Python virtual environments
-scripts/python/venv/
-
-# Python cache and compiled files
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyo
-.pytest_cache/
-*.egg-info/
-
 # AI instructions
 .claude
 .cursor
@@ -48,5 +37,17 @@ __pycache__/
 *.exe
 *.dylib
 *.so
-# compiled CLI binary (guestweave)
+
+# Compiled `go build` outputs of this module's main packages. Root-anchored so
+# they never shadow like-named source dirs (cmd/weave-guestd) or the embedded
+# agent assets (internal/guestweaveagent/agentbin/dist/weave-guestd-*).
+#   .                                      -> weave (default) / guestweave (-o)
+#   internal/acceptance                    -> acceptance
+#   internal/guestweaveagent/cmd/weave-guestd -> weave-guestd
+/weave
 /guestweave
+/acceptance
+/weave-guestd
+# ...and if built from inside their own package directories:
+/internal/acceptance/acceptance
+/internal/guestweaveagent/cmd/weave-guestd/weave-guestd
