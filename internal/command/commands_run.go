@@ -20,10 +20,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/unattended"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-
+	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
+	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/weave/internal/clipboard"
 	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
@@ -32,6 +32,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/fetcher"
 	"github.com/deploymenttheory/weave/internal/fsutil"
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
+	"github.com/deploymenttheory/weave/internal/logging"
 	"github.com/deploymenttheory/weave/internal/macaddress"
 	weavenetwork "github.com/deploymenttheory/weave/internal/network"
 	"github.com/deploymenttheory/weave/internal/objcutil"
@@ -41,15 +42,12 @@ import (
 	"github.com/deploymenttheory/weave/internal/telemetry"
 	"github.com/deploymenttheory/weave/internal/terminal"
 	"github.com/deploymenttheory/weave/internal/ui"
+	"github.com/deploymenttheory/weave/internal/unattended"
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
+	"github.com/deploymenttheory/weave/internal/vmconfig"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
-	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // vm ports tart's global `var vm: VM?` from Run.swift.
@@ -57,7 +55,9 @@ var vm *weavevm.VM
 
 // parseDiskImageSynchronizationMode ports the VZDiskImageSynchronizationMode
 // init(_ description:) extension.
-func parseDiskImageSynchronizationMode(description string) (idvirt.VZDiskImageSynchronizationMode, error) {
+func parseDiskImageSynchronizationMode(
+	description string,
+) (idvirt.VZDiskImageSynchronizationMode, error) {
 	switch description {
 	case "none":
 		return idvirt.VZDiskImageSynchronizationModeNone, nil
@@ -66,7 +66,10 @@ func parseDiskImageSynchronizationMode(description string) (idvirt.VZDiskImageSy
 	case "full", "":
 		return idvirt.VZDiskImageSynchronizationModeFull, nil
 	default:
-		return 0, weaveerrors.ErrVMConfigurationError("unsupported disk image synchronization mode: %q", description)
+		return 0, weaveerrors.ErrVMConfigurationError(
+			"unsupported disk image synchronization mode: %q",
+			description,
+		)
 	}
 }
 
@@ -79,7 +82,10 @@ func parseDiskSynchronizationMode(description string) (idvirt.VZDiskSynchronizat
 	case "full", "":
 		return idvirt.VZDiskSynchronizationModeFull, nil
 	default:
-		return 0, weaveerrors.ErrVMConfigurationError("unsupported disk synchronization mode: %q", description)
+		return 0, weaveerrors.ErrVMConfigurationError(
+			"unsupported disk synchronization mode: %q",
+			description,
+		)
 	}
 }
 
@@ -96,7 +102,10 @@ func parseDiskImageCachingMode(description string) (idvirt.VZDiskImageCachingMod
 	case "":
 		return 0, false, nil
 	default:
-		return 0, false, weaveerrors.ErrVMConfigurationError("unsupported disk image caching mode: %q", description)
+		return 0, false, weaveerrors.ErrVMConfigurationError(
+			"unsupported disk image caching mode: %q",
+			description,
+		)
 	}
 }
 
@@ -182,7 +191,9 @@ func (c *RunCommand) Validate() error {
 		netFlags++
 	}
 	if netFlags > 1 {
-		return weaveerrors.ErrGeneric("--net-bridged, --net-softnet and --net-host are mutually exclusive")
+		return weaveerrors.ErrGeneric(
+			"--net-bridged, --net-softnet and --net-host are mutually exclusive",
+		)
 	}
 
 	// The high-level --net-profile, the primitive --net-device list, and the
@@ -200,13 +211,18 @@ func (c *RunCommand) Validate() error {
 		surfaces++
 	}
 	if surfaces > 1 {
-		return weaveerrors.ErrGeneric("--net-profile, --net-device and the legacy --net-* flags are mutually exclusive")
+		return weaveerrors.ErrGeneric(
+			"--net-profile, --net-device and the legacy --net-* flags are mutually exclusive",
+		)
 	}
 
 	// Fail fast on a bad profile name or --net-device spec, before the heavy
 	// VM boot, by resolving them up front.
 	if c.NetProfile != "" {
-		if _, err := weavenetwork.ExpandProfile(c.NetProfile, weavenetwork.ProfileOptions{}); err != nil {
+		if _, err := weavenetwork.ExpandProfile(
+			c.NetProfile,
+			weavenetwork.ProfileOptions{},
+		); err != nil {
 			return err
 		}
 	}
@@ -221,15 +237,21 @@ func (c *RunCommand) Validate() error {
 	}
 
 	if (c.NoGraphics || c.VNC || c.VNCExperimental) && c.CaptureSystemKeys {
-		return weaveerrors.ErrGeneric("--captures-system-keys can only be used with the default VM view")
+		return weaveerrors.ErrGeneric(
+			"--captures-system-keys can only be used with the default VM view",
+		)
 	}
 
 	if c.Nested {
 		if !weaveplatform.MacOSAtLeast(15) {
-			return weaveerrors.ErrGeneric("Nested virtualization is supported on hosts starting with macOS 15 (Sequoia), and later.")
+			return weaveerrors.ErrGeneric(
+				"Nested virtualization is supported on hosts starting with macOS 15 (Sequoia), and later.",
+			)
 		}
 		if !idvirt.IsNestedVirtualizationSupported() {
-			return weaveerrors.ErrGeneric("Nested virtualization is available for Mac with the M3 chip, and later.")
+			return weaveerrors.ErrGeneric(
+				"Nested virtualization is available for Mac with the M3 chip, and later.",
+			)
 		}
 	}
 
@@ -281,7 +303,9 @@ func (c *RunCommand) Validate() error {
 
 	for _, disk := range c.Disk {
 		if strings.HasSuffix(disk, "-amd64.iso") {
-			return weaveerrors.ErrGeneric("Seems you have a disk targeting x86 architecture (hence amd64 in the name). Please use an 'arm64' version of the disk.")
+			return weaveerrors.ErrGeneric(
+				"Seems you have a disk targeting x86 architecture (hence amd64 in the name). Please use an 'arm64' version of the disk.",
+			)
 		}
 	}
 
@@ -306,7 +330,10 @@ func (c *RunCommand) RunMainThread() error {
 		return err
 	}
 	if !vmConfig.DiskFormat.IsSupported() {
-		return weaveerrors.ErrGeneric("Disk format '%s' is not supported on this system.", vmConfig.DiskFormat)
+		return weaveerrors.ErrGeneric(
+			"Disk format '%s' is not supported on this system.",
+			vmConfig.DiskFormat,
+		)
 	}
 
 	c.resolveClipboard(vmConfig)
@@ -520,7 +547,12 @@ func (c *RunCommand) RunMainThread() error {
 // driveVM ports the inner Task of Run.runOnMainThread(): restores a
 // snapshot if present, starts the VM, brings up VNC and the control socket,
 // then waits for the VM to finish.
-func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStorageLocal, vmDir *vmdirectory.VMDirectory, vncImpl weavevnc.VNC) {
+func (c *RunCommand) driveVM(
+	ctx context.Context,
+	localStorage *vmstorage.VMStorageLocal,
+	vmDir *vmdirectory.VMDirectory,
+	vncImpl weavevnc.VNC,
+) {
 	fail := func(err error) {
 		fmt.Fprintln(os.Stderr, err)
 		telemetry.OTelShared().Flush()
@@ -612,8 +644,17 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 			if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
 				if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
 					if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
-						go screenviewer.StreamVNCToViewer(ctx, match[2], viewerPort, match[1], server)
-						fmt.Printf("View-only screen: open %s in a browser to watch (no input reaches the VM).\n", server.URL())
+						go screenviewer.StreamVNCToViewer(
+							ctx,
+							match[2],
+							viewerPort,
+							match[1],
+							server,
+						)
+						fmt.Printf(
+							"View-only screen: open %s in a browser to watch (no input reaches the VM).\n",
+							server.URL(),
+						)
 						screenviewer.OpenInBrowser(server.URL())
 					}
 				}
@@ -713,7 +754,11 @@ func isOn(value string) bool {
 
 func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context.CancelFunc) {
 	if !weaveplatform.MacOSAtLeast(14) {
-		fmt.Println(weaveerrors.ErrSuspendFailed("this functionality is only supported on macOS 14 (Sonoma) or newer"))
+		fmt.Println(
+			weaveerrors.ErrSuspendFailed(
+				"this functionality is only supported on macOS 14 (Sonoma) or newer",
+			),
+		)
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
 	}
@@ -740,8 +785,14 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 	cancelRun()
 }
 
-func createSerialPortConfiguration(ttyRead *foundation.FileHandle, ttyWrite *foundation.FileHandle) idvirt.SerialPortConfigurationProvider {
-	attachment := idvirt.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(ttyRead.Unwrap(), ttyWrite.Unwrap())
+func createSerialPortConfiguration(
+	ttyRead *foundation.FileHandle,
+	ttyWrite *foundation.FileHandle,
+) idvirt.SerialPortConfigurationProvider {
+	attachment := idvirt.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(
+		ttyRead.Unwrap(),
+		ttyWrite.Unwrap(),
+	)
 	return idvirt.NewVirtioConsoleDeviceSerialPortConfiguration().WithAttachment(attachment)
 }
 
@@ -767,8 +818,11 @@ func (c *RunCommand) resolveNICs(vmDir *vmdirectory.VMDirectory) ([]vmconfig.NIC
 		nics := make([]vmconfig.NICConfig, 0, len(c.NetBridged))
 		for i, name := range c.NetBridged {
 			if _, found := weavenetwork.FindBridgedInterface(name); !found {
-				return nil, weaveerrors.ErrGeneric("no bridge interfaces matched %q, available interfaces: %s",
-					name, strings.Join(weavenetwork.BridgeInterfaces(), ", "))
+				return nil, weaveerrors.ErrGeneric(
+					"no bridge interfaces matched %q, available interfaces: %s",
+					name,
+					strings.Join(weavenetwork.BridgeInterfaces(), ", "),
+				)
 			}
 			nics = append(nics, vmconfig.NICConfig{
 				Mode:             vmconfig.NICModeBridged,
@@ -856,8 +910,12 @@ func (c *RunCommand) usbMassStorageDevices() ([]idvirt.StorageDeviceConfiguratio
 		if err != nil {
 			return nil, err
 		}
-		configurations = append(configurations,
-			idvirt.NewUSBMassStorageDeviceConfigurationWithAttachment(&attachment.Unwrap().VZStorageDeviceAttachment))
+		configurations = append(
+			configurations,
+			idvirt.NewUSBMassStorageDeviceConfigurationWithAttachment(
+				&attachment.Unwrap().VZStorageDeviceAttachment,
+			),
+		)
 	}
 	return configurations, nil
 }
@@ -908,11 +966,17 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 		}
 
 		nbdAttachment, err := idvirt.NewNetworkBlockDeviceStorageDeviceAttachmentWithURLTimeoutForcedReadOnlySynchronizationModeError(
-			diskPath, 30, options.readOnly, syncMode)
+			diskPath,
+			30,
+			options.readOnly,
+			syncMode,
+		)
 		if err != nil {
 			return nil, err
 		}
-		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&nbdAttachment.Unwrap().VZStorageDeviceAttachment), nil
+		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
+			&nbdAttachment.Unwrap().VZStorageDeviceAttachment,
+		), nil
 	}
 
 	// Expand the tilde (~) since at this point we're dealing with a local
@@ -933,9 +997,18 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 		if err != nil {
 			switch {
 			case errors.Is(err, syscall.EBUSY):
-				return nil, weaveerrors.ErrFailedToOpenBlockDevice(expandedDiskPath, "already in use, try umounting it via \"diskutil unmountDisk\" (when the whole disk) or \"diskutil umount\" (when mounting a single partition)")
+				return nil, weaveerrors.ErrFailedToOpenBlockDevice(
+					expandedDiskPath,
+					"already in use, try umounting it via \"diskutil unmountDisk\" (when the whole disk) or \"diskutil umount\" (when mounting a single partition)",
+				)
 			case errors.Is(err, syscall.EACCES):
-				return nil, weaveerrors.ErrFailedToOpenBlockDevice(expandedDiskPath, fmt.Sprintf("permission denied, consider changing the disk's owner using \"sudo chown $USER %s\" or run Weave as a superuser (see --disk help for more details on how to do that correctly)", expandedDiskPath))
+				return nil, weaveerrors.ErrFailedToOpenBlockDevice(
+					expandedDiskPath,
+					fmt.Sprintf(
+						"permission denied, consider changing the disk's owner using \"sudo chown $USER %s\" or run Weave as a superuser (see --disk help for more details on how to do that correctly)",
+						expandedDiskPath,
+					),
+				)
 			default:
 				return nil, weaveerrors.ErrFailedToOpenBlockDevice(expandedDiskPath, err.Error())
 			}
@@ -943,11 +1016,16 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 
 		fileHandle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(fd, true)
 		blockAttachment, err := idvirt.NewDiskBlockDeviceStorageDeviceAttachmentWithFileHandleReadOnlySynchronizationModeError(
-			fileHandle.Unwrap(), options.readOnly, syncMode)
+			fileHandle.Unwrap(),
+			options.readOnly,
+			syncMode,
+		)
 		if err != nil {
 			return nil, err
 		}
-		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&blockAttachment.Unwrap().VZStorageDeviceAttachment), nil
+		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
+			&blockAttachment.Unwrap().VZStorageDeviceAttachment,
+		), nil
 	}
 
 	// Support remote VM names in the --disk command-line argument.
@@ -986,7 +1064,9 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 		if err != nil {
 			return nil, err
 		}
-		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&diskImageAttachment.Unwrap().VZStorageDeviceAttachment), nil
+		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
+			&diskImageAttachment.Unwrap().VZStorageDeviceAttachment,
+		), nil
 	}
 
 	// Error out if the disk is locked by the host (e.g. it was mounted in
@@ -997,7 +1077,10 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 			acquired, lockErr := diskLock.Trylock()
 			if lockErr == nil && !acquired {
 				_ = diskLock.Close()
-				return nil, weaveerrors.ErrDiskAlreadyInUse("disk %s seems to be already in use, unmount it first in Finder", expandedDiskPath)
+				return nil, weaveerrors.ErrDiskAlreadyInUse(
+					"disk %s seems to be already in use, unmount it first in Finder",
+					expandedDiskPath,
+				)
 			}
 			_ = diskLock.Close()
 		}
@@ -1015,11 +1098,17 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 	}
 
 	diskImageAttachment, err := idvirt.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyCachingModeSynchronizationModeError(
-		expandedDiskPath, options.readOnly, cachingMode, imageSyncMode)
+		expandedDiskPath,
+		options.readOnly,
+		cachingMode,
+		imageSyncMode,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&diskImageAttachment.Unwrap().VZStorageDeviceAttachment), nil
+	return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
+		&diskImageAttachment.Unwrap().VZStorageDeviceAttachment,
+	), nil
 }
 
 // parseAdditionalDiskOptions ports AdditionalDisk.parseOptions(_:).
@@ -1096,12 +1185,18 @@ func parseSharedDirectoryShare(parseFrom string) (directoryShare, error) {
 		case "rw":
 			share.readOnly = false
 		default:
-			return share, weaveerrors.ErrGeneric("invalid --shared-dir format: expected <path>[:ro|rw], got %q", parseFrom)
+			return share, weaveerrors.ErrGeneric(
+				"invalid --shared-dir format: expected <path>[:ro|rw], got %q",
+				parseFrom,
+			)
 		}
 		path = prefix
 	}
 	if path == "" {
-		return share, weaveerrors.ErrGeneric("invalid --shared-dir format: expected <path>[:ro|rw], got %q", parseFrom)
+		return share, weaveerrors.ErrGeneric(
+			"invalid --shared-dir format: expected <path>[:ro|rw], got %q",
+			parseFrom,
+		)
 	}
 	share.path = objcutil.ExpandTilde(path)
 	return share, nil
@@ -1157,9 +1252,13 @@ func (c *RunCommand) directoryShares() ([]idvirt.DirectorySharingDeviceConfigura
 			if err != nil {
 				return nil, err
 			}
-			sharingDevice.WithShare(idvirt.NewSingleDirectoryShareWithDirectory(sharedDirectory.Unwrap()))
+			sharingDevice.WithShare(
+				idvirt.NewSingleDirectoryShareWithDirectory(sharedDirectory.Unwrap()),
+			)
 		} else if !allNamedShares {
-			return nil, weaveerrors.ErrGeneric("invalid --dir syntax: for multiple directory shares each one of them should be named")
+			return nil, weaveerrors.ErrGeneric(
+				"invalid --dir syntax: for multiple directory shares each one of them should be named",
+			)
 		} else {
 			directories := foundation.NewMutableDictionary()
 			for _, share := range shares {
@@ -1293,9 +1392,17 @@ func (c *RunCommand) rosettaDirectoryShare() ([]idvirt.DirectorySharingDeviceCon
 
 	switch idvirt.Availability() {
 	case idvirt.VZLinuxRosettaAvailabilityNotInstalled:
-		return nil, &weavevm.UnsupportedOSError{What: "Rosetta directory share", Plural: "is", Requires: "that have Rosetta installed"}
+		return nil, &weavevm.UnsupportedOSError{
+			What:     "Rosetta directory share",
+			Plural:   "is",
+			Requires: "that have Rosetta installed",
+		}
 	case idvirt.VZLinuxRosettaAvailabilityNotSupported:
-		return nil, &weavevm.UnsupportedOSError{What: "Rosetta directory share", Plural: "is", Requires: "running Apple silicon"}
+		return nil, &weavevm.UnsupportedOSError{
+			What:     "Rosetta directory share",
+			Plural:   "is",
+			Requires: "running Apple silicon",
+		}
 	}
 
 	if _, err := idvirt.ValidateTagError(c.RosettaTag); err != nil {

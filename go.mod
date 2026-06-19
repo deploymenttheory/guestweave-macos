@@ -31,7 +31,9 @@ require (
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
+	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect

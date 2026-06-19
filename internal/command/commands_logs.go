@@ -35,7 +35,9 @@ func (c *LogsCommand) Validate() error {
 	case "info", "error", "all":
 		return nil
 	default:
-		return weaveerrors.ErrGeneric("usage: weave logs <info|error|all> [--lines N] [-f] | weave logs clear")
+		return weaveerrors.ErrGeneric(
+			"usage: weave logs <info|error|all> [--lines N] [-f] | weave logs clear",
+		)
 	}
 }
 
@@ -43,10 +45,16 @@ func (c *LogsCommand) LogFiles() []struct{ Path, Prefix string } {
 	dir := logging.LogsDir()
 	var files []struct{ Path, Prefix string }
 	if c.Type == "info" || c.Type == "all" {
-		files = append(files, struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileInfoName), "INFO: "})
+		files = append(
+			files,
+			struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileInfoName), "INFO: "},
+		)
 	}
 	if c.Type == "error" || c.Type == "all" {
-		files = append(files, struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileErrorName), "ERROR: "})
+		files = append(
+			files,
+			struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileErrorName), "ERROR: "},
+		)
 	}
 	// Prefixes only make sense when interleaving both files.
 	if c.Type != "all" {

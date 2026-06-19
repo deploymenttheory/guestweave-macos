@@ -243,7 +243,9 @@ func (c *ConfigCommand) runLogging(settings *weaveconfig.Settings, args []string
 		}
 		mb, err := strconv.Atoi(args[1])
 		if err != nil || mb < 0 {
-			return weaveerrors.ErrGeneric("maxSizeMB must be a non-negative integer (0 = unlimited)")
+			return weaveerrors.ErrGeneric(
+				"maxSizeMB must be a non-negative integer (0 = unlimited)",
+			)
 		}
 		if settings.Logging == nil {
 			settings.Logging = &weaveconfig.LoggingSettings{}
@@ -279,7 +281,9 @@ func (c *ConfigCommand) runLogging(settings *weaveconfig.Settings, args []string
 
 func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []string) error {
 	if len(args) == 0 {
-		return weaveerrors.ErrGeneric("usage: weave config registry <status|ghcr|list|add|remove|default> ...")
+		return weaveerrors.ErrGeneric(
+			"usage: weave config registry <status|ghcr|list|add|remove|default> ...",
+		)
 	}
 
 	switch args[0] {
@@ -298,7 +302,14 @@ func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []strin
 			if profile.IsInsecure {
 				insecure = " (insecure)"
 			}
-			fmt.Printf("%s %-16s %s/%s%s\n", marker, profile.Name, profile.Host, profile.Organization, insecure)
+			fmt.Printf(
+				"%s %-16s %s/%s%s\n",
+				marker,
+				profile.Name,
+				profile.Host,
+				profile.Organization,
+				insecure,
+			)
 		}
 		return nil
 
@@ -313,7 +324,9 @@ func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []strin
 			return err
 		}
 		if len(positionals) != 1 || *organization == "" {
-			return weaveerrors.ErrGeneric("usage: weave config registry add <name> --organization <org> [--host ghcr.io] [--insecure] [--default]")
+			return weaveerrors.ErrGeneric(
+				"usage: weave config registry add <name> --organization <org> [--host ghcr.io] [--insecure] [--default]",
+			)
 		}
 		name := positionals[0]
 
@@ -422,7 +435,9 @@ func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []strin
 		return nil
 
 	default:
-		return weaveerrors.ErrGeneric("usage: weave config registry <status|ghcr|list|add|remove|default> ...")
+		return weaveerrors.ErrGeneric(
+			"usage: weave config registry <status|ghcr|list|add|remove|default> ...",
+		)
 	}
 }
 

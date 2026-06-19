@@ -4,7 +4,7 @@
 // outlive the request that started it (the same reason lume detaches).
 //go:build darwin
 
-package mcp
+package vmservice
 
 import (
 	"context"
@@ -14,16 +14,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-
 	weavecommand "github.com/deploymenttheory/weave/internal/command"
 	"github.com/deploymenttheory/weave/internal/macaddress"
+	"github.com/deploymenttheory/weave/internal/vmconfig"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 )
 
-// collectVMInfos returns the structured listing for local and/or OCI VMs.
+// CollectVMInfos returns the structured listing for local and/or OCI VMs.
 // source is "", "local" or "oci"; dates are RFC 3339.
-func collectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
+func CollectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
 	command := &weavecommand.ListCommand{Source: source, Format: weavecommand.FormatJSON}
 
 	var infos []weavecommand.ListVMInfo
@@ -68,8 +67,8 @@ func collectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
 	return infos, nil
 }
 
-// vmDetailsResponse is the GET /weave/vms/{name} shape (lume's VMDetails).
-type vmDetailsResponse struct {
+// VMDetails is the GET /weave/vms/{name} shape (lume's VMDetails).
+type VMDetails struct {
 	Name       string `json:"name"`
 	OS         string `json:"os"`
 	CPU        int    `json:"cpu"`
@@ -82,36 +81,36 @@ type vmDetailsResponse struct {
 	IPAddress  string `json:"ipAddress,omitempty"`
 }
 
-// collectVMDetails returns details for one local VM, including a
+// CollectVMDetails returns details for one local VM, including a
 // best-effort IP lookup when the VM is running.
-func collectVMDetails(ctx context.Context, name string) (vmDetailsResponse, error) {
+func CollectVMDetails(ctx context.Context, name string) (VMDetails, error) {
 	storage, err := vmstorage.NewVMStorageLocal()
 	if err != nil {
-		return vmDetailsResponse{}, err
+		return VMDetails{}, err
 	}
 	vmDir, err := storage.Open(name)
 	if err != nil {
-		return vmDetailsResponse{}, err
+		return VMDetails{}, err
 	}
 	vmConfig, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
-		return vmDetailsResponse{}, err
+		return VMDetails{}, err
 	}
 
 	diskGB, err := vmDir.SizeGB()
 	if err != nil {
-		return vmDetailsResponse{}, err
+		return VMDetails{}, err
 	}
 	running, err := vmDir.Running()
 	if err != nil {
-		return vmDetailsResponse{}, err
+		return VMDetails{}, err
 	}
 	state, err := vmDir.State()
 	if err != nil {
-		return vmDetailsResponse{}, err
+		return VMDetails{}, err
 	}
 
-	details := vmDetailsResponse{
+	details := VMDetails{
 		Name:       name,
 		OS:         string(vmConfig.OS),
 		CPU:        vmConfig.CPUCount,
@@ -125,7 +124,14 @@ func collectVMDetails(ctx context.Context, name string) (vmDetailsResponse, erro
 
 	if running {
 		if mac, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String()); ok {
-			if ip, found, err := macaddress.ResolveIP(ctx, mac, macaddress.IPResolutionStrategyDHCP, 0, vmDir.ControlSocketURL()); err == nil && found {
+			if ip, found, err := macaddress.ResolveIP(
+				ctx,
+				mac,
+				macaddress.IPResolutionStrategyDHCP,
+				0,
+				vmDir.ControlSocketURL(),
+			); err == nil &&
+				found {
 				details.IPAddress = ip.String()
 			}
 		}
@@ -133,9 +139,9 @@ func collectVMDetails(ctx context.Context, name string) (vmDetailsResponse, erro
 	return details, nil
 }
 
-// spawnDetachedRun starts "weave run <name> <extraArgs...>" in its own
+// SpawnDetachedRun starts "weave run <name> <extraArgs...>" in its own
 // session so it survives the calling request/server.
-func spawnDetachedRun(name string, extraArgs []string) error {
+func SpawnDetachedRun(name string, extraArgs []string) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -156,9 +162,9 @@ func spawnDetachedRun(name string, extraArgs []string) error {
 	return nil
 }
 
-// waitForVMRunning polls until the VM reports running or the timeout
+// WaitForVMRunning polls until the VM reports running or the timeout
 // elapses; used by handlers that spawn a detached run.
-func waitForVMRunning(ctx context.Context, name string, timeout time.Duration) error {
+func WaitForVMRunning(ctx context.Context, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
 		storage, err := vmstorage.NewVMStorageLocal()

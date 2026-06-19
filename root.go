@@ -15,8 +15,8 @@ import (
 	"github.com/deploymenttheory/weave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/mcp"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	"github.com/deploymenttheory/weave/internal/serve"
 )
 
 // commandRunner is the common surface of all ported commands.
@@ -338,7 +338,7 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		command.Resolver = strategy
 		positionals := fs.Args()
 		if len(positionals) == 0 {
-			return name, nil, weaveerrors.ErrGeneric("usage: weave ssh [--user admin] [--password admin] [--timeout 60] <name> [command...]")
+			return name, nil, weaveerrors.ErrGeneric("usage: weave ssh [--user weave] [--password weave] [--timeout 60] <name> [command...]")
 		}
 		command.Name = positionals[0]
 		command.Command = positionals[1:]
@@ -514,7 +514,7 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		return name, command, command.Validate()
 
 	case "serve":
-		command := &mcp.ServeCommand{}
+		command := &serve.ServeCommand{}
 		fs := weavecommand.NewFlagSet(name)
 		port := fs.Uint("port", 7777, "")
 		fs.BoolVar(&command.MCP, "mcp", false, "")
