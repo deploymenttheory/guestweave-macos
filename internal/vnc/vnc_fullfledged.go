@@ -15,8 +15,8 @@ import (
 	"github.com/deploymenttheory/weave/internal/passphrase"
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
 
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
 
 // FullFledgedVNC ports tart's FullFledgedVNC class.
@@ -37,7 +37,7 @@ func NewFullFledgedVNC(vm *weavevm.VM, password string) *FullFledgedVNC {
 	}
 
 	var vnc purego.ID
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		securityConfiguration := purego.ID(purego.GetClass("_VZVNCAuthenticationSecurityConfiguration")).
 			Send(purego.RegisterName("alloc")).
 			Send(purego.RegisterName("initWithPassword:"), purego.NSString(password))
@@ -58,7 +58,7 @@ func (v *FullFledgedVNC) WaitForURL(ctx context.Context, netBridged bool) (strin
 	for {
 		// Port is 0 shortly after start(), but will be initialized later.
 		var port uint16
-		dispatch.RunOnMainThread(func() {
+		mainthread.Do(func() {
 			port = purego.Send[uint16](v.vnc, purego.RegisterName("port"))
 		})
 		if port != 0 {
@@ -75,7 +75,7 @@ func (v *FullFledgedVNC) WaitForURL(ctx context.Context, netBridged bool) (strin
 }
 
 func (v *FullFledgedVNC) Stop() error {
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		v.vnc.Send(purego.RegisterName("stop"))
 	})
 	return nil

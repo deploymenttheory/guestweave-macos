@@ -1,7 +1,7 @@
 // Package macpb is the macOS NSPasteboard read/write shared by the host engine
 // and the guest agent's darwin backend. It is threading-agnostic: callers that
 // need main-thread affinity (the host engine) wrap these calls in
-// dispatch.RunOnMainThread; the guest CLI agent calls them directly.
+// mainthread.Do; the guest CLI agent calls them directly.
 //go:build darwin
 
 package macpb

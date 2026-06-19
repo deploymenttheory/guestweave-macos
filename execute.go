@@ -25,7 +25,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/telemetry"
 	"github.com/deploymenttheory/weave/internal/terminal"
 
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -105,7 +105,7 @@ func run() {
 			telemetry.OTelShared().Flush()
 			os.Exit(0)
 		default:
-			dispatch.PumpMainRunLoop(0.05)
+			mainthread.PumpMainRunLoop(0.05)
 		}
 	}
 }

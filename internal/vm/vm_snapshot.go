@@ -8,8 +8,8 @@ package vm
 import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
 
 // restoreMachineStateFrom / saveMachineStateTo bridge the macOS 14 snapshot
@@ -34,7 +34,7 @@ func (vm *VM) sendURLErrorCompletion(selector string, path string) error {
 	// Keep the bridged NSURL alive across the async send by capturing it in the
 	// closure.
 	url := objcutil.NSURLFromPath(path)
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		vm.VirtualMachine.ID().Send(purego.RegisterName(selector), url.ID(), block)
 	})
 	return <-errCh

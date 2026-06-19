@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/weave/internal/clipboard"
@@ -521,7 +521,7 @@ func (c *RunCommand) RunMainThread() error {
 	go func() {
 		for range sigusr2 {
 			fmt.Println("Requesting guest OS to stop...")
-			dispatch.RunOnMainThread(func() {
+			mainthread.Do(func() {
 				_ = vm.VirtualMachine.RequestStop()
 			})
 		}
@@ -764,7 +764,7 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 	}
 
 	var validateErr error
-	dispatch.RunOnMainThread(func() {
+	mainthread.Do(func() {
 		validateErr = vm.Configuration.ValidateSaveRestoreSupport()
 	})
 	if validateErr == nil {
