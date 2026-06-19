@@ -17,8 +17,11 @@ COMMAND      := weave
 IDENTIFIER   := com.deploymenttheory.guestweave
 ENTITLEMENTS := entitlements.plist
 PREFIX       ?= $(HOME)/.local/bin
+SPEC         := internal/httpapi/schema/openapi.yaml
+SPEC_RULESET := internal/httpapi/schema/vacuum-ruleset.yaml
+VACUUM       ?= vacuum
 
-.PHONY: all build sign install uninstall clean
+.PHONY: all build sign install uninstall clean test-api lint-openapi acceptance-serve acceptance-api-vm
 
 all: build
 
@@ -49,3 +52,23 @@ uninstall:
 ## clean: remove the built binary.
 clean:
 	rm -f $(BINARY)
+
+## test-api: HTTP API unit tests — OpenAPI validity + router/spec drift (no VM).
+test-api:
+	go test ./internal/httpapi/...
+
+## lint-openapi: lint the OpenAPI document with vacuum.
+## Install once: go install github.com/daveshanley/vacuum@latest
+lint-openapi:
+	$(VACUUM) lint -d -r $(SPEC_RULESET) $(SPEC)
+
+## acceptance-serve: contract + live OpenAPI-conformance suite (no VM).
+acceptance-serve:
+	go run ./internal/acceptance -suites serve
+
+## acceptance-api-vm: full happy-path over HTTP against a Linux OCI guest.
+## Requires the Virtualization framework and a cached image:
+##   weave pull ghcr.io/cirruslabs/ubuntu:latest
+## Set WEAVE_ACC_API_HEAVY=1 to also exercise the export/import round-trip.
+acceptance-api-vm:
+	go run ./internal/acceptance -suites api-vm

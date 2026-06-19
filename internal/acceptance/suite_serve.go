@@ -31,6 +31,11 @@ func serveSuite() *Suite {
 				return err
 			}
 			server = bg
+			validator, err := newSpecValidator()
+			if err != nil {
+				return fmt.Errorf("building OpenAPI validator: %w", err)
+			}
+			apiSpec = validator
 			// Wait until the server answers.
 			deadline := time.Now().Add(20 * time.Second)
 			for time.Now().Before(deadline) {
@@ -42,6 +47,7 @@ func serveSuite() *Suite {
 			return fmt.Errorf("server did not become ready; output:\n%s", server.Output())
 		},
 		Teardown: func(h *Harness) {
+			apiSpec = nil
 			if server != nil {
 				server.Stop()
 			}
@@ -88,10 +94,7 @@ func serveSuite() *Suite {
 				wantStatus(t, status, 404, "unknown route")
 			}},
 			{"wrong method returns 405", func(t *T, h *Harness) {
-				status, _, err := httpDelete(base + "/weave/vms")
-				if err != nil {
-					t.Fatalf("request failed: %v", err)
-				}
+				status, _ := mustDelete(t, base+"/weave/vms")
 				wantStatus(t, status, 405, "DELETE /weave/vms")
 			}},
 
@@ -129,17 +132,11 @@ func serveSuite() *Suite {
 				wantStatus(t, status, 400, "upload without name")
 			}},
 			{"DELETE a missing VM is an error", func(t *T, h *Harness) {
-				status, _, err := httpDelete(base + "/weave/vms/ghost")
-				if err != nil {
-					t.Fatalf("request failed: %v", err)
-				}
+				status, _ := mustDelete(t, base+"/weave/vms/ghost")
 				wantError(t, status, "delete missing VM")
 			}},
 			{"PATCH a missing VM is an error", func(t *T, h *Harness) {
-				status, _, err := httpPatch(base+"/weave/vms/ghost", `{"cpu":2}`)
-				if err != nil {
-					t.Fatalf("request failed: %v", err)
-				}
+				status, _ := mustPatch(t, base+"/weave/vms/ghost", `{"cpu":2}`)
 				wantError(t, status, "patch missing VM")
 			}},
 			{"POST stop on a missing VM is an error", func(t *T, h *Harness) {
@@ -310,10 +307,7 @@ func serveSuite() *Suite {
 				status, _ = mustPost(t, base+"/weave/config/registry/profiles/default/acme", ``)
 				wantStatus(t, status, 200, "set default profile")
 
-				status, _, err := httpDelete(base + "/weave/config/registry/profiles/acme")
-				if err != nil {
-					t.Fatalf("DELETE failed: %v", err)
-				}
+				status, _ = mustDelete(t, base+"/weave/config/registry/profiles/acme")
 				wantStatus(t, status, 200, "remove profile")
 			}},
 			{"add registry profile without organization returns 400", func(t *T, h *Harness) {
@@ -337,10 +331,7 @@ func serveSuite() *Suite {
 				status, _ = mustPost(t, base+"/weave/config/locations/default/http-loc", ``)
 				wantStatus(t, status, 200, "set default location")
 
-				status, _, err := httpDelete(base + "/weave/config/locations/http-loc")
-				if err != nil {
-					t.Fatalf("DELETE failed: %v", err)
-				}
+				status, _ = mustDelete(t, base+"/weave/config/locations/http-loc")
 				wantStatus(t, status, 200, "remove location")
 			}},
 		},
@@ -389,7 +380,14 @@ func httpReq(method, url, jsonBody string) (int, string, error) {
 
 // --- assertion helpers -----------------------------------------------------
 
+// mustGet/mustPost/mustDelete/mustPatch issue the request and, when a spec
+// validator is active (set in the suite Setup), validate the response against
+// the OpenAPI document before returning.
+
 func mustGet(t *T, url string) (int, string) {
+	if apiSpec != nil {
+		return apiSpec.request(t, http.MethodGet, url, "")
+	}
 	status, body, err := httpGet(url)
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", url, err)
@@ -398,9 +396,34 @@ func mustGet(t *T, url string) (int, string) {
 }
 
 func mustPost(t *T, url, body string) (int, string) {
+	if apiSpec != nil {
+		return apiSpec.request(t, http.MethodPost, url, body)
+	}
 	status, out, err := httpPost(url, body)
 	if err != nil {
 		t.Fatalf("POST %s failed: %v", url, err)
+	}
+	return status, out
+}
+
+func mustDelete(t *T, url string) (int, string) {
+	if apiSpec != nil {
+		return apiSpec.request(t, http.MethodDelete, url, "")
+	}
+	status, out, err := httpDelete(url)
+	if err != nil {
+		t.Fatalf("DELETE %s failed: %v", url, err)
+	}
+	return status, out
+}
+
+func mustPatch(t *T, url, body string) (int, string) {
+	if apiSpec != nil {
+		return apiSpec.request(t, http.MethodPatch, url, body)
+	}
+	status, out, err := httpPatch(url, body)
+	if err != nil {
+		t.Fatalf("PATCH %s failed: %v", url, err)
 	}
 	return status, out
 }

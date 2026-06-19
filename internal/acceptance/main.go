@@ -149,6 +149,7 @@ func main() {
 		"netbehavior-macos": netBehaviorMacOSSuite,
 		"vnc":               vncSuite,
 		"serve":             serveSuite,
+		"api-vm":            apiVMSuite,
 		"mcp":               mcpSuite,
 	}
 

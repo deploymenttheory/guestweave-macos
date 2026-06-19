@@ -29,7 +29,7 @@ import (
 func (s *APIServer) handleExecWS(w http.ResponseWriter, r *http.Request) {
 	command := strings.Join(r.URL.Query()["cmd"], " ")
 	if command == "" {
-		http.Error(w, "at least one cmd query parameter is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "at least one cmd query parameter is required"})
 		return
 	}
 	s.serveSSHWebSocket(w, r, command, "weave", "weave")
@@ -66,11 +66,11 @@ func (s *APIServer) serveSSHWebSocket(
 	}
 	ip, found, err := vmservice.ResolveVMIP(r.Context(), chi.URLParam(r, "name"), resolver, wait)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeError(w, err)
 		return
 	}
 	if !found {
-		http.Error(w, "no IP address found, is the VM running?", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "no IP address found, is the VM running?"})
 		return
 	}
 
