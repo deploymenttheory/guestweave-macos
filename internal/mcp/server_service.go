@@ -18,7 +18,6 @@ import (
 
 	weavecommand "github.com/deploymenttheory/weave/internal/command"
 	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 )
 
@@ -125,7 +124,7 @@ func collectVMDetails(ctx context.Context, name string) (vmDetailsResponse, erro
 	}
 
 	if running {
-		if mac, ok := macaddress.NewMACAddress(objcutil.GoStr(vmConfig.MACAddress.String())); ok {
+		if mac, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String()); ok {
 			if ip, found, err := macaddress.ResolveIP(ctx, mac, macaddress.IPResolutionStrategyDHCP, 0, vmDir.ControlSocketURL()); err == nil && found {
 				details.IPAddress = ip.String()
 			}

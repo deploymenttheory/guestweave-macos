@@ -5,17 +5,17 @@
 package platform
 
 import (
-	"fmt"
 	"sync"
 	"syscall"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // DeviceInfoOS ports DeviceInfo.os (memoized).
 var DeviceInfoOS = sync.OnceValue(func() string {
-	osVersion := foundation.NSProcessInfoProcessInfo().OperatingSystemVersion()
-	return fmt.Sprintf("macOS %d.%d.%d", osVersion.MajorVersion, osVersion.MinorVersion, osVersion.PatchVersion)
+	version, err := syscall.Sysctl("kern.osproductversion")
+	if err != nil {
+		return "macOS unknown"
+	}
+	return "macOS " + version
 })
 
 // DeviceInfoModel ports DeviceInfo.model (memoized).

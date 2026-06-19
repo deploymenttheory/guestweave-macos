@@ -3,7 +3,7 @@ module github.com/deploymenttheory/weave
 go 1.26.2
 
 require (
-	github.com/deploymenttheory/go-bindings-macosplatform v0.2.1
+	github.com/deploymenttheory/go-bindings-macosplatform v0.5.0
 	github.com/getsentry/sentry-go v0.46.2
 	github.com/getsentry/sentry-go/otel v0.46.2
 	github.com/modelcontextprotocol/go-sdk v1.6.1
@@ -49,5 +49,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 )
-
-replace github.com/deploymenttheory/go-bindings-macosplatform => /Users/dafyddwatkins/GitHub/sdk/go-bindings-macosplatform

@@ -8,6 +8,7 @@ package vmstorage
 
 import (
 	"errors"
+	"os"
 	"slices"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/oci"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
 )
 
@@ -82,6 +82,9 @@ func missingVMWrap(name string, closure func() (*vmdirectory.VMDirectory, error)
 // when err (or any of its underlying errors) is an NSError with a Cocoa
 // file-not-found code.
 func isFileNotFound(err error) bool {
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
 	var objcErr *objcerrors.ObjCError
 	if !errors.As(err, &objcErr) {
 		return false
@@ -89,6 +92,14 @@ func isFileNotFound(err error) bool {
 	return objcErrIsFileNotFound(objcErr) || slices.ContainsFunc(objcErr.Underlying, objcErrIsFileNotFound)
 }
 
+// Cocoa file-not-found error codes (NSFileNoSuchFileError /
+// NSFileReadNoSuchFileError) for NSError-wrapped failures still arriving from
+// the raw network paths.
+const (
+	cocoaFileNoSuchFileError     = 4
+	cocoaFileReadNoSuchFileError = 260
+)
+
 func objcErrIsFileNotFound(err *objcerrors.ObjCError) bool {
-	return err.Code == foundation.NSFileNoSuchFileError || err.Code == foundation.NSFileReadNoSuchFileError
+	return err.Code == cocoaFileNoSuchFileError || err.Code == cocoaFileReadNoSuchFileError
 }

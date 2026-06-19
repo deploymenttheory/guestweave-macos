@@ -1,5 +1,5 @@
 // Port of tart's Network/Softnet.swift: VM networking through the softnet
-// helper process over a datagram socketpair. NSTask drives the process;
+// helper process over a datagram socketpair. os/exec drives the process;
 // socketpair/setsockopt/tcsetpgrp are raw syscalls.
 //go:build darwin
 
@@ -8,6 +8,8 @@ package network
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -15,20 +17,17 @@ import (
 	"github.com/deploymenttheory/weave/internal/terminal"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // buildSoftnetNIC constructs a softnet NIC: it spawns the softnet helper over a
 // datagram socketpair and wraps the VM-side file handle in a
 // VZFileHandleNetworkDeviceAttachment. The helper's lifecycle is driven by the
 // returned NIC's engine.
-func buildSoftnetNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddress) (NIC, error) {
+func buildSoftnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, error) {
 	var args []string
 	if nicConfig.SoftnetHostMode {
 		args = append(args, "--vm-net-type", "host")
@@ -43,7 +42,7 @@ func buildSoftnetNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddr
 		args = append(args, "--expose", nicConfig.SoftnetExpose)
 	}
 
-	softnet, err := NewSoftnet(objcutil.GoStr(mac.String()), args...)
+	softnet, err := NewSoftnet(mac.String(), args...)
 	if err != nil {
 		return NIC{}, err
 	}
@@ -74,7 +73,8 @@ func softnetRuntimeFailed(format string, params ...any) *SoftnetError {
 
 // Softnet ports tart's Softnet class.
 type Softnet struct {
-	task        *foundation.NSTask
+	cmd         *exec.Cmd
+	stdinFile   *os.File // child's fd-0 socket end; held to keep it open
 	monitorDone chan struct{}
 	finished    atomic.Bool
 
@@ -98,44 +98,44 @@ func NewSoftnet(vmMACAddress string, extraArguments ...string) (*Softnet, error)
 		return nil, err
 	}
 
-	executableURL, err := softnetExecutableURL()
+	executablePath, err := softnetExecutablePath()
 	if err != nil {
 		return nil, err
 	}
 
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	task.SetExecutableURL(executableURL)
+	// The helper expects the VM-side datagram socket on fd 0 (--vm-fd 0); set
+	// it as the child's stdin so exec dups softnetFD onto the child's fd 0.
 	arguments := append([]string{"--vm-fd", "0", "--vm-mac-address", vmMACAddress}, extraArguments...)
-	task.SetArguments(objcutil.NSStringArray(arguments))
-	stdinHandle := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-		InitWithFileDescriptorCloseOnDealloc(softnetFD, false)
-	task.SetStandardInput(stdinHandle.Ptr())
+	cmd := exec.Command(executablePath, arguments...)
+	stdinFile := os.NewFile(uintptr(softnetFD), "softnet-stdin")
+	cmd.Stdin = stdinFile
 
 	return &Softnet{
-		task:        task,
+		cmd:         cmd,
+		stdinFile:   stdinFile,
 		monitorDone: make(chan struct{}),
 		VMFD:        vmFD,
 	}, nil
 }
 
-// softnetExecutableURL ports Softnet.softnetExecutableURL().
-func softnetExecutableURL() (*foundation.NSURL, error) {
-	executableURL := objcutil.ResolveBinaryPath("softnet")
-	if executableURL == nil {
-		return nil, softnetInitializationFailed("softnet not found in PATH")
+// softnetExecutablePath ports Softnet.softnetExecutableURL().
+func softnetExecutablePath() (string, error) {
+	path, err := exec.LookPath("softnet")
+	if err != nil {
+		return "", softnetInitializationFailed("softnet not found in PATH")
 	}
-	return executableURL, nil
+	return path, nil
 }
 
 // Run ports Softnet.run(_:): launches the process and monitors it.
 func (s *Softnet) Run(sema *AsyncSemaphore) error {
-	if _, err := s.task.LaunchAndReturnError(); err != nil {
+	if err := s.cmd.Start(); err != nil {
 		return err
 	}
 
 	go func() {
 		// Wait for the Softnet to finish.
-		s.task.WaitUntilExit()
+		_ = s.cmd.Wait()
 
 		// Signal to the caller that the Softnet has finished.
 		sema.Signal()
@@ -155,7 +155,7 @@ func (s *Softnet) Stop() error {
 		return softnetRuntimeFailed("Softnet process terminated prematurely")
 	}
 
-	s.task.Interrupt()
+	_ = s.cmd.Process.Signal(os.Interrupt)
 	<-s.monitorDone
 	return nil
 }
@@ -176,23 +176,23 @@ func setSocketBuffers(fd int, sizeBytes int) error {
 
 // attachment builds the VM-side VZFileHandleNetworkDeviceAttachment over the
 // softnet socketpair.
-func (s *Softnet) attachment() *virtualization.VZNetworkDeviceAttachment {
-	fileHandle := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-		InitWithFileDescriptorCloseOnDealloc(s.VMFD, false)
-	attachment := virtualization.VZFileHandleNetworkDeviceAttachmentFromID(
-		objcutil.AllocClass("VZFileHandleNetworkDeviceAttachment")).InitWithFileHandle(fileHandle)
-	return &attachment.VZNetworkDeviceAttachment
+func (s *Softnet) attachment() idvirt.NetworkDeviceAttachmentProvider {
+	fileHandle := idfoundation.NewFileHandleWithFileDescriptorCloseOnDealloc(s.VMFD, false).Unwrap()
+	return idvirt.NewFileHandleNetworkDeviceAttachmentWithFileHandle(fileHandle)
 }
 
 // SoftnetConfigureSUIDBitIfNeeded ports Softnet.configureSUIDBitIfNeeded().
 func SoftnetConfigureSUIDBitIfNeeded() error {
 	// Obtain the Softnet executable path. Resolving symlinks matters here:
 	// otherwise we get "/opt/homebrew/bin/softnet" instead of the Cellar path.
-	executableURL, err := softnetExecutableURL()
+	executablePath, err := softnetExecutablePath()
 	if err != nil {
 		return err
 	}
-	softnetExecutablePath := objcutil.GoStr(executableURL.URLByResolvingSymlinksInPath().Path())
+	softnetExecutablePath, err := filepath.EvalSymlinks(executablePath)
+	if err != nil {
+		return err
+	}
 
 	// Check if the SUID bit is already configured.
 	info, err := os.Stat(softnetExecutablePath)
@@ -206,19 +206,13 @@ func SoftnetConfigureSUIDBitIfNeeded() error {
 	}
 
 	// Check if passwordless Sudo is already configured for Softnet.
-	sudoExecutableURL := objcutil.ResolveBinaryPath("sudo")
-	if sudoExecutableURL == nil {
+	sudoPath, err := exec.LookPath("sudo")
+	if err != nil {
 		return softnetInitializationFailed("sudo not found in PATH")
 	}
 
-	probe := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	probe.SetExecutableURL(sudoExecutableURL)
-	probe.SetArguments(objcutil.NSStringArray([]string{"--non-interactive", "softnet", "--help"}))
-	if _, err := probe.LaunchAndReturnError(); err != nil {
-		return err
-	}
-	probe.WaitUntilExit()
-	if probe.TerminationStatus() == 0 {
+	probe := exec.Command(sudoPath, "--non-interactive", "softnet", "--help")
+	if err := probe.Run(); err == nil {
 		return nil
 	}
 
@@ -226,26 +220,26 @@ func SoftnetConfigureSUIDBitIfNeeded() error {
 	// the user for the password required to run chown & chmod.
 	fmt.Fprintln(os.Stderr, "Softnet requires a Sudo password to set the SUID bit on the Softnet executable, please enter it below.")
 
-	elevate := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	elevate.SetExecutableURL(sudoExecutableURL)
-	elevate.SetArguments(objcutil.NSStringArray([]string{
-		"sh", "-c",
-		fmt.Sprintf("chown root %s && chmod u+s %s", softnetExecutablePath, softnetExecutablePath),
-	}))
-	if _, err := elevate.LaunchAndReturnError(); err != nil {
+	elevate := exec.Command(sudoPath, "sh", "-c",
+		fmt.Sprintf("chown root %s && chmod u+s %s", softnetExecutablePath, softnetExecutablePath))
+	elevate.Stdin = os.Stdin
+	elevate.Stdout = os.Stdout
+	elevate.Stderr = os.Stderr
+	// Put Sudo in its own process group so it becomes a valid tcsetpgrp target.
+	elevate.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := elevate.Start(); err != nil {
 		return err
 	}
 
 	// Set the TTY's foreground process group to that of the Sudo process,
 	// otherwise it will get stopped by a SIGTTIN once user input arrives.
-	pgid := int32(elevate.ProcessIdentifier())
+	pgid := int32(elevate.Process.Pid)
 	if err := terminal.TermIoctl(os.Stdin.Fd(), syscall.TIOCSPGRP, unsafe.Pointer(&pgid)); err != nil {
 		return weaveerrors.ErrSoftnetFailed(fmt.Sprintf("tcsetpgrp(2) failed: %v", err))
 	}
 
-	elevate.WaitUntilExit()
-
-	if elevate.TerminationStatus() != 0 {
+	_ = elevate.Wait()
+	if elevate.ProcessState.ExitCode() != 0 {
 		return weaveerrors.ErrSoftnetFailed("failed to configure SUID bit on Softnet executable with Sudo")
 	}
 

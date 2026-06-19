@@ -7,9 +7,9 @@ package main
 import (
 	"os"
 
-	"github.com/deploymenttheory/weave/internal/guestagent/agent"
-	clipguest "github.com/deploymenttheory/weave/internal/guestagent/modules/clipboard"
-	"github.com/deploymenttheory/weave/internal/guestagent/proto"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
+	clipguest "github.com/deploymenttheory/weave/internal/guestweaveagent/modules/clipboard"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
 )
 
 func main() {

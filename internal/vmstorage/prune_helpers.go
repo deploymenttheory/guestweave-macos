@@ -14,7 +14,6 @@ import (
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/ipsw"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/prune"
 )
 
@@ -44,7 +43,7 @@ func PruneStoragesFor(entries string) ([]prune.PrunableStorage, error) {
 // ReclaimIfNeeded ports Prune.reclaimIfNeeded(_:_:): frees cache space
 // when the volume cannot accommodate requiredBytes.
 func ReclaimIfNeeded(requiredBytes uint64, initiator prune.Prunable) error {
-	if _, ok := objcutil.EnvironmentValue("WEAVE_NO_AUTO_PRUNE"); ok {
+	if _, ok := os.LookupEnv("WEAVE_NO_AUTO_PRUNE"); ok {
 		return nil
 	}
 
@@ -54,7 +53,7 @@ func ReclaimIfNeeded(requiredBytes uint64, initiator prune.Prunable) error {
 	if err != nil {
 		return err
 	}
-	volumeAvailableCapacityCalculated, err := AvailableCapacityBytes(objcutil.GoStr(config.WeaveCacheDir.Path()))
+	volumeAvailableCapacityCalculated, err := AvailableCapacityBytes(config.WeaveCacheDir)
 	if err != nil {
 		return err
 	}
@@ -101,10 +100,10 @@ func reclaimIfPossible(reclaimBytes uint64, initiator prune.Prunable) error {
 
 	var initiatorPath string
 	if initiator != nil {
-		if resolved, err := os.Readlink(objcutil.GoStr(initiator.URL().Path())); err == nil {
+		if resolved, err := os.Readlink(initiator.Path()); err == nil {
 			initiatorPath = resolved
 		} else {
-			initiatorPath = objcutil.GoStr(initiator.URL().Path())
+			initiatorPath = initiator.Path()
 		}
 	}
 
@@ -115,7 +114,7 @@ func reclaimIfPossible(reclaimBytes uint64, initiator prune.Prunable) error {
 		}
 
 		// Do not prune the initiator.
-		if initiatorPath != "" && objcutil.GoStr(prunable.URL().Path()) == initiatorPath {
+		if initiatorPath != "" && prunable.Path() == initiatorPath {
 			continue
 		}
 

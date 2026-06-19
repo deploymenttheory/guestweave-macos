@@ -1,6 +1,6 @@
 // Port of tart's VMDirectory.swift: the on-disk layout of a single VM
-// (config.json, disk.img, nvram.bin, state.vzvmsave, control.sock).
-// CryptoKit's Insecure.MD5 becomes crypto/md5.
+// (config.json, disk.img, nvram.bin, state.vzvmsave, control.sock). Paths are
+// plain strings managed with os/path/filepath and fsutil.
 //go:build darwin
 
 package vmdirectory
@@ -9,18 +9,21 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	"github.com/deploymenttheory/weave/internal/fsutil"
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // VMDirectoryState mirrors VMDirectory.State.
@@ -34,69 +37,51 @@ const (
 
 // VMDirectory mirrors tart's VMDirectory struct.
 type VMDirectory struct {
-	BaseURL *foundation.NSURL
+	BaseURL string
 }
 
 var _ prune.Prunable = (*VMDirectory)(nil)
 
-func NewVMDirectory(baseURL *foundation.NSURL) *VMDirectory {
+func NewVMDirectory(baseURL string) *VMDirectory {
 	return &VMDirectory{BaseURL: baseURL}
 }
 
-func (d *VMDirectory) ConfigURL() *foundation.NSURL {
-	return d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr("config.json"))
+func (d *VMDirectory) ConfigURL() string { return filepath.Join(d.BaseURL, "config.json") }
+
+func (d *VMDirectory) DiskURL() string { return filepath.Join(d.BaseURL, "disk.img") }
+
+func (d *VMDirectory) NvramURL() string { return filepath.Join(d.BaseURL, "nvram.bin") }
+
+func (d *VMDirectory) StateURL() string { return filepath.Join(d.BaseURL, "state.vzvmsave") }
+
+func (d *VMDirectory) ManifestURL() string { return filepath.Join(d.BaseURL, "manifest.json") }
+
+// ControlSocketURL is the VM's control socket path; ControlSocket.Run chdirs to
+// its directory and binds the short relative name (104-byte sun_path limit).
+func (d *VMDirectory) ControlSocketURL() string { return filepath.Join(d.BaseURL, "control.sock") }
+
+func (d *VMDirectory) ExplicitlyPulledMark() string {
+	return filepath.Join(d.BaseURL, ".explicitly-pulled")
 }
 
-func (d *VMDirectory) DiskURL() *foundation.NSURL {
-	return d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr("disk.img"))
-}
-
-func (d *VMDirectory) NvramURL() *foundation.NSURL {
-	return d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr("nvram.bin"))
-}
-
-func (d *VMDirectory) StateURL() *foundation.NSURL {
-	return d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr("state.vzvmsave"))
-}
-
-func (d *VMDirectory) ManifestURL() *foundation.NSURL {
-	return d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr("manifest.json"))
-}
-
-// ControlSocketURL is created relative to the base URL so ControlSocket.Run
-// can chdir and bind the short relative path (104-byte sun_path limit).
-func (d *VMDirectory) ControlSocketURL() *foundation.NSURL {
-	return foundation.NSURLFileURLWithPathRelativeToURL(objcutil.NSStr("control.sock"), d.BaseURL)
-}
-
-func (d *VMDirectory) ExplicitlyPulledMark() *foundation.NSURL {
-	return d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr(".explicitly-pulled"))
-}
-
-// VNCEndpointPath is where a running VM with an experimental VNC server
-// records its vnc:// URL, so other processes (e.g. the MCP screen tools) can
-// connect to drive or view the VM by name. It is removed when the VM stops.
+// VNCEndpointPath is where a running VM with an experimental VNC server records
+// its vnc:// URL, so other processes can connect by name. Removed when the VM stops.
 func (d *VMDirectory) VNCEndpointPath() string {
-	return objcutil.GoStr(d.BaseURL.URLByAppendingPathComponent(objcutil.NSStr(".vnc-endpoint")).Path())
+	return filepath.Join(d.BaseURL, ".vnc-endpoint")
 }
 
-func (d *VMDirectory) Name() string {
-	return objcutil.GoStr(d.BaseURL.LastPathComponent())
-}
+func (d *VMDirectory) Name() string { return filepath.Base(d.BaseURL) }
 
-func (d *VMDirectory) URL() *foundation.NSURL {
-	return d.BaseURL
-}
+func (d *VMDirectory) Path() string { return d.BaseURL }
 
 // Lock ports VMDirectory.lock().
 func (d *VMDirectory) Lock() (*weavelock.PIDLock, error) {
 	return weavelock.NewPIDLock(d.ConfigURL())
 }
 
-// Running ports VMDirectory.running(). A failure to instantiate the PIDLock
-// is reported as "not running": the most common reason is a race with
-// "tart delete" (ENOENT), and the cost of a false positive is far less than
-// crashing "tart list" on a busy machine.
+// Running ports VMDirectory.running(). A failure to instantiate the PIDLock is
+// reported as "not running": the common reason is a race with delete (ENOENT),
+// and a false positive is cheaper than crashing "list" on a busy machine.
 func (d *VMDirectory) Running() (bool, error) {
 	lock, err := d.Lock()
 	if err != nil {
@@ -120,7 +105,7 @@ func (d *VMDirectory) State() (VMDirectoryState, error) {
 	if running {
 		return VMDirectoryStateRunning, nil
 	}
-	if foundation.NSFileManagerDefaultManager().FileExistsAtPath(d.StateURL().Path()) {
+	if fsutil.Exists(d.StateURL()) {
 		return VMDirectoryStateSuspended, nil
 	}
 	return VMDirectoryStateStopped, nil
@@ -132,9 +117,8 @@ func VMDirectoryTemporary() (*VMDirectory, error) {
 	if err != nil {
 		return nil, err
 	}
-	tmpDir := config.WeaveTmpDir.URLByAppendingPathComponent(foundation.NSUUIDUUID().UUIDString())
-	if _, err := foundation.NSFileManagerDefaultManager().
-		CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(tmpDir, false, nil); err != nil {
+	tmpDir := filepath.Join(config.WeaveTmpDir, fsutil.UUID())
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return nil, err
 	}
 	return NewVMDirectory(tmpDir), nil
@@ -148,9 +132,8 @@ func VMDirectoryTemporaryDeterministic(key string) (*VMDirectory, error) {
 		return nil, err
 	}
 	hash := md5.Sum([]byte(key))
-	tmpDir := config.WeaveTmpDir.URLByAppendingPathComponent(objcutil.NSStr(hex.EncodeToString(hash[:])))
-	if _, err := foundation.NSFileManagerDefaultManager().
-		CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(tmpDir, true, nil); err != nil {
+	tmpDir := filepath.Join(config.WeaveTmpDir, hex.EncodeToString(hash[:]))
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return nil, err
 	}
 	return NewVMDirectory(tmpDir), nil
@@ -158,10 +141,9 @@ func VMDirectoryTemporaryDeterministic(key string) (*VMDirectory, error) {
 
 // Initialized ports VMDirectory.initialized.
 func (d *VMDirectory) Initialized() bool {
-	fileManager := foundation.NSFileManagerDefaultManager()
-	return fileManager.FileExistsAtPath(d.ConfigURL().Path()) &&
-		fileManager.FileExistsAtPath(d.DiskURL().Path()) &&
-		fileManager.FileExistsAtPath(d.NvramURL().Path())
+	return fsutil.Exists(d.ConfigURL()) &&
+		fsutil.Exists(d.DiskURL()) &&
+		fsutil.Exists(d.NvramURL())
 }
 
 // Initialize ports VMDirectory.initialize(overwrite:).
@@ -170,29 +152,28 @@ func (d *VMDirectory) Initialize(overwrite bool) error {
 		return weaveerrors.ErrVMDirectoryAlreadyInitialized("VM directory is already initialized, preventing overwrite")
 	}
 
-	fileManager := foundation.NSFileManagerDefaultManager()
-	if _, err := fileManager.CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(d.BaseURL, true, nil); err != nil {
+	if err := os.MkdirAll(d.BaseURL, 0o755); err != nil {
 		return err
 	}
 
-	_, _ = fileManager.RemoveItemAtURLError(d.ConfigURL())
-	_, _ = fileManager.RemoveItemAtURLError(d.DiskURL())
-	_, _ = fileManager.RemoveItemAtURLError(d.NvramURL())
+	_ = os.RemoveAll(d.ConfigURL())
+	_ = os.RemoveAll(d.DiskURL())
+	_ = os.RemoveAll(d.NvramURL())
 
 	return nil
 }
 
 // Validate ports VMDirectory.validate(userFriendlyName:).
 func (d *VMDirectory) Validate(userFriendlyName string) error {
-	if !foundation.NSFileManagerDefaultManager().FileExistsAtPath(d.BaseURL.Path()) {
+	if !fsutil.Exists(d.BaseURL) {
 		return weaveerrors.ErrVMDoesNotExist(userFriendlyName)
 	}
 
 	if !d.Initialized() {
 		return weaveerrors.ErrVMMissingFiles("VM is missing some of its files (%s, %s or %s)",
-			objcutil.GoStr(d.ConfigURL().LastPathComponent()),
-			objcutil.GoStr(d.DiskURL().LastPathComponent()),
-			objcutil.GoStr(d.NvramURL().LastPathComponent()))
+			filepath.Base(d.ConfigURL()),
+			filepath.Base(d.DiskURL()),
+			filepath.Base(d.NvramURL()))
 	}
 
 	return nil
@@ -200,18 +181,16 @@ func (d *VMDirectory) Validate(userFriendlyName string) error {
 
 // Clone ports VMDirectory.clone(to:generateMAC:).
 func (d *VMDirectory) Clone(to *VMDirectory, generateMAC bool) error {
-	fileManager := foundation.NSFileManagerDefaultManager()
-
-	if _, err := fileManager.CopyItemAtURLToURLError(d.ConfigURL(), to.ConfigURL()); err != nil {
+	if err := fsutil.CopyItem(d.ConfigURL(), to.ConfigURL()); err != nil {
 		return err
 	}
-	if _, err := fileManager.CopyItemAtURLToURLError(d.NvramURL(), to.NvramURL()); err != nil {
+	if err := fsutil.CopyItem(d.NvramURL(), to.NvramURL()); err != nil {
 		return err
 	}
-	if _, err := fileManager.CopyItemAtURLToURLError(d.DiskURL(), to.DiskURL()); err != nil {
+	if err := fsutil.CopyItem(d.DiskURL(), to.DiskURL()); err != nil {
 		return err
 	}
-	_, _ = fileManager.CopyItemAtURLToURLError(d.StateURL(), to.StateURL())
+	_ = fsutil.CopyItem(d.StateURL(), to.StateURL())
 
 	// Re-generate MAC address.
 	if generateMAC {
@@ -226,7 +205,7 @@ func (d *VMDirectory) MACAddress() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return objcutil.GoStr(config.MACAddress.String()), nil
+	return config.MACAddress.String(), nil
 }
 
 // RegenerateMACAddress ports VMDirectory.regenerateMACAddress().
@@ -236,16 +215,16 @@ func (d *VMDirectory) RegenerateMACAddress() error {
 		return err
 	}
 
-	config.MACAddress = virtualization.VZMACAddressRandomLocallyAdministeredAddress()
+	config.MACAddress = idvirt.RandomLocallyAdministeredAddress()
 	// Cleanup state if any.
-	_, _ = foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(d.StateURL())
+	_ = os.RemoveAll(d.StateURL())
 
 	return config.Save(d.ConfigURL())
 }
 
 // ResizeDisk ports VMDirectory.resizeDisk(_:format:).
 func (d *VMDirectory) ResizeDisk(sizeGB uint16, format diskimage.DiskImageFormat) error {
-	if foundation.NSFileManagerDefaultManager().FileExistsAtPath(d.DiskURL().Path()) {
+	if fsutil.Exists(d.DiskURL()) {
 		return d.resizeExistingDisk(sizeGB)
 	}
 	return d.createDisk(sizeGB, format)
@@ -264,27 +243,29 @@ func (d *VMDirectory) resizeExistingDisk(sizeGB uint16) error {
 }
 
 func (d *VMDirectory) resizeRawDisk(sizeGB uint16) error {
-	diskFileHandle, err := foundation.NSFileHandleFileHandleForWritingToURLError(d.DiskURL())
+	f, err := os.OpenFile(d.DiskURL(), os.O_RDWR, 0)
 	if err != nil {
 		return err
 	}
 
-	var currentDiskFileLength uint64
-	if _, err := diskFileHandle.SeekToEndReturningOffsetError(&currentDiskFileLength); err != nil {
+	currentDiskFileLength, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		f.Close()
 		return err
 	}
-	desiredDiskFileLength := uint64(sizeGB) * 1000 * 1000 * 1000
+	desiredDiskFileLength := int64(uint64(sizeGB) * 1000 * 1000 * 1000)
 
 	if desiredDiskFileLength < currentDiskFileLength {
+		f.Close()
 		return weaveerrors.ErrInvalidDiskSize("new disk size of %s should be larger than the current disk size of %s",
-			ByteCountString(int64(desiredDiskFileLength)), ByteCountString(int64(currentDiskFileLength)))
+			ByteCountString(desiredDiskFileLength), ByteCountString(currentDiskFileLength))
 	} else if desiredDiskFileLength > currentDiskFileLength {
-		if _, err := diskFileHandle.TruncateAtOffsetError(desiredDiskFileLength); err != nil {
+		if err := f.Truncate(desiredDiskFileLength); err != nil {
+			f.Close()
 			return err
 		}
 	}
-	_, err = diskFileHandle.CloseAndReturnError()
-	return err
+	return f.Close()
 }
 
 func (d *VMDirectory) resizeASIFDisk(sizeGB uint16) error {
@@ -303,22 +284,20 @@ func (d *VMDirectory) resizeASIFDisk(sizeGB uint16) error {
 		return weaveerrors.ErrInvalidDiskSize("New disk size of %s should be larger than the current disk size of %s",
 			ByteCountString(int64(desiredSizeBytes)), ByteCountString(int64(currentSizeBytes)))
 	} else if desiredSizeBytes > uint64(currentSizeBytes) {
-		// Resize the ASIF disk image using diskutil.
 		return d.performASIFResize(sizeGB)
 	}
-	// If sizes are equal, no action needed.
 	return nil
 }
 
 func (d *VMDirectory) performASIFResize(sizeGB uint16) error {
-	if objcutil.ResolveBinaryPath("diskutil") == nil {
+	if _, err := exec.LookPath("diskutil"); err != nil {
 		return weaveerrors.ErrFailedToResizeDisk("diskutil not found in PATH")
 	}
 
 	stdout, stderr, err := diskimage.DiskutilRun([]string{
 		"image", "resize",
 		"--size", fmt.Sprintf("%dG", sizeGB),
-		objcutil.GoStr(d.DiskURL().Path()),
+		d.DiskURL(),
 	})
 	if err != nil {
 		return weaveerrors.ErrFailedToResizeDisk("Failed to resize ASIF disk image: %v", err)
@@ -336,21 +315,16 @@ func (d *VMDirectory) createDisk(sizeGB uint16, format diskimage.DiskImageFormat
 }
 
 func (d *VMDirectory) createRawDisk(sizeGB uint16) error {
-	// Create a traditional raw disk image. The contents argument cannot be a
-	// nil *NSData (the generated binding dereferences it), so pass an empty
-	// NSData for Swift's contents: nil.
-	foundation.NSFileManagerDefaultManager().CreateFileAtPathContentsAttributes(d.DiskURL().Path(), objcutil.BytesToNSData(nil), nil)
-
-	diskFileHandle, err := foundation.NSFileHandleFileHandleForWritingToURLError(d.DiskURL())
+	f, err := os.OpenFile(d.DiskURL(), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
-	desiredDiskFileLength := uint64(sizeGB) * 1000 * 1000 * 1000
-	if _, err := diskFileHandle.TruncateAtOffsetError(desiredDiskFileLength); err != nil {
+	desiredDiskFileLength := int64(uint64(sizeGB) * 1000 * 1000 * 1000)
+	if err := f.Truncate(desiredDiskFileLength); err != nil {
+		f.Close()
 		return err
 	}
-	_, err = diskFileHandle.CloseAndReturnError()
-	return err
+	return f.Close()
 }
 
 // Delete ports VMDirectory.delete().
@@ -369,7 +343,7 @@ func (d *VMDirectory) Delete() error {
 		return weaveerrors.ErrVMIsRunning(d.Name())
 	}
 
-	if _, err := foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(d.BaseURL); err != nil {
+	if err := os.RemoveAll(d.BaseURL); err != nil {
 		return err
 	}
 
@@ -377,7 +351,7 @@ func (d *VMDirectory) Delete() error {
 }
 
 func (d *VMDirectory) AccessDate() (time.Time, error) {
-	return prune.URLAccessDate(d.BaseURL)
+	return prune.AccessDate(d.BaseURL)
 }
 
 func (d *VMDirectory) AllocatedSizeBytes() (int, error) {
@@ -431,20 +405,18 @@ func (d *VMDirectory) DiskSizeGB() (int, error) {
 
 // MarkExplicitlyPulled ports VMDirectory.markExplicitlyPulled().
 func (d *VMDirectory) MarkExplicitlyPulled() {
-	foundation.NSFileManagerDefaultManager().
-		CreateFileAtPathContentsAttributes(d.ExplicitlyPulledMark().Path(), objcutil.BytesToNSData(nil), nil)
+	_ = os.WriteFile(d.ExplicitlyPulledMark(), nil, 0o644)
 }
 
 // IsExplicitlyPulled ports VMDirectory.isExplicitlyPulled().
 func (d *VMDirectory) IsExplicitlyPulled() bool {
-	return foundation.NSFileManagerDefaultManager().
-		FileExistsAtPath(d.ExplicitlyPulledMark().Path())
+	return fsutil.Exists(d.ExplicitlyPulledMark())
 }
 
 func (d *VMDirectory) sumComponents(size func(*prune.PrunableURL) (int, error)) (int, error) {
 	total := 0
-	for _, url := range []*foundation.NSURL{d.ConfigURL(), d.DiskURL(), d.NvramURL()} {
-		n, err := size(prune.NewPrunableURL(url))
+	for _, path := range []string{d.ConfigURL(), d.DiskURL(), d.NvramURL()} {
+		n, err := size(prune.NewPrunableURL(path))
 		if err != nil {
 			return 0, err
 		}
@@ -455,6 +427,5 @@ func (d *VMDirectory) sumComponents(size func(*prune.PrunableURL) (int, error)) 
 
 // ByteCountString mirrors ByteCountFormatter().string(fromByteCount:).
 func ByteCountString(byteCount int64) string {
-	return objcutil.GoStr(foundation.NSByteCountFormatterStringFromByteCountCountStyle(
-		byteCount, foundation.NSByteCountFormatterCountStyleFile))
+	return fsutil.ByteCountString(byteCount)
 }

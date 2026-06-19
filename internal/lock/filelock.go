@@ -8,9 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"syscall"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 // ErrAlreadyLocked ports FileLockError.AlreadyLocked.
@@ -25,20 +22,19 @@ func (e *FileLockFailedError) Error() string { return e.Message }
 
 // FileLock ports tart's FileLock class.
 type FileLock struct {
-	URL *foundation.NSURL
-	fd  int
+	Path string
+	fd   int
 }
 
-// NewFileLock opens lockURL read-only for use with flock. Swift's init leaves
+// NewFileLock opens lockPath read-only for use with flock. Swift's init leaves
 // open(2) unchecked and lets flock fail later with EBADF; here the open error
 // surfaces immediately instead.
-func NewFileLock(lockURL *foundation.NSURL) (*FileLock, error) {
-	path := objcutil.GoStr(lockURL.Path())
-	fd, err := syscall.Open(path, syscall.O_RDONLY, 0)
+func NewFileLock(lockPath string) (*FileLock, error) {
+	fd, err := syscall.Open(lockPath, syscall.O_RDONLY, 0)
 	if err != nil {
-		return nil, &FileLockFailedError{Message: fmt.Sprintf("failed to lock %s: %v", path, err)}
+		return nil, &FileLockFailedError{Message: fmt.Sprintf("failed to lock %s: %v", lockPath, err)}
 	}
-	return &FileLock{URL: lockURL, fd: fd}, nil
+	return &FileLock{Path: lockPath, fd: fd}, nil
 }
 
 // Close releases the file descriptor (Swift's deinit).
@@ -69,7 +65,7 @@ func (l *FileLock) flock(operation int) (bool, error) {
 		if operation&syscall.LOCK_NB != 0 && errors.Is(err, syscall.EWOULDBLOCK) {
 			return false, nil
 		}
-		return false, &FileLockFailedError{Message: fmt.Sprintf("failed to lock %s: %v", objcutil.GoStr(l.URL.Path()), err)}
+		return false, &FileLockFailedError{Message: fmt.Sprintf("failed to lock %s: %v", l.Path, err)}
 	}
 	return true, nil
 }

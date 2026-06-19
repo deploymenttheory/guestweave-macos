@@ -1,26 +1,24 @@
 // Port of tart's VMDirectory+Archive.swift: export/import of a VM directory
-// using Apple's archive format with LZFSE compression. The AppleArchive
-// library binding exposes the low-level AA byte streams but not the
-// directory-content encode helpers the Swift API uses, so this drives
-// /usr/bin/aa, which produces and consumes the identical .aar format.
+// using Apple's archive format with LZFSE compression, driving /usr/bin/aa
+// (which produces and consumes the identical .aar format) via os/exec.
 //go:build darwin
 
 package vmdirectory
 
 import (
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	"bytes"
+	"errors"
+	"os/exec"
+
 	"github.com/deploymenttheory/weave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // ExportToArchive ports VMDirectory.exportToArchive(path:).
 func (d *VMDirectory) ExportToArchive(path string) error {
 	if err := runAA([]string{
 		"archive",
-		"-d", objcutil.GoStr(d.BaseURL.Path()),
+		"-d", d.BaseURL,
 		"-o", path,
 		"-a", "lzfse",
 	}); err != nil {
@@ -33,7 +31,7 @@ func (d *VMDirectory) ExportToArchive(path string) error {
 func (d *VMDirectory) ImportFromArchive(path string) error {
 	if err := runAA([]string{
 		"extract",
-		"-d", objcutil.GoStr(d.BaseURL.Path()),
+		"-d", d.BaseURL,
 		"-i", path,
 	}); err != nil {
 		return weaveerrors.ErrImportFailed(err.Error())
@@ -42,22 +40,17 @@ func (d *VMDirectory) ImportFromArchive(path string) error {
 }
 
 func runAA(arguments []string) error {
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	task.SetExecutableURL(objcutil.NSURLFromPath("/usr/bin/aa"))
-	task.SetArguments(objcutil.NSStringArray(arguments))
+	cmd := exec.Command("/usr/bin/aa", arguments...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
-	stderrPipe := foundation.NSPipePipe()
-	task.SetStandardError(stderrPipe.Ptr())
-
-	if _, err := task.LaunchAndReturnError(); err != nil {
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return weaveerrors.ErrGeneric("aa failed with exit code %d: %s", exitErr.ExitCode(),
+				diskimage.FirstNonEmptyLine(stderr.String()))
+		}
 		return err
-	}
-	task.WaitUntilExit()
-
-	if status := task.TerminationStatus(); status != 0 {
-		stderrData, _ := stderrPipe.FileHandleForReading().ReadDataToEndOfFileAndReturnError()
-		return weaveerrors.ErrGeneric("aa failed with exit code %d: %s", status,
-			diskimage.FirstNonEmptyLine(string(objcutil.NSDataToBytes(stderrData))))
 	}
 	return nil
 }

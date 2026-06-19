@@ -8,12 +8,11 @@ package macaddress
 import (
 	"context"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // IPResolutionStrategy mirrors the enum of the same name.
@@ -38,7 +37,7 @@ func ParseIPResolutionStrategy(argument string) (IPResolutionStrategy, bool) {
 // ResolveIP ports IP.resolveIP(_:resolutionStrategy:secondsToWait:
 // controlSocketURL:).
 func ResolveIP(ctx context.Context, vmMACAddress MACAddress, resolutionStrategy IPResolutionStrategy,
-	secondsToWait uint16, controlSocketURL *foundation.NSURL) (netip.Addr, bool, error) {
+	secondsToWait uint16, controlSocketPath string) (netip.Addr, bool, error) {
 	waitUntil := time.Now().Add(time.Duration(secondsToWait) * time.Second)
 
 	for {
@@ -66,18 +65,18 @@ func ResolveIP(ctx context.Context, vmMACAddress MACAddress, resolutionStrategy 
 				}
 			}
 		case IPResolutionStrategyAgent:
-			if controlSocketURL == nil {
+			if controlSocketPath == "" {
 				return netip.Addr{}, false, weaveerrors.ErrGeneric("Cannot perform IP resolution via Tart Guest Agent when control socket URL is not set")
 			}
 
 			// Change the current working directory to the VM's base
 			// directory to work around the 104-byte Unix domain socket path
-			// limitation.
-			if baseURL := controlSocketURL.BaseURL(); baseURL != nil {
-				foundation.NSFileManagerDefaultManager().ChangeCurrentDirectoryPath(baseURL.Path())
+			// limitation, then bind the short relative name.
+			if dir := filepath.Dir(controlSocketPath); dir != "" {
+				_ = os.Chdir(dir)
 			}
 
-			ip, found, err := AgentResolverResolveIP(objcutil.GoStr(controlSocketURL.RelativePath()))
+			ip, found, err := AgentResolverResolveIP(filepath.Base(controlSocketPath))
 			if err != nil {
 				return netip.Addr{}, false, err
 			}

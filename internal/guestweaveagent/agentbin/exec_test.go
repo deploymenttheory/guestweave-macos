@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/guestagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestagent/agentbin"
-	"github.com/deploymenttheory/weave/internal/guestagent/proto"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/agentbin"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
 )
 
 // TestEmbeddedAgentRoundTrip writes the embedded weave-guestd binary for the

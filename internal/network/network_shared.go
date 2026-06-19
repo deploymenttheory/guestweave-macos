@@ -6,12 +6,10 @@
 package network
 
 import (
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // buildNAT constructs a NAT NIC.
-func buildNAT(mac *virtualization.VZMACAddress) (NIC, error) {
-	attachment := &idiomatic.NewNATNetworkDeviceAttachment().Unwrap().VZNetworkDeviceAttachment
-	return NIC{Attachment: attachment, MAC: mac}, nil
+func buildNAT(mac *idvirt.MACAddress) (NIC, error) {
+	return NIC{Attachment: idvirt.NewNATNetworkDeviceAttachment(), MAC: mac}, nil
 }

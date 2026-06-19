@@ -14,17 +14,16 @@ package network
 import (
 	"context"
 
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 )
 
 // NIC is a single resolved virtual NIC ready to be wired into a VM
 // configuration: a VZ network attachment plus the MAC address to assign to it.
 type NIC struct {
-	Attachment *virtualization.VZNetworkDeviceAttachment
-	MAC        *virtualization.VZMACAddress
+	Attachment idvirt.NetworkDeviceAttachmentProvider
+	MAC        *idvirt.MACAddress
 
 	// engine drives any out-of-band lifecycle for this NIC (softnet helper,
 	// vmnet network). nil for attachment-only modes (nat, bridged).
@@ -121,7 +120,7 @@ func BuildTopology(nics []vmconfig.NICConfig) (*Topology, error) {
 }
 
 // buildNIC dispatches to the per-mode builder.
-func buildNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddress) (NIC, error) {
+func buildNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, error) {
 	switch nicConfig.Mode {
 	case vmconfig.NICModeNAT:
 		return buildNAT(mac)
@@ -136,11 +135,10 @@ func buildNIC(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddress) (N
 	}
 }
 
-// macFromString parses a MAC string into a VZMACAddress.
-func macFromString(s string) (*virtualization.VZMACAddress, error) {
-	mac := virtualization.VZMACAddressFromID(objcutil.AllocClass("VZMACAddress")).
-		InitWithString(objcutil.NSStr(s))
-	if mac == nil {
+// macFromString parses a MAC string into a MACAddress.
+func macFromString(s string) (*idvirt.MACAddress, error) {
+	mac := idvirt.NewMACAddressWithString(s)
+	if mac == nil || mac.ID() == 0 {
 		return nil, weaveerrors.ErrGeneric("invalid MAC address %q", s)
 	}
 	return mac, nil

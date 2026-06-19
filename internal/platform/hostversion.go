@@ -4,11 +4,22 @@
 package platform
 
 import (
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
+	"strconv"
+	"strings"
+	"syscall"
 )
 
-// MacOSAtLeast mirrors Swift's #available(macOS N, *) checks.
+// MacOSAtLeast mirrors Swift's #available(macOS N, *) checks, reading the host
+// product version from sysctl(kern.osproductversion).
 func MacOSAtLeast(major int) bool {
-	return foundation.NSProcessInfoProcessInfo().
-		IsOperatingSystemAtLeastVersion(foundation.NSOperatingSystemVersion{MajorVersion: major})
+	version, err := syscall.Sysctl("kern.osproductversion")
+	if err != nil {
+		return false
+	}
+	majorStr, _, _ := strings.Cut(version, ".")
+	got, err := strconv.Atoi(majorStr)
+	if err != nil {
+		return false
+	}
+	return got >= major
 }

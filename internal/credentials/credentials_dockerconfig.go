@@ -5,17 +5,15 @@
 package credentials
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 // DockerConfig ports the DockerConfig Codable struct.
@@ -76,15 +74,17 @@ func (p *DockerConfigCredentialsProvider) UserFriendlyName() string {
 }
 
 func (p *DockerConfigCredentialsProvider) Retrieve(host string) (string, string, bool, error) {
-	dockerConfigURL := foundation.NSFileManagerDefaultManager().HomeDirectoryForCurrentUser().
-		URLByAppendingPathComponent(objcutil.NSStr(".docker")).
-		URLByAppendingPathComponent(objcutil.NSStr("config.json"))
-	if !foundation.NSFileManagerDefaultManager().FileExistsAtPath(dockerConfigURL.Path()) {
-		return "", "", false, nil
-	}
-
-	configData, err := os.ReadFile(objcutil.GoStr(dockerConfigURL.Path()))
+	home, err := os.UserHomeDir()
 	if err != nil {
+		return "", "", false, err
+	}
+	dockerConfigPath := filepath.Join(home, ".docker", "config.json")
+
+	configData, err := os.ReadFile(dockerConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", false, nil
+		}
 		return "", "", false, err
 	}
 	var config DockerConfig
@@ -105,39 +105,20 @@ func (p *DockerConfigCredentialsProvider) Retrieve(host string) (string, string,
 }
 
 func (p *DockerConfigCredentialsProvider) executeHelper(binaryName string, host string) (string, string, bool, error) {
-	executableURL := objcutil.ResolveBinaryPath(binaryName)
-	if executableURL == nil {
+	if _, err := exec.LookPath(binaryName); err != nil {
 		return "", "", false, credentialsProviderFailed("%s not found in PATH", binaryName)
 	}
 
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	task.SetExecutableURL(executableURL)
-	task.SetArguments(objcutil.NSStringArray([]string{"get"}))
+	cmd := exec.Command(binaryName, "get")
+	cmd.Stdin = strings.NewReader(host + "\n")
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
 
-	outPipe := foundation.NSPipePipe()
-	inPipe := foundation.NSPipePipe()
-	task.SetStandardOutput(outPipe.Ptr())
-	task.SetStandardError(outPipe.Ptr())
-	task.SetStandardInput(inPipe.Ptr())
+	runErr := cmd.Run()
+	outputData := output.Bytes()
 
-	if _, err := task.LaunchAndReturnError(); err != nil {
-		return "", "", false, err
-	}
-
-	if _, err := inPipe.FileHandleForWriting().WriteDataError(objcutil.BytesToNSData([]byte(host + "\n"))); err != nil {
-		return "", "", false, credentialsProviderFailed("Failed to write host to Docker helper!")
-	}
-	inPipe.FileHandleForWriting().CloseFile()
-
-	outputNSData, err := outPipe.FileHandleForReading().ReadDataToEndOfFileAndReturnError()
-	if err != nil {
-		return "", "", false, err
-	}
-	outputData := objcutil.NSDataToBytes(outputNSData)
-
-	task.WaitUntilExit()
-
-	if !(task.TerminationReason() == foundation.NSTaskTerminationReasonExit && task.TerminationStatus() == 0) {
+	if runErr != nil {
 		if len(outputData) > 0 {
 			fmt.Println(string(outputData))
 		}
@@ -147,11 +128,11 @@ func (p *DockerConfigCredentialsProvider) executeHelper(binaryName string, host 
 		return "", "", false, credentialsProviderFailed("Docker helper output is empty!")
 	}
 
-	var output dockerGetOutput
-	if err := json.Unmarshal(outputData, &output); err != nil {
+	var out dockerGetOutput
+	if err := json.Unmarshal(outputData, &out); err != nil {
 		return "", "", false, err
 	}
-	return output.Username, output.Secret, true, nil
+	return out.Username, out.Secret, true, nil
 }
 
 func (p *DockerConfigCredentialsProvider) Store(host string, user string, password string) error {

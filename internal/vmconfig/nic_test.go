@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 func TestDeriveMACAddressDeterministic(t *testing.T) {
@@ -73,7 +72,7 @@ func TestEnsureNICsLegacySynthesis(t *testing.T) {
 	if !nics[0].IsPrimary {
 		t.Errorf("synthesised NIC should be primary")
 	}
-	if got, want := nics[0].MACAddress, objcutil.GoStr(config.MACAddress.String()); got != want {
+	if got, want := nics[0].MACAddress, config.MACAddress.String(); got != want {
 		t.Errorf("synthesised NIC MAC = %q, want %q", got, want)
 	}
 }
@@ -104,7 +103,7 @@ func TestNICsRoundTrip(t *testing.T) {
 	}
 
 	// MACAddress mirrors the primary NIC for legacy consumers.
-	if got := objcutil.GoStr(config.MACAddress.String()); got != "02:00:00:00:00:01" {
+	if got := config.MACAddress.String(); got != "02:00:00:00:00:01" {
 		t.Errorf("config MACAddress = %q, want primary NIC MAC 02:00:00:00:00:01", got)
 	}
 

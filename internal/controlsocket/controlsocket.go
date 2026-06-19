@@ -12,15 +12,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/library/oslog"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/oslog"
 )
 
 // VirtioSocketConnector is the slice of VM.connect(toPort:) that
@@ -53,44 +52,42 @@ func currentConnector() VirtioSocketConnector {
 
 // ControlSocket ports tart's ControlSocket class.
 type ControlSocket struct {
-	controlSocketURL *foundation.NSURL
-	vmPort           uint32
-	logger           *oslog.Logger
+	controlSocketPath string
+	vmPort            uint32
+	logger            *oslog.Logger
 }
 
 // NewControlSocket ports ControlSocket.init(_:vmPort:) with the default
 // vmPort of 8080.
-func NewControlSocket(controlSocketURL *foundation.NSURL) *ControlSocket {
-	return NewControlSocketWithPort(controlSocketURL, 8080)
+func NewControlSocket(controlSocketPath string) *ControlSocket {
+	return NewControlSocketWithPort(controlSocketPath, 8080)
 }
 
 // NewControlSocketWithPort ports ControlSocket.init(_:vmPort:).
-func NewControlSocketWithPort(controlSocketURL *foundation.NSURL, vmPort uint32) *ControlSocket {
+func NewControlSocketWithPort(controlSocketPath string, vmPort uint32) *ControlSocket {
 	return &ControlSocket{
-		controlSocketURL: controlSocketURL,
-		vmPort:           vmPort,
-		logger:           oslog.NewLogger("com.deploymenttheory.weave.control-socket", "network"),
+		controlSocketPath: controlSocketPath,
+		vmPort:            vmPort,
+		logger:            oslog.NewLogger("com.deploymenttheory.weave.control-socket", "network"),
 	}
 }
 
 // Run ports ControlSocket.run(): binds the Unix domain socket and serves
 // client connections until ctx is cancelled.
 func (s *ControlSocket) Run(ctx context.Context) error {
-	fileManager := foundation.NSFileManagerDefaultManager()
-
 	// Remove the control socket file from previous "run" invocations, if
 	// any, otherwise we may get the "address already in use" error. Failures
 	// are deliberately ignored (Swift: try?).
-	_, _ = fileManager.RemoveItemAtPathError(s.controlSocketURL.Path())
+	_ = os.Remove(s.controlSocketPath)
 
 	// Change the current working directory to the VM's base directory to
 	// work around the 104-byte Unix domain socket path limitation, then bind
-	// to the path relative to it.
-	if baseURL := s.controlSocketURL.BaseURL(); baseURL != nil {
-		fileManager.ChangeCurrentDirectoryPath(baseURL.Path())
+	// to the short relative name.
+	if dir := filepath.Dir(s.controlSocketPath); dir != "" {
+		_ = os.Chdir(dir)
 	}
 
-	listener, err := net.Listen("unix", objcutil.GoStr(s.controlSocketURL.RelativePath()))
+	listener, err := net.Listen("unix", filepath.Base(s.controlSocketPath))
 	if err != nil {
 		return err
 	}

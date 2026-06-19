@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/fetcher"
+	"github.com/deploymenttheory/weave/internal/fsutil"
 	"github.com/deploymenttheory/weave/internal/ipsw"
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
 	"github.com/deploymenttheory/weave/internal/logging"
@@ -49,7 +51,7 @@ import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/virtualization"
+	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // Error types ported from VM.swift.
@@ -129,7 +131,7 @@ func resolveTopology(vmConfig *vmconfig.VMConfig, options VMOptions) (*weavenetw
 		nics = append([]vmconfig.NICConfig(nil), nics...)
 	}
 
-	primaryMAC := objcutil.GoStr(vmConfig.MACAddress.String())
+	primaryMAC := vmConfig.MACAddress.String()
 	boundPrimary := false
 	for i := range nics {
 		if nics[i].IsPrimary && !boundPrimary {
@@ -235,7 +237,7 @@ func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
 		return nil, err
 	}
 
-	configuration, err := craftConfiguration(vmDir.DiskURL(), vmDir.NvramURL(), config, options, topology)
+	configuration, err := craftConfiguration(objcutil.NSURLFromPath(vmDir.DiskURL()), objcutil.NSURLFromPath(vmDir.NvramURL()), config, options, topology)
 	if err != nil {
 		return nil, err
 	}
@@ -285,12 +287,12 @@ func VMRetrieveIPSW(ctx context.Context, remoteURL *foundation.NSURL) (*foundati
 		}
 		ipswLocation := cache.LocationFor("sha256:" + objcutil.GoStr(hash) + ".ipsw")
 
-		if foundation.NSFileManagerDefaultManager().FileExistsAtPath(ipswLocation.Path()) {
+		if fsutil.Exists(ipswLocation) {
 			logging.DefaultLogger().AppendNewLine("Using cached *.ipsw file...")
-			if err := prune.URLUpdateAccessDate(ipswLocation, time.Now()); err != nil {
+			if err := prune.UpdateAccessDate(ipswLocation, time.Now()); err != nil {
 				return nil, err
 			}
-			return ipswLocation, nil
+			return objcutil.NSURLFromPath(ipswLocation), nil
 		}
 	}
 
@@ -306,8 +308,7 @@ func VMRetrieveIPSW(ctx context.Context, remoteURL *foundation.NSURL) (*foundati
 	if err != nil {
 		return nil, err
 	}
-	temporaryLocation := config.WeaveTmpDir.URLByAppendingPathComponent(
-		foundation.NSUUIDUUID().UUIDString().StringByAppendingString(objcutil.NSStr(".ipsw")))
+	temporaryLocation := filepath.Join(config.WeaveTmpDir, fsutil.UUID()+".ipsw")
 
 	// Refuse the download up front if the host volume cannot hold it
 	// (framework-queried capacity; prunable cache entries reclaimed first).
@@ -320,7 +321,7 @@ func VMRetrieveIPSW(ctx context.Context, remoteURL *foundation.NSURL) (*foundati
 	progress := logging.NewDownloadProgress(response.ExpectedContentLength())
 	logging.NewProgressObserver(progress).Log(logging.DefaultLogger())
 
-	temporaryPath := objcutil.GoStr(temporaryLocation.Path())
+	temporaryPath := temporaryLocation
 	temporaryFile, err := os.Create(temporaryPath)
 	if err != nil {
 		return nil, err
@@ -358,10 +359,10 @@ func VMRetrieveIPSW(ctx context.Context, remoteURL *foundation.NSURL) (*foundati
 	finalLocation := cache.LocationFor(digest.Finalize() + ".ipsw")
 
 	// Swift uses FileManager.replaceItemAt; an atomic rename is equivalent.
-	if err := os.Rename(temporaryPath, objcutil.GoStr(finalLocation.Path())); err != nil {
+	if err := os.Rename(temporaryPath, finalLocation); err != nil {
 		return nil, err
 	}
-	return finalLocation, nil
+	return objcutil.NSURLFromPath(finalLocation), nil
 }
 
 // InFinalState ports VM.inFinalState.
@@ -419,7 +420,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 
 	// Create NVRAM.
 	if _, err := virtualization.VZMacAuxiliaryStorageFromID(objcutil.AllocClass("VZMacAuxiliaryStorage")).
-		InitCreatingStorageAtURLHardwareModelOptionsError(vmDir.NvramURL(), requirements.HardwareModel(), 0); err != nil {
+		InitCreatingStorageAtURLHardwareModelOptionsError(objcutil.NSURLFromPath(vmDir.NvramURL()), requirements.HardwareModel(), 0); err != nil {
 		return nil, err
 	}
 
@@ -450,7 +451,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 		return nil, err
 	}
 
-	configuration, err := craftConfiguration(vmDir.DiskURL(), vmDir.NvramURL(), config, options, topology)
+	configuration, err := craftConfiguration(objcutil.NSURLFromPath(vmDir.DiskURL()), objcutil.NSURLFromPath(vmDir.NvramURL()), config, options, topology)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +509,7 @@ func (vm *VM) install(ctx context.Context, ipswURL *foundation.NSURL) error {
 	})
 
 	logging.DefaultLogger().AppendNewLine("Installing OS...")
-	observer := logging.NewProgressObserver(&logging.NSProgressWrapper{Inner: installer.Progress()})
+	observer := logging.NewProgressObserver(&nsProgressWrapper{inner: installer.Progress()})
 	observer.Log(logging.DefaultLogger())
 
 	errCh := make(chan error, 1)
@@ -536,7 +537,7 @@ func (vm *VM) install(ctx context.Context, ipswURL *foundation.NSURL) error {
 func VMLinux(vmDir *vmdirectory.VMDirectory, diskSizeGB uint16, diskFormat diskimage.DiskImageFormat) (*VM, error) {
 	// Create NVRAM.
 	if _, err := virtualization.VZEFIVariableStoreFromID(objcutil.AllocClass("VZEFIVariableStore")).
-		InitCreatingVariableStoreAtURLOptionsError(vmDir.NvramURL(), 0); err != nil {
+		InitCreatingVariableStoreAtURLOptionsError(objcutil.NSURLFromPath(vmDir.NvramURL()), 0); err != nil {
 		return nil, err
 	}
 
@@ -758,10 +759,10 @@ func craftConfiguration(diskURL *foundation.NSURL, nvramURL *foundation.NSURL,
 	// own attachment and MAC address (multi-NIC with per-NIC properties).
 	networkDeviceIDs := make([]purego.ID, 0, len(topology.NICs()))
 	for _, nic := range topology.NICs() {
-		vio := idiomatic.NewVirtioNetworkDeviceConfiguration().Unwrap()
-		vio.SetAttachment(nic.Attachment)
-		vio.SetMACAddress(nic.MAC)
-		networkDeviceIDs = append(networkDeviceIDs, vio.Ptr())
+		vio := idiomatic.NewVirtioNetworkDeviceConfiguration().
+			WithAttachment(nic.Attachment).
+			WithMACAddress(nic.MAC)
+		networkDeviceIDs = append(networkDeviceIDs, vio.ID())
 	}
 	configuration.SetNetworkDevices(objcutil.NSArrayFromIDs[*virtualization.VZNetworkDeviceConfiguration](networkDeviceIDs...))
 

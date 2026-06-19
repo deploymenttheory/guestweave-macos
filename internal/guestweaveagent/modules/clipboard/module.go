@@ -15,8 +15,8 @@ import (
 	"sync"
 
 	"github.com/deploymenttheory/weave/internal/clipboard/wire"
-	"github.com/deploymenttheory/weave/internal/guestagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestagent/proto"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
 )
 
 // backend is the per-OS guest clipboard.

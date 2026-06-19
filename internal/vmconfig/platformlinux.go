@@ -6,7 +6,7 @@ package vmconfig
 import (
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/virtualization"
+	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 )

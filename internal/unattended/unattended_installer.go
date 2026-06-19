@@ -25,7 +25,6 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/passphrase"
 	"github.com/deploymenttheory/weave/internal/screenviewer"
 	weavessh "github.com/deploymenttheory/weave/internal/ssh"
@@ -207,7 +206,7 @@ func waitForVMIP(ctx context.Context, vmDir *vmdirectory.VMDirectory, secondsToW
 	if err != nil {
 		return "", err
 	}
-	mac, ok := macaddress.NewMACAddress(objcutil.GoStr(vmConfig.MACAddress.String()))
+	mac, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String())
 	if !ok {
 		return "", weaveerrors.ErrGeneric("failed to parse VM's MAC address")
 	}

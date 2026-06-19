@@ -4,19 +4,19 @@
 package vmstorage
 
 import (
+	"os"
+	"path/filepath"
 	"time"
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/weave/internal/fsutil"
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // VMStorageLocal ports tart's VMStorageLocal class.
 type VMStorageLocal struct {
-	BaseURL *foundation.NSURL
+	BaseURL string
 }
 
 var _ prune.PrunableStorage = (*VMStorageLocal)(nil)
@@ -28,12 +28,12 @@ func NewVMStorageLocal() (*VMStorageLocal, error) {
 		return nil, err
 	}
 	return &VMStorageLocal{
-		BaseURL: config.WeaveHomeDir.URLByAppendingPathComponentIsDirectory(objcutil.NSStr("vms"), true),
+		BaseURL: filepath.Join(config.WeaveHomeDir, "vms"),
 	}, nil
 }
 
-func (s *VMStorageLocal) vmURL(name string) *foundation.NSURL {
-	return s.BaseURL.URLByAppendingPathComponentIsDirectory(objcutil.NSStr(name), true)
+func (s *VMStorageLocal) vmURL(name string) string {
+	return filepath.Join(s.BaseURL, name)
 }
 
 // Exists ports VMStorageLocal.exists(_:).
@@ -49,7 +49,7 @@ func (s *VMStorageLocal) Open(name string) (*vmdirectory.VMDirectory, error) {
 		return nil, err
 	}
 
-	if err := prune.URLUpdateAccessDate(vmDir.BaseURL, time.Now()); err != nil {
+	if err := prune.UpdateAccessDate(vmDir.BaseURL, time.Now()); err != nil {
 		return nil, err
 	}
 
@@ -69,8 +69,7 @@ func (s *VMStorageLocal) Create(name string, overwrite bool) (*vmdirectory.VMDir
 
 // Move ports VMStorageLocal.move(_:from:).
 func (s *VMStorageLocal) Move(name string, from *vmdirectory.VMDirectory) error {
-	if _, err := foundation.NSFileManagerDefaultManager().
-		CreateDirectoryAtURLWithIntermediateDirectoriesAttributesError(s.BaseURL, true, nil); err != nil {
+	if err := os.MkdirAll(s.BaseURL, 0o755); err != nil {
 		return err
 	}
 	return FileManagerReplaceItem(s.vmURL(name), from.BaseURL)
@@ -95,20 +94,17 @@ type LocalVMEntry struct {
 
 // List ports VMStorageLocal.list().
 func (s *VMStorageLocal) List() ([]LocalVMEntry, error) {
-	entries, err := foundation.NSFileManagerDefaultManager().
-		ContentsOfDirectoryAtURLIncludingPropertiesForKeysOptionsError(
-			s.BaseURL, objcutil.EmptyNSArray[*foundation.NSString](),
-			foundation.NSDirectoryEnumerationSkipsSubdirectoryDescendants)
+	entries, err := os.ReadDir(s.BaseURL)
 	if err != nil {
-		if isFileNotFound(err) {
+		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
 
 	var dirs []LocalVMEntry
-	for _, url := range objcutil.NSArrayURLs(entries) {
-		vmDir := vmdirectory.NewVMDirectory(url)
+	for _, entry := range entries {
+		vmDir := vmdirectory.NewVMDirectory(filepath.Join(s.BaseURL, entry.Name()))
 		if !vmDir.Initialized() {
 			continue
 		}
@@ -156,16 +152,13 @@ func (s *VMStorageLocal) HasVMsWithMACAddress(macAddress string) (bool, error) {
 }
 
 // FileManagerReplaceItem mirrors FileManager.replaceItemAt(_:withItemAt:):
-// atomically replace originalItem with newItem. The generated binding for
-// replaceItemAtURL:… cannot express its NSURL** out-parameter, so this uses
-// remove + move, which is equivalent for tart's same-volume usage.
-func FileManagerReplaceItem(originalItem *foundation.NSURL, newItem *foundation.NSURL) error {
-	fileManager := foundation.NSFileManagerDefaultManager()
-	if fileManager.FileExistsAtPath(originalItem.Path()) {
-		if _, err := fileManager.RemoveItemAtURLError(originalItem); err != nil {
+// atomically replace originalItem with newItem via remove + rename, which is
+// equivalent for tart's same-volume usage.
+func FileManagerReplaceItem(originalItem string, newItem string) error {
+	if fsutil.Exists(originalItem) {
+		if err := os.RemoveAll(originalItem); err != nil {
 			return err
 		}
 	}
-	_, err := fileManager.MoveItemAtURLToURLError(newItem, originalItem)
-	return err
+	return os.Rename(newItem, originalItem)
 }

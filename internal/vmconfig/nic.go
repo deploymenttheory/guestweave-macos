@@ -10,8 +10,6 @@ package vmconfig
 import (
 	"crypto/sha256"
 	"fmt"
-
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 // NICMode is the networking mode of a single NIC.
@@ -87,7 +85,7 @@ func (c *VMConfig) EnsureNICs() []NICConfig {
 	}
 	mac := ""
 	if c.MACAddress != nil {
-		mac = objcutil.GoStr(c.MACAddress.String())
+		mac = c.MACAddress.String()
 	}
 	return []NICConfig{{Mode: NICModeNAT, MACAddress: mac, IsPrimary: true}}
 }

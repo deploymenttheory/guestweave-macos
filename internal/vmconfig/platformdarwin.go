@@ -16,7 +16,7 @@ import (
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/corefoundation"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/virtualization"
+	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // UnsupportedHostOSError ports Darwin.swift's UnsupportedHostOSError.

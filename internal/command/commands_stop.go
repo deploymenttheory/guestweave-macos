@@ -5,14 +5,13 @@ package command
 
 import (
 	"context"
+	"os"
 	"syscall"
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // StopCommand ports the Stop command.
@@ -46,7 +45,7 @@ func (c *StopCommand) Run(ctx context.Context) error {
 }
 
 func (c *StopCommand) stopSuspended(vmDir *vmdirectory.VMDirectory) error {
-	_, _ = foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(vmDir.StateURL())
+	_ = os.RemoveAll(vmDir.StateURL())
 	return nil
 }
 

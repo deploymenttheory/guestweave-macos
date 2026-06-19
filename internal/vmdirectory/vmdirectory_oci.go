@@ -13,7 +13,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
 	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/oci"
 	"github.com/deploymenttheory/weave/internal/prune"
 )
@@ -35,9 +34,9 @@ func (d *VMDirectory) PullFromRegistry(ctx context.Context, source oci.BlobSourc
 	}
 
 	destination := oci.PullDestination{
-		ConfigPath: objcutil.GoStr(d.ConfigURL().Path()),
-		DiskPath:   objcutil.GoStr(d.DiskURL().Path()),
-		NvramPath:  objcutil.GoStr(d.NvramURL().Path()),
+		ConfigPath: d.ConfigURL(),
+		DiskPath:   d.DiskURL(),
+		NvramPath:  d.NvramURL(),
 	}
 
 	description, err := codec.Pull(ctx, source, manifest, destination, concurrency, localLayerCache, deduplicate)
@@ -63,7 +62,7 @@ func (d *VMDirectory) PullFromRegistry(ctx context.Context, source oci.BlobSourc
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(objcutil.GoStr(d.ManifestURL().Path()), manifestJSON, 0o644)
+	return os.WriteFile(d.ManifestURL(), manifestJSON, 0o644)
 }
 
 // PushToRegistry ports VMDirectory.pushToRegistry(registry:references:
@@ -96,7 +95,7 @@ func (d *VMDirectory) PushToRegistry(ctx context.Context, registry *oci.Registry
 	layers = append(layers, oci.NewOCIManifestLayer(oci.ConfigMediaType, len(configJSON), configDigest, 0, ""))
 
 	// Compress the disk file as multiple chunks and push them as layers.
-	diskInfo, err := os.Stat(objcutil.GoStr(d.DiskURL().Path()))
+	diskInfo, err := os.Stat(d.DiskURL())
 	if err != nil {
 		return oci.RemoteName{}, err
 	}
@@ -115,7 +114,7 @@ func (d *VMDirectory) PushToRegistry(ctx context.Context, registry *oci.Registry
 	// Read VM's NVRAM and push it as a blob.
 	logging.DefaultLogger().AppendNewLine("pushing NVRAM...")
 
-	nvram, err := os.ReadFile(objcutil.GoStr(d.NvramURL().Path()))
+	nvram, err := os.ReadFile(d.NvramURL())
 	if err != nil {
 		return oci.RemoteName{}, err
 	}

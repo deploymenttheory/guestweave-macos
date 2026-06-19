@@ -9,42 +9,31 @@ package network
 import (
 	"strings"
 
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
-
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 )
 
 // buildBridged constructs a bridged NIC, resolving the host interface by
 // identifier or localized display name.
-func buildBridged(nicConfig vmconfig.NICConfig, mac *virtualization.VZMACAddress) (NIC, error) {
+func buildBridged(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, error) {
 	iface, found := FindBridgedInterface(nicConfig.BridgedInterface)
 	if !found {
 		return NIC{}, weaveerrors.ErrGeneric(
 			"no bridge interfaces matched %q, available interfaces: %s",
 			nicConfig.BridgedInterface, strings.Join(BridgeInterfaces(), ", "))
 	}
-	attachment := virtualization.VZBridgedNetworkDeviceAttachmentFromID(
-		objcutil.AllocClass("VZBridgedNetworkDeviceAttachment")).InitWithInterface(iface)
-	return NIC{Attachment: &attachment.VZNetworkDeviceAttachment, MAC: mac}, nil
+	return NIC{
+		Attachment: idvirt.NewBridgedNetworkDeviceAttachmentWithInterface(iface.Unwrap()),
+		MAC:        mac,
+	}, nil
 }
 
 // FindBridgedInterface resolves a host bridged interface by identifier or
 // localized display name. An empty name selects the first available interface.
-func FindBridgedInterface(name string) (*virtualization.VZBridgedNetworkInterface, bool) {
-	interfaces := virtualization.VZBridgedNetworkInterfaceNetworkInterfaces()
-	if interfaces == nil {
-		return nil, false
-	}
-	count := purego.Send[uint](interfaces.Ptr(), objcutil.SelCount)
-	for i := range count {
-		id := purego.Send[purego.ID](interfaces.Ptr(), objcutil.SelObjectAtIndex, i)
-		iface := virtualization.VZBridgedNetworkInterfaceFromID(purego.Retain(id))
-		if name == "" ||
-			objcutil.GoStr(iface.Identifier()) == name ||
-			objcutil.GoStr(iface.LocalizedDisplayName()) == name {
+func FindBridgedInterface(name string) (*idvirt.BridgedNetworkInterface, bool) {
+	for _, iface := range idvirt.NetworkInterfaces() {
+		if name == "" || iface.Identifier() == name || iface.LocalizedDisplayName() == name {
 			return iface, true
 		}
 	}
@@ -55,17 +44,9 @@ func FindBridgedInterface(name string) (*virtualization.VZBridgedNetworkInterfac
 // "identifier (or \"Display Name\")", for error messages and `--net-bridged=list`.
 func BridgeInterfaces() []string {
 	var descriptions []string
-	interfaces := virtualization.VZBridgedNetworkInterfaceNetworkInterfaces()
-	if interfaces == nil {
-		return nil
-	}
-	count := purego.Send[uint](interfaces.Ptr(), objcutil.SelCount)
-	for i := range count {
-		id := purego.Send[purego.ID](interfaces.Ptr(), objcutil.SelObjectAtIndex, i)
-		iface := virtualization.VZBridgedNetworkInterfaceFromID(purego.Retain(id))
-
-		description := objcutil.GoStr(iface.Identifier())
-		if displayName := objcutil.GoStr(iface.LocalizedDisplayName()); displayName != "" {
+	for _, iface := range idvirt.NetworkInterfaces() {
+		description := iface.Identifier()
+		if displayName := iface.LocalizedDisplayName(); displayName != "" {
 			description += " (or \"" + displayName + "\")"
 		}
 		descriptions = append(descriptions, description)

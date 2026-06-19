@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/deploymenttheory/weave/internal/clipboard/wire"
-	"github.com/deploymenttheory/weave/internal/guestagent/proto"
+	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
 )
 
 // fakeBackend is an in-memory clipboard for exercising the module's wire

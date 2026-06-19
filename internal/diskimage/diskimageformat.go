@@ -7,7 +7,7 @@ package diskimage
 import (
 	"strings"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
+	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 )
 
 // DiskImageFormat mirrors tart's DiskImageFormat enum.
@@ -36,8 +36,7 @@ func (f DiskImageFormat) DisplayName() string {
 func (f DiskImageFormat) IsSupported() bool {
 	switch f {
 	case DiskImageFormatASIF:
-		return foundation.NSProcessInfoProcessInfo().
-			IsOperatingSystemAtLeastVersion(foundation.NSOperatingSystemVersion{MajorVersion: 26})
+		return weaveplatform.MacOSAtLeast(26)
 	default:
 		return true
 	}

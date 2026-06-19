@@ -5,8 +5,6 @@ package vnc
 
 import (
 	"context"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // IPNotFoundError ports Run.swift's IPNotFound error.
@@ -14,8 +12,8 @@ type IPNotFoundError struct{}
 
 func (IPNotFoundError) Error() string { return "IP not found" }
 
-// VNC ports tart's VNC protocol.
+// VNC ports tart's VNC protocol. WaitForURL returns the vnc:// URL as a string.
 type VNC interface {
-	WaitForURL(ctx context.Context, netBridged bool) (*foundation.NSURL, error)
+	WaitForURL(ctx context.Context, netBridged bool) (string, error)
 	Stop() error
 }

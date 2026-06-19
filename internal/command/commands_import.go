@@ -6,6 +6,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
@@ -13,8 +14,6 @@ import (
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 )
 
 // ImportCommand ports the Import command.
@@ -58,7 +57,7 @@ func (c *ImportCommand) Run(ctx context.Context) error {
 	}
 
 	cleanup := func() {
-		_, _ = foundation.NSFileManagerDefaultManager().RemoveItemAtURLError(tmpVMDir.BaseURL)
+		_ = os.RemoveAll(tmpVMDir.BaseURL)
 	}
 
 	// Acquire a global lock.

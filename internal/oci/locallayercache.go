@@ -7,9 +7,6 @@ package oci
 import (
 	"os"
 	"syscall"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
 // LocalLayerCacheDigestInfo ports LocalLayerCache.DigestInfo.
@@ -24,7 +21,7 @@ type LocalLayerCacheDigestInfo struct {
 type LocalLayerCache struct {
 	Name              string
 	DeduplicatedBytes uint64
-	DiskURL           *foundation.NSURL
+	DiskURL           string
 
 	mappedDisk    []byte
 	digestToRange map[string]LocalLayerCacheDigestInfo
@@ -34,17 +31,17 @@ type LocalLayerCache struct {
 // NewLocalLayerCache ports LocalLayerCache.init?(_:_:_:_:); like the Swift
 // failable initializer, it returns (nil, nil) when a disk layer is missing
 // the uncompressed-size annotation.
-func NewLocalLayerCache(name string, deduplicatedBytes uint64, diskURL *foundation.NSURL, manifest OCIManifest) (*LocalLayerCache, error) {
+func NewLocalLayerCache(name string, deduplicatedBytes uint64, diskPath string, manifest OCIManifest) (*LocalLayerCache, error) {
 	cache := &LocalLayerCache{
 		Name:              name,
 		DeduplicatedBytes: deduplicatedBytes,
-		DiskURL:           diskURL,
+		DiskURL:           diskPath,
 		digestToRange:     map[string]LocalLayerCacheDigestInfo{},
 		offsetToRange:     map[uint64]LocalLayerCacheDigestInfo{},
 	}
 
 	// mmap(2) the disk that contains the layers from the manifest.
-	file, err := os.Open(objcutil.GoStr(diskURL.Path()))
+	file, err := os.Open(diskPath)
 	if err != nil {
 		return nil, err
 	}

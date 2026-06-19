@@ -6,22 +6,23 @@
 package vm
 
 import (
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
+	"github.com/deploymenttheory/weave/internal/objcutil"
+
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 )
 
 // restoreMachineStateFrom / saveMachineStateTo bridge the macOS 14 snapshot
 // APIs through manual blocks.
-func (vm *VM) RestoreMachineStateFrom(url *foundation.NSURL) error {
-	return vm.sendURLErrorCompletion("restoreMachineStateFromURL:completionHandler:", url)
+func (vm *VM) RestoreMachineStateFrom(path string) error {
+	return vm.sendURLErrorCompletion("restoreMachineStateFromURL:completionHandler:", path)
 }
 
-func (vm *VM) SaveMachineStateTo(url *foundation.NSURL) error {
-	return vm.sendURLErrorCompletion("saveMachineStateToURL:completionHandler:", url)
+func (vm *VM) SaveMachineStateTo(path string) error {
+	return vm.sendURLErrorCompletion("saveMachineStateToURL:completionHandler:", path)
 }
 
-func (vm *VM) sendURLErrorCompletion(selector string, url *foundation.NSURL) error {
+func (vm *VM) sendURLErrorCompletion(selector string, path string) error {
 	errCh := make(chan error, 1)
 	block := purego.NewBlock(func(_ purego.Block, errID purego.ID) {
 		if errID != 0 {
@@ -30,6 +31,9 @@ func (vm *VM) sendURLErrorCompletion(selector string, url *foundation.NSURL) err
 			errCh <- nil
 		}
 	})
+	// Keep the bridged NSURL alive across the async send by capturing it in the
+	// closure.
+	url := objcutil.NSURLFromPath(path)
 	dispatch.RunOnMainThread(func() {
 		vm.VirtualMachine.Ptr().Send(purego.RegisterName(selector), url.Ptr(), block)
 	})
