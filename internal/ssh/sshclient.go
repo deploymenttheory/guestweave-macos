@@ -26,12 +26,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/crypto/ssh"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/telemetry"
 	"github.com/deploymenttheory/weave/internal/terminal"
-
-	"golang.org/x/crypto/ssh"
 )
 
 const sshDialTimeout = 30 * time.Second
@@ -100,7 +99,11 @@ func (c *SSHClient) connect(ctx context.Context) (*ssh.Client, error) {
 
 // Execute runs a command on the remote host and returns its combined
 // stdout+stderr output and exit code. A zero timeout means no timeout.
-func (c *SSHClient) Execute(ctx context.Context, command string, timeout time.Duration) (SSHResult, error) {
+func (c *SSHClient) Execute(
+	ctx context.Context,
+	command string,
+	timeout time.Duration,
+) (SSHResult, error) {
 	ctx, span := otel.Tracer("weave").Start(ctx, "ssh.exec",
 		trace.WithAttributes(
 			attribute.String("ssh.host", c.Host),
@@ -175,7 +178,12 @@ func shellSingleQuote(s string) string {
 // Upload streams r into the file remotePath on the remote host and sets its
 // permission bits. Used to deploy the clipboard agent binary into the guest; a
 // single SSH session pipes the bytes through `cat >` and chmods the result.
-func (c *SSHClient) Upload(ctx context.Context, r io.Reader, remotePath string, mode os.FileMode) error {
+func (c *SSHClient) Upload(
+	ctx context.Context,
+	r io.Reader,
+	remotePath string,
+	mode os.FileMode,
+) error {
 	client, err := c.connect(ctx)
 	if err != nil {
 		return err
@@ -295,6 +303,59 @@ func (c *SSHClient) StartAgent(ctx context.Context, command string) (*AgentSessi
 // Interactive starts an interactive shell session with a PTY, passing the
 // local terminal through in raw mode and propagating window-size changes.
 func (c *SSHClient) Interactive(ctx context.Context) error {
+	cols, rows := uint16(80), uint16(24)
+	if terminal.TermIsTerminal() {
+		if w, h, err := terminal.TermGetSize(); err == nil {
+			cols, rows = w, h
+		}
+		state, err := terminal.TermMakeRaw()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = terminal.TermRestore(state) }()
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Propagate local window resizes to the remote PTY.
+	resize := make(chan [2]uint16, 1)
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer signal.Stop(winch)
+	go func() {
+		for {
+			select {
+			case <-winch:
+				if w, h, err := terminal.TermGetSize(); err == nil {
+					select {
+					case resize <- [2]uint16{w, h}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return c.InteractiveIO(ctx, "", os.Stdin, os.Stdout, os.Stderr, cols, rows, resize)
+}
+
+// InteractiveIO runs an interactive session with a PTY over the supplied
+// streams instead of the local terminal, so callers such as the HTTP API can
+// bridge it to a WebSocket. An empty command opens a login shell; otherwise
+// the command is run under the PTY. resize carries {cols, rows} updates and
+// may be nil.
+func (c *SSHClient) InteractiveIO(
+	ctx context.Context,
+	command string,
+	stdin io.Reader,
+	stdout, stderr io.Writer,
+	cols, rows uint16,
+	resize <-chan [2]uint16,
+) error {
 	client, err := c.connect(ctx)
 	if err != nil {
 		return err
@@ -307,41 +368,36 @@ func (c *SSHClient) Interactive(ctx context.Context) error {
 	}
 	defer session.Close()
 
-	session.Stdin = os.Stdin
-	session.Stdout = os.Stdout
-	session.Stderr = os.Stderr
-
-	width, height := uint16(80), uint16(24)
-	if terminal.TermIsTerminal() {
-		if w, h, err := terminal.TermGetSize(); err == nil {
-			width, height = w, h
-		}
-
-		state, err := terminal.TermMakeRaw()
-		if err != nil {
-			return err
-		}
-		defer func() { _ = terminal.TermRestore(state) }()
-	}
+	session.Stdin = stdin
+	session.Stdout = stdout
+	session.Stderr = stderr
 
 	modes := ssh.TerminalModes{}
-	if err := session.RequestPty("xterm-256color", int(height), int(width), modes); err != nil {
+	if err := session.RequestPty("xterm-256color", int(rows), int(cols), modes); err != nil {
 		return ErrSSHConnectionFailed(err.Error())
 	}
 
-	// Propagate local window resizes to the remote PTY.
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
-	defer signal.Stop(winch)
-	go func() {
-		for range winch {
-			if w, h, err := terminal.TermGetSize(); err == nil {
-				_ = session.WindowChange(int(h), int(w))
+	if resize != nil {
+		go func() {
+			for {
+				select {
+				case size, ok := <-resize:
+					if !ok {
+						return
+					}
+					_ = session.WindowChange(int(size[1]), int(size[0]))
+				case <-ctx.Done():
+					return
+				}
 			}
-		}
-	}()
+		}()
+	}
 
-	if err := session.Shell(); err != nil {
+	start := session.Shell
+	if command != "" {
+		start = func() error { return session.Start(command) }
+	}
+	if err := start(); err != nil {
 		return ErrSSHConnectionFailed(err.Error())
 	}
 

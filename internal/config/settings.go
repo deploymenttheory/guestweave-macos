@@ -32,6 +32,19 @@ type RegistrySettings struct {
 	Organization string `yaml:"organization,omitempty" json:"organization,omitempty"`
 }
 
+// defaultLogMaxSizeMB is the per-file log cap when none is configured.
+const defaultLogMaxSizeMB = 10
+
+// LoggingSettings controls the file logger's size-capped rotation.
+type LoggingSettings struct {
+	// MaxSizeMB caps each log file; once exceeded the file rotates (or is
+	// truncated, per KeepRotated). nil = default (10 MB); 0 = unlimited.
+	MaxSizeMB *int `yaml:"maxSizeMB,omitempty" json:"maxSizeMB,omitempty"`
+	// KeepRotated keeps one .old generation on rotation. nil = default (true);
+	// false truncates the capped file in place instead.
+	KeepRotated *bool `yaml:"keepRotated,omitempty" json:"keepRotated,omitempty"`
+}
+
 // Settings is the persisted configuration.
 type Settings struct {
 	DefaultStorage   string            `yaml:"defaultStorage,omitempty" json:"defaultStorage,omitempty"` // name in StorageLocations or an absolute path
@@ -42,7 +55,35 @@ type Settings struct {
 	// DefaultClipboardPolicy is the enterprise clipboard policy applied to VMs
 	// that do not carry their own, overridable per-run by --clipboard-* flags.
 	DefaultClipboardPolicy *clipboardpolicy.Policy `yaml:"defaultClipboardPolicy,omitempty" json:"defaultClipboardPolicy,omitempty"`
+	// Logging controls the file logger's size cap and rotation.
+	Logging *LoggingSettings `yaml:"logging,omitempty" json:"logging,omitempty"`
 }
+
+// LogMaxSizeBytes returns the effective per-file log cap in bytes (0 = unlimited).
+func (s *Settings) LogMaxSizeBytes() int64 {
+	mb := defaultLogMaxSizeMB
+	if s.Logging != nil && s.Logging.MaxSizeMB != nil {
+		mb = *s.Logging.MaxSizeMB
+	}
+	if mb <= 0 {
+		return 0
+	}
+	return int64(mb) * 1024 * 1024
+}
+
+// LogKeepRotated reports whether the logger keeps one .old generation on
+// rotation (default true).
+func (s *Settings) LogKeepRotated() bool {
+	if s.Logging != nil && s.Logging.KeepRotated != nil {
+		return *s.Logging.KeepRotated
+	}
+	return true
+}
+
+// LogMaxSizeBytes / LogKeepRotated expose the effective (cached) logging
+// settings to the logging package, which cannot reach the unexported cache.
+func LogMaxSizeBytes() int64 { return settingsOrWarn().LogMaxSizeBytes() }
+func LogKeepRotated() bool   { return settingsOrWarn().LogKeepRotated() }
 
 var StorageLocationNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 

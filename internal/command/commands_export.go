@@ -15,8 +15,9 @@ import (
 
 // ExportCommand ports the Export command.
 type ExportCommand struct {
-	Name string
-	Path string // optional; defaults to "<name>.tvm"
+	Name  string
+	Path  string // optional; defaults to "<name>.tvm"
+	Force bool   // skip the interactive overwrite prompt (used by the HTTP API)
 }
 
 func (c *ExportCommand) Run(ctx context.Context) error {
@@ -25,7 +26,7 @@ func (c *ExportCommand) Run(ctx context.Context) error {
 	if correctedPath == "" {
 		correctedPath = c.Name + ".tvm"
 
-		if _, err := os.Stat(correctedPath); err == nil {
+		if _, err := os.Stat(correctedPath); err == nil && !c.Force {
 			if !userWantsOverwrite(correctedPath) {
 				return nil
 			}
@@ -42,7 +43,10 @@ func (c *ExportCommand) Run(ctx context.Context) error {
 }
 
 func userWantsOverwrite(filename string) bool {
-	fmt.Printf("file %s already exists, are you sure you want to overwrite it? (yes, [no])? ", filename)
+	fmt.Printf(
+		"file %s already exists, are you sure you want to overwrite it? (yes, [no])? ",
+		filename,
+	)
 
 	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {

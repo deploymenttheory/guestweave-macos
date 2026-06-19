@@ -1,27 +1,26 @@
 // Port of tart's Commands/Exec.swift: executes a command in a running VM
-// through the Tart Guest Agent's Exec streaming gRPC.
+// through the Tart Guest Agent's Exec streaming gRPC. The stream pump itself
+// lives in internal/agentrpc so the HTTP API can reuse it; this command wires
+// it to the local terminal.
 //go:build darwin
 
 package command
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
-
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/terminal"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/deploymenttheory/weave/internal/agentrpc"
+	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	"github.com/deploymenttheory/weave/internal/terminal"
+	"github.com/deploymenttheory/weave/internal/vmstorage"
 )
 
 // ExecCommand ports the Exec command.
@@ -34,7 +33,9 @@ type ExecCommand struct {
 
 func (c *ExecCommand) Run(ctx context.Context) error {
 	if !weaveplatform.MacOSAtLeast(14) {
-		return weaveerrors.ErrGeneric("\"weave exec\" is only available on macOS 14 (Sonoma) or newer")
+		return weaveerrors.ErrGeneric(
+			"\"weave exec\" is only available on macOS 14 (Sonoma) or newer",
+		)
 	}
 
 	// Open the VM's directory and ensure that the VM is running.
@@ -64,7 +65,10 @@ func (c *ExecCommand) Run(ctx context.Context) error {
 	conn, err := grpc.NewClient("unix://"+filepath.Base(controlSocketPath),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return weaveerrors.ErrGeneric("Failed to connect to the VM using its control socket: %v, is the Tart Guest Agent running?", err)
+		return weaveerrors.ErrGeneric(
+			"Failed to connect to the VM using its control socket: %v, is the Tart Guest Agent running?",
+			err,
+		)
 	}
 	defer conn.Close()
 
@@ -84,97 +88,46 @@ func (c *ExecCommand) Run(ctx context.Context) error {
 		}
 	}()
 
-	if err := c.execute(ctx, conn); err != nil {
-		return err
-	}
-	return nil
+	return c.execute(ctx, conn)
 }
 
 func (c *ExecCommand) execute(ctx context.Context, conn *grpc.ClientConn) error {
-	execCall, err := agentrpc.NewAgentClient(conn).Exec(ctx)
-	if err != nil {
-		return weaveerrors.ErrGeneric("Failed to connect to the VM using its control socket: %v, is the Tart Guest Agent running?", err)
-	}
-
-	command := &agentrpc.ExecRequest_Command{
-		Name:        c.Command[0],
-		Args:        c.Command[1:],
+	opts := agentrpc.ExecStreamOptions{
+		Command:     c.Command,
 		Interactive: c.Interactive,
-		Tty:         c.TTY,
+		TTY:         c.TTY,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
 	}
-	if c.TTY {
-		if width, height, err := terminal.TermGetSize(); err == nil {
-			command.TerminalSize = &agentrpc.TerminalSize{Cols: uint32(width), Rows: uint32(height)}
-		}
-	}
-	var sendMu sync.Mutex
-	send := func(request *agentrpc.ExecRequest) error {
-		sendMu.Lock()
-		defer sendMu.Unlock()
-		return execCall.Send(request)
-	}
-
-	if err := send(&agentrpc.ExecRequest{
-		Type: &agentrpc.ExecRequest_Command_{Command: command},
-	}); err != nil {
-		return err
+	if c.Interactive {
+		opts.Stdin = os.Stdin
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 3)
-
-	// Stream the host's standard input if interactive mode is enabled.
-	if c.Interactive {
-		go func() {
-			buffer := make([]byte, 64*1024)
-			for {
-				n, readErr := os.Stdin.Read(buffer)
-				if n > 0 {
-					if err := send(&agentrpc.ExecRequest{
-						Type: &agentrpc.ExecRequest_StandardInput{
-							StandardInput: &agentrpc.IOChunk{Data: append([]byte(nil), buffer[:n]...)},
-						},
-					}); err != nil {
-						errCh <- err
-						return
-					}
-				}
-				if readErr != nil {
-					// Signal EOF as we're done reading standard input.
-					_ = send(&agentrpc.ExecRequest{
-						Type: &agentrpc.ExecRequest_StandardInput{
-							StandardInput: &agentrpc.IOChunk{Data: nil},
-						},
-					})
-					if readErr != io.EOF {
-						errCh <- readErr
-					}
-					return
-				}
-			}
-		}()
-	}
-
-	// Stream the host's terminal dimensions if a pseudo-terminal was
-	// requested.
+	// Forward the host terminal's initial size and subsequent resizes.
 	if c.TTY {
+		if width, height, err := terminal.TermGetSize(); err == nil {
+			opts.InitialSize = agentrpc.TerminalDimensions{
+				Cols: uint32(width),
+				Rows: uint32(height),
+			}
+		}
+		resize := make(chan agentrpc.TerminalDimensions, 1)
+		opts.Resize = resize
+
 		sigwinch := make(chan os.Signal, 1)
 		signal.Notify(sigwinch, syscall.SIGWINCH)
 		defer signal.Stop(sigwinch)
-
 		go func() {
 			for {
 				select {
 				case <-sigwinch:
 					if width, height, err := terminal.TermGetSize(); err == nil {
-						if err := send(&agentrpc.ExecRequest{
-							Type: &agentrpc.ExecRequest_TerminalResize{
-								TerminalResize: &agentrpc.TerminalSize{Cols: uint32(width), Rows: uint32(height)},
-							},
-						}); err != nil {
-							errCh <- err
+						select {
+						case resize <- agentrpc.TerminalDimensions{Cols: uint32(width), Rows: uint32(height)}:
+						case <-ctx.Done():
 							return
 						}
 					}
@@ -185,33 +138,11 @@ func (c *ExecCommand) execute(ctx context.Context, conn *grpc.ClientConn) error 
 		}()
 	}
 
-	// Process command events.
-	go func() {
-		for {
-			response, err := execCall.Recv()
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			switch event := response.GetType().(type) {
-			case *agentrpc.ExecResponse_StandardOutput:
-				_, _ = os.Stdout.Write(event.StandardOutput.GetData())
-			case *agentrpc.ExecResponse_StandardError:
-				_, _ = os.Stderr.Write(event.StandardError.GetData())
-			case *agentrpc.ExecResponse_Exit_:
-				errCh <- &weaveerrors.ExecCustomExitCodeError{Code: event.Exit.GetCode()}
-				return
-			default:
-				// Unknown event, do nothing.
-			}
-		}
-	}()
-
-	select {
-	case err := <-errCh:
+	code, err := agentrpc.RunExecStream(ctx, conn, opts)
+	if err != nil {
 		return err
-	case <-ctx.Done():
-		return ctx.Err()
 	}
+	// Preserve the guest's exit code as the process exit status (handleError
+	// maps ExecCustomExitCodeError to os.Exit).
+	return &weaveerrors.ExecCustomExitCodeError{Code: code}
 }

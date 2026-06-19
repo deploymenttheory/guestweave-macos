@@ -24,14 +24,20 @@ type LogsCommand struct {
 	Type   string // info, error or all
 	Lines  int    // 0 means the whole file
 	Follow bool
+	Clear  bool // remove all log files instead of printing them
 }
 
 func (c *LogsCommand) Validate() error {
+	if c.Clear {
+		return nil
+	}
 	switch c.Type {
 	case "info", "error", "all":
 		return nil
 	default:
-		return weaveerrors.ErrGeneric("usage: weave logs <info|error|all> [--lines N] [-f]")
+		return weaveerrors.ErrGeneric(
+			"usage: weave logs <info|error|all> [--lines N] [-f] | weave logs clear",
+		)
 	}
 }
 
@@ -39,10 +45,16 @@ func (c *LogsCommand) LogFiles() []struct{ Path, Prefix string } {
 	dir := logging.LogsDir()
 	var files []struct{ Path, Prefix string }
 	if c.Type == "info" || c.Type == "all" {
-		files = append(files, struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileInfoName), "INFO: "})
+		files = append(
+			files,
+			struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileInfoName), "INFO: "},
+		)
 	}
 	if c.Type == "error" || c.Type == "all" {
-		files = append(files, struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileErrorName), "ERROR: "})
+		files = append(
+			files,
+			struct{ Path, Prefix string }{filepath.Join(dir, logging.LogFileErrorName), "ERROR: "},
+		)
 	}
 	// Prefixes only make sense when interleaving both files.
 	if c.Type != "all" {
@@ -54,6 +66,14 @@ func (c *LogsCommand) LogFiles() []struct{ Path, Prefix string } {
 func (c *LogsCommand) Run(ctx context.Context) error {
 	if logging.LogsDir() == "" {
 		return weaveerrors.ErrGeneric("cannot determine the logs directory")
+	}
+
+	if c.Clear {
+		if err := logging.Clear(); err != nil {
+			return err
+		}
+		fmt.Println("Logs cleared.")
+		return nil
 	}
 
 	files := c.LogFiles()

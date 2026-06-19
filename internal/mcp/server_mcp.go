@@ -21,6 +21,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/logging"
 	weavessh "github.com/deploymenttheory/weave/internal/ssh"
+	"github.com/deploymenttheory/weave/internal/vmservice"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -78,7 +79,7 @@ func RunMCPServer(ctx context.Context) error {
 		Name:        "weave_list_vms",
 		Description: "List virtual machines (name, state, disk usage, last access).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listArgs) (*mcp.CallToolResult, any, error) {
-		infos, err := collectVMInfos(args.Source)
+		infos, err := vmservice.CollectVMInfos(args.Source)
 		if err != nil {
 			return errorResult(err)
 		}
@@ -100,7 +101,7 @@ func RunMCPServer(ctx context.Context) error {
 		Name:        "weave_get_vm",
 		Description: "Get details of one virtual machine, including its IP address when running.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args nameArgs) (*mcp.CallToolResult, any, error) {
-		details, err := collectVMDetails(ctx, args.Name)
+		details, err := vmservice.CollectVMDetails(ctx, args.Name)
 		if err != nil {
 			return errorResult(err)
 		}
@@ -125,10 +126,10 @@ func RunMCPServer(ctx context.Context) error {
 		for _, dir := range args.SharedDirs {
 			extraArgs = append(extraArgs, "--shared-dir", dir)
 		}
-		if err := spawnDetachedRun(args.Name, extraArgs); err != nil {
+		if err := vmservice.SpawnDetachedRun(args.Name, extraArgs); err != nil {
 			return errorResult(err)
 		}
-		if err := waitForVMRunning(ctx, args.Name, 30*time.Second); err != nil {
+		if err := vmservice.WaitForVMRunning(ctx, args.Name, 30*time.Second); err != nil {
 			return errorResult(err)
 		}
 		return textResult("VM %q is running.", args.Name), nil, nil
@@ -215,7 +216,7 @@ func RunMCPServer(ctx context.Context) error {
 		Name:        "weave_exec",
 		Description: "Execute a shell command inside a running VM over SSH and return its output.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args execArgs) (*mcp.CallToolResult, any, error) {
-		details, err := collectVMDetails(ctx, args.Name)
+		details, err := vmservice.CollectVMDetails(ctx, args.Name)
 		if err != nil {
 			return errorResult(err)
 		}

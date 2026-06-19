@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
@@ -35,7 +36,7 @@ type ConfigCommand struct {
 	Args []string
 }
 
-const configUsage = "usage: weave config <get|storage|cache|registry|network> ..."
+const configUsage = "usage: weave config <get|storage|cache|registry|network|logging> ..."
 
 func (c *ConfigCommand) Run(ctx context.Context) error {
 	if len(c.Args) == 0 {
@@ -61,6 +62,8 @@ func (c *ConfigCommand) Run(ctx context.Context) error {
 		return c.runRegistry(settings, rest)
 	case "network":
 		return c.runNetwork(rest)
+	case "logging":
+		return c.runLogging(settings, rest)
 	default:
 		return weaveerrors.ErrGeneric(configUsage)
 	}
@@ -218,9 +221,69 @@ func (c *ConfigCommand) runCache(settings *weaveconfig.Settings, args []string) 
 	}
 }
 
+// runLogging shows or sets the file logger's size cap and rotation policy:
+//
+//	config logging                          show effective logging settings
+//	config logging maxSizeMB [N]            show or set the per-file cap MB (0 = unlimited)
+//	config logging keepRotated [true|false] show or set rotation retention
+func (c *ConfigCommand) runLogging(settings *weaveconfig.Settings, args []string) error {
+	const usage = "usage: weave config logging [maxSizeMB [N] | keepRotated [true|false]]"
+
+	if len(args) == 0 {
+		fmt.Printf("Max size: %d MB (0 = unlimited)\n", settings.LogMaxSizeBytes()/(1024*1024))
+		fmt.Printf("Keep rotated: %t\n", settings.LogKeepRotated())
+		return nil
+	}
+
+	switch args[0] {
+	case "maxSizeMB":
+		if len(args) == 1 {
+			fmt.Println(settings.LogMaxSizeBytes() / (1024 * 1024))
+			return nil
+		}
+		mb, err := strconv.Atoi(args[1])
+		if err != nil || mb < 0 {
+			return weaveerrors.ErrGeneric(
+				"maxSizeMB must be a non-negative integer (0 = unlimited)",
+			)
+		}
+		if settings.Logging == nil {
+			settings.Logging = &weaveconfig.LoggingSettings{}
+		}
+		settings.Logging.MaxSizeMB = &mb
+		if err := settings.Save(); err != nil {
+			return err
+		}
+		fmt.Printf("Log max size set to %d MB\n", mb)
+		return nil
+	case "keepRotated":
+		if len(args) == 1 {
+			fmt.Printf("%t\n", settings.LogKeepRotated())
+			return nil
+		}
+		keep, err := strconv.ParseBool(args[1])
+		if err != nil {
+			return weaveerrors.ErrGeneric("keepRotated must be true or false")
+		}
+		if settings.Logging == nil {
+			settings.Logging = &weaveconfig.LoggingSettings{}
+		}
+		settings.Logging.KeepRotated = &keep
+		if err := settings.Save(); err != nil {
+			return err
+		}
+		fmt.Printf("Log keepRotated set to %t\n", keep)
+		return nil
+	default:
+		return weaveerrors.ErrGeneric(usage)
+	}
+}
+
 func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []string) error {
 	if len(args) == 0 {
-		return weaveerrors.ErrGeneric("usage: weave config registry <status|ghcr|list|add|remove|default> ...")
+		return weaveerrors.ErrGeneric(
+			"usage: weave config registry <status|ghcr|list|add|remove|default> ...",
+		)
 	}
 
 	switch args[0] {
@@ -239,7 +302,14 @@ func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []strin
 			if profile.IsInsecure {
 				insecure = " (insecure)"
 			}
-			fmt.Printf("%s %-16s %s/%s%s\n", marker, profile.Name, profile.Host, profile.Organization, insecure)
+			fmt.Printf(
+				"%s %-16s %s/%s%s\n",
+				marker,
+				profile.Name,
+				profile.Host,
+				profile.Organization,
+				insecure,
+			)
 		}
 		return nil
 
@@ -254,7 +324,9 @@ func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []strin
 			return err
 		}
 		if len(positionals) != 1 || *organization == "" {
-			return weaveerrors.ErrGeneric("usage: weave config registry add <name> --organization <org> [--host ghcr.io] [--insecure] [--default]")
+			return weaveerrors.ErrGeneric(
+				"usage: weave config registry add <name> --organization <org> [--host ghcr.io] [--insecure] [--default]",
+			)
 		}
 		name := positionals[0]
 
@@ -363,7 +435,9 @@ func (c *ConfigCommand) runRegistry(settings *weaveconfig.Settings, args []strin
 		return nil
 
 	default:
-		return weaveerrors.ErrGeneric("usage: weave config registry <status|ghcr|list|add|remove|default> ...")
+		return weaveerrors.ErrGeneric(
+			"usage: weave config registry <status|ghcr|list|add|remove|default> ...",
+		)
 	}
 }
 

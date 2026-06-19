@@ -1,0 +1,1093 @@
+openapi: 3.1.0
+info:
+  title: weave HTTP API
+  description: >
+    REST API for the weave macOS Virtualization.framework VM manager, served by
+    `weave serve` under `/weave/*` on loopback (127.0.0.1). It exposes the same
+    VM lifecycle, guest interaction, OCI registry, and configuration operations
+    as the `weave` CLI. exec and ssh run over SSH; their `/ws` variants upgrade
+    to a WebSocket for an interactive PTY session.
+  version: "1.0.0"
+servers:
+  - url: http://127.0.0.1:7777
+    description: Default local server (override with `weave serve --port`).
+
+tags:
+  - name: vms
+    description: VM lifecycle.
+  - name: guest
+    description: In-guest interaction (exec, ssh, ip, fqn).
+  - name: images
+    description: OCI registry images and the macOS restore image.
+  - name: registry
+    description: Registry authentication.
+  - name: config
+    description: Application configuration.
+  - name: system
+    description: Host status, logs, maintenance, and the API schema.
+
+paths:
+  /weave/vms:
+    get:
+      tags: [vms]
+      summary: List VMs.
+      parameters:
+        - name: source
+          in: query
+          schema: { type: string, enum: [local, oci] }
+          description: Limit to local or OCI VMs. Omit for both.
+      responses:
+        "200":
+          description: VM list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ListVMInfo" }
+    post:
+      tags: [vms]
+      summary: Create a VM.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateVMRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/NameAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/clone:
+    post:
+      tags: [vms]
+      summary: Clone a VM or OCI image into a new local VM.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloneVMRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/NameAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/push:
+    post:
+      tags: [vms, images]
+      summary: Push a local VM to one or more OCI registries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushVMRequest" }
+      responses:
+        "200": { description: Pushed., content: { application/json: { schema: { type: object, properties: { pushed: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/import:
+    post:
+      tags: [vms]
+      summary: Import a VM from a .tvm archive on the server's filesystem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/NameAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/import/upload:
+    post:
+      tags: [vms]
+      summary: Import a VM by streaming a multipart .tvm upload.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+          description: Name for the imported VM.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The .tvm archive.
+      responses:
+        "201": { $ref: "#/components/responses/NameAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}:
+    parameters:
+      - $ref: "#/components/parameters/Name"
+    get:
+      tags: [vms]
+      summary: Get one VM's details (includes IP when running).
+      responses:
+        "200":
+          description: VM details.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VMDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [vms]
+      summary: Delete a VM.
+      responses:
+        "200": { description: Deleted., content: { application/json: { schema: { type: object, properties: { deleted: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [vms]
+      summary: Update a stopped VM's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateVMRequest" }
+      responses:
+        "200": { description: Updated., content: { application/json: { schema: { type: object, properties: { updated: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/run:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Start a VM as a detached process.
+      description: >
+        Spawns a detached `weave run`. Headless is the default unless `graphics`
+        or a VNC mode is requested. Returns once the VM reports running.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunVMRequest" }
+      responses:
+        "200": { description: Running., content: { application/json: { schema: { type: object, properties: { running: { type: string } } } } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/stop:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Stop a running VM.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timeout: { type: integer, description: "Graceful shutdown timeout (seconds, default 30)." }
+      responses:
+        "200": { description: Stopped., content: { application/json: { schema: { type: object, properties: { stopped: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/suspend:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Suspend a running VM (macOS 14+).
+      responses:
+        "200": { description: Suspended., content: { application/json: { schema: { type: object, properties: { suspended: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/rename:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Rename a local VM.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newName]
+              properties:
+                newName: { type: string }
+      responses:
+        "200": { description: Renamed., content: { application/json: { schema: { type: object, properties: { renamed: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/setup:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Run unattended Setup Assistant automation.
+      description: >
+        Preset mode runs synchronously and returns 200. Agent mode is
+        long-running and returns 202 with a job id pollable at
+        `GET /weave/pull/{id}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupRequest" }
+      responses:
+        "200": { description: Preset setup finished., content: { application/json: { schema: { type: object, properties: { setup: { type: string } } } } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/fqn:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    get:
+      tags: [guest]
+      summary: Resolve a VM/image name to its fully-qualified name.
+      responses:
+        "200":
+          description: Fully-qualified name.
+          content:
+            application/json:
+              schema: { type: object, properties: { fqn: { type: string } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/ip:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    get:
+      tags: [guest]
+      summary: Resolve a running VM's IP address.
+      parameters:
+        - { $ref: "#/components/parameters/Resolver" }
+        - { $ref: "#/components/parameters/Wait" }
+      responses:
+        "200":
+          description: IP address.
+          content:
+            application/json:
+              schema: { type: object, properties: { ip: { type: string } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /weave/vms/{name}/exec:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [guest]
+      summary: Run a command in the guest over SSH (default weave/weave credentials).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExecRequest" }
+      responses:
+        "200":
+          description: Command result (combined stdout+stderr).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/exec/ws:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    get:
+      tags: [guest]
+      summary: Interactive exec over WebSocket (PTY).
+      description: >
+        Upgrades to a WebSocket. Binary frames carry stdin/stdout; a text frame
+        `{"cols":N,"rows":N}` resizes the PTY. The command is taken from one or
+        more `cmd` query parameters.
+      parameters:
+        - name: cmd
+          in: query
+          required: true
+          schema: { type: array, items: { type: string } }
+          description: Command and arguments (repeat the parameter per token).
+        - { $ref: "#/components/parameters/Resolver" }
+        - { $ref: "#/components/parameters/Cols" }
+        - { $ref: "#/components/parameters/Rows" }
+      responses:
+        "101": { description: Switching Protocols (WebSocket). }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/ssh:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [guest]
+      summary: Run a command in the guest over SSH with explicit credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SSHRequest" }
+      responses:
+        "200":
+          description: Command result (combined output).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SSHResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/ssh/ws:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    get:
+      tags: [guest]
+      summary: Interactive SSH login shell over WebSocket (PTY).
+      parameters:
+        - { $ref: "#/components/parameters/Resolver" }
+        - name: user
+          in: query
+          schema: { type: string, default: weave }
+        - name: password
+          in: query
+          schema: { type: string, default: weave }
+        - { $ref: "#/components/parameters/Cols" }
+        - { $ref: "#/components/parameters/Rows" }
+      responses:
+        "101": { description: Switching Protocols (WebSocket). }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/export:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Export a VM to a .tvm archive on the server's filesystem.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: { type: string, description: "Destination path (defaults to <name>.tvm)." }
+      responses:
+        "200":
+          description: Exported.
+          content:
+            application/json:
+              schema: { type: object, properties: { exported: { type: string }, path: { type: string } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/export/download:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    get:
+      tags: [vms]
+      summary: Export a VM and stream the .tvm archive as the response body.
+      responses:
+        "200":
+          description: The .tvm archive.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/ipsw:
+    get:
+      tags: [images]
+      summary: Get the download URL of the latest supported macOS restore image.
+      responses:
+        "200":
+          description: Restore image URL.
+          content:
+            application/json:
+              schema: { type: object, properties: { url: { type: string } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/pull:
+    post:
+      tags: [images]
+      summary: Pull an OCI image synchronously.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PullRequest" }
+      responses:
+        "200": { description: Pulled., content: { application/json: { schema: { type: object, properties: { pulled: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/pull/start:
+    post:
+      tags: [images]
+      summary: Start an asynchronous OCI pull.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PullRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /weave/pull/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [images]
+      summary: Get the status of an asynchronous pull (or agent-mode setup) job.
+      responses:
+        "200":
+          description: Job status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobStatus" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /weave/prune:
+    post:
+      tags: [system]
+      summary: Prune caches or VMs.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PruneRequest" }
+      responses:
+        "200": { description: Pruned., content: { application/json: { schema: { type: object, properties: { pruned: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/images:
+    get:
+      tags: [images]
+      summary: List the tags available for a remote repository.
+      parameters:
+        - name: repository
+          in: query
+          required: true
+          schema: { type: string }
+          description: "<host>/<namespace> or a bare repo with the default/registry profile."
+        - name: registry
+          in: query
+          schema: { type: string }
+          description: Registry profile name.
+        - name: insecure
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Tag list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repository: { type: string }
+                  tags: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/logs:
+    get:
+      tags: [system]
+      summary: Tail the info/error logs.
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [info, error, all], default: all }
+        - name: lines
+          in: query
+          schema: { type: integer }
+          description: Number of trailing lines (0 = entire file).
+      responses:
+        "200":
+          description: Log text.
+          content:
+            text/plain: { schema: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /weave/host/status:
+    get:
+      tags: [system]
+      summary: Host status (version, model, CPU count, memory).
+      responses:
+        "200":
+          description: Host status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HostStatus" }
+
+  /weave/openapi.yaml:
+    get:
+      tags: [system]
+      summary: This OpenAPI schema.
+      responses:
+        "200":
+          description: The OpenAPI document (an opaque YAML body).
+          content:
+            application/yaml: {}
+
+  /weave/registry/login:
+    post:
+      tags: [registry]
+      summary: Authenticate with a registry and store the credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200": { description: Logged in., content: { application/json: { schema: { type: object, properties: { loggedIn: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/registry/{host}:
+    delete:
+      tags: [registry]
+      summary: Remove stored credentials for a registry host (logout).
+      parameters:
+        - name: host
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Logged out., content: { application/json: { schema: { type: object, properties: { loggedOut: { type: string } } } } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config:
+    get:
+      tags: [config]
+      summary: Get the effective settings.
+      responses:
+        "200": { description: Settings., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+    post:
+      tags: [config]
+      summary: Update settings (default storage, cache dir, registry).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfigUpdateRequest" }
+      responses:
+        "200": { description: Updated settings., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/locations:
+    get:
+      tags: [config]
+      summary: List named storage locations.
+      responses:
+        "200":
+          description: Locations and the default.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locations: { type: object, additionalProperties: { type: string } }
+                  default: { type: string }
+    post:
+      tags: [config]
+      summary: Add a named storage location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, path]
+              properties:
+                name: { type: string }
+                path: { type: string }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/locations/{name}:
+    delete:
+      tags: [config]
+      summary: Remove a named storage location.
+      parameters: [ { $ref: "#/components/parameters/Name" } ]
+      responses:
+        "200": { description: Removed., content: { application/json: { schema: { type: object, properties: { removed: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/locations/default/{name}:
+    post:
+      tags: [config]
+      summary: Set the default storage location.
+      parameters: [ { $ref: "#/components/parameters/Name" } ]
+      responses:
+        "200": { description: Default set., content: { application/json: { schema: { type: object, properties: { default: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/cache:
+    get:
+      tags: [config]
+      summary: Get the effective cache directory.
+      responses:
+        "200": { description: Cache directory., content: { application/json: { schema: { type: object, properties: { cacheDir: { type: string } } } } } }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [config]
+      summary: Set the cache directory.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cacheDir]
+              properties:
+                cacheDir: { type: string }
+      responses:
+        "200": { description: Cache directory set., content: { application/json: { schema: { type: object, properties: { cacheDir: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/registry/ghcr:
+    post:
+      tags: [config]
+      summary: Configure the default (GitHub Container) registry.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                registry: { type: string, default: ghcr.io }
+                organization: { type: string }
+      responses:
+        "200":
+          description: Registry settings.
+          content:
+            application/json:
+              schema: { type: object, properties: { host: { type: string }, organization: { type: string } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/network/interfaces:
+    get:
+      tags: [config]
+      summary: List bridgeable network interfaces.
+      responses:
+        "200":
+          description: Interface list.
+          content:
+            application/json:
+              schema: { type: object, properties: { interfaces: { type: array, items: { type: string } } } }
+
+  /weave/config/logging:
+    get:
+      tags: [config]
+      summary: Get the effective log size cap and rotation policy.
+      responses:
+        "200":
+          description: Logging settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoggingSettings" }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [config]
+      summary: Set the log size cap and/or rotation policy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maxSizeMB: { type: integer, description: "Per-file cap (MB); 0 = unlimited." }
+                keepRotated: { type: boolean }
+      responses:
+        "200":
+          description: Updated logging settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoggingSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/registry:
+    get:
+      tags: [config]
+      summary: Show the default registry settings.
+      responses:
+        "200":
+          description: Default registry.
+          content:
+            application/json:
+              schema: { type: object, properties: { host: { type: string }, organization: { type: string } } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/registry/profiles:
+    get:
+      tags: [config]
+      summary: List named registry profiles.
+      responses:
+        "200":
+          description: Profiles and the default profile name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles: { type: array, items: { $ref: "#/components/schemas/RegistryProfile" } }
+                  default: { type: string }
+    post:
+      tags: [config]
+      summary: Add or replace a named registry profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegistryProfileRequest" }
+      responses:
+        "201":
+          description: The created profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegistryProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/registry/profiles/{name}:
+    delete:
+      tags: [config]
+      summary: Remove a named registry profile.
+      parameters: [ { $ref: "#/components/parameters/Name" } ]
+      responses:
+        "200": { description: Removed., content: { application/json: { schema: { type: object, properties: { removed: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/config/registry/profiles/default/{name}:
+    post:
+      tags: [config]
+      summary: Set the default registry profile.
+      parameters: [ { $ref: "#/components/parameters/Name" } ]
+      responses:
+        "200": { description: Default set., content: { application/json: { schema: { type: object, properties: { default: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+components:
+  parameters:
+    Name:
+      name: name
+      in: path
+      required: true
+      schema: { type: string }
+      description: VM name.
+    Resolver:
+      name: resolver
+      in: query
+      schema: { type: string, enum: [dhcp, arp, agent], default: dhcp }
+      description: IP-resolution strategy.
+    Wait:
+      name: wait
+      in: query
+      schema: { type: integer }
+      description: Seconds to wait for IP resolution.
+    Cols:
+      name: cols
+      in: query
+      schema: { type: integer, default: 80 }
+    Rows:
+      name: rows
+      in: query
+      schema: { type: integer, default: 24 }
+
+  responses:
+    Error:
+      description: Server error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NameAck:
+      description: Created.
+      content:
+        application/json:
+          schema: { type: object, properties: { name: { type: string } } }
+    JobAccepted:
+      description: Accepted; poll the returned job id.
+      content:
+        application/json:
+          schema: { type: object, properties: { id: { type: string } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    ListVMInfo:
+      type: object
+      description: One entry of the VM listing (PascalCase keys).
+      properties:
+        Source: { type: string, enum: [local, OCI] }
+        Name: { type: string }
+        Disk: { type: integer, description: "Provisioned disk size (GB)." }
+        Size: { type: integer, description: "On-disk usage (GB)." }
+        Accessed: { type: string, format: date-time }
+        Running: { type: boolean }
+        State: { type: string }
+
+    VMDetails:
+      type: object
+      properties:
+        name: { type: string }
+        os: { type: string }
+        cpu: { type: integer }
+        memoryMB: { type: integer }
+        diskGB: { type: integer }
+        diskFormat: { type: string }
+        display: { type: string }
+        running: { type: boolean }
+        state: { type: string }
+        ipAddress: { type: string }
+
+    CreateVMRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        fromIPSW: { type: string, description: "URL, path, or 'latest'; default 'latest' for macOS." }
+        linux: { type: boolean }
+        diskSize: { type: integer, description: "GB; default 50." }
+        diskFormat: { type: string, enum: [raw, asif] }
+        netProfile: { type: string, enum: [nat, internet-only, isolated, vm-lab, bridged] }
+
+    CloneVMRequest:
+      type: object
+      required: [name, newName]
+      properties:
+        name: { type: string, description: "Source VM or OCI image." }
+        newName: { type: string }
+        registry: { type: string }
+        insecure: { type: boolean }
+        concurrency: { type: integer, default: 4 }
+        deduplicate: { type: boolean }
+        pruneLimit: { type: integer, default: 100 }
+
+    UpdateVMRequest:
+      type: object
+      properties:
+        cpu: { type: integer }
+        memory: { type: integer, description: "Memory in bytes." }
+        diskSize: { type: integer, description: "New disk size (GB); grow only." }
+        display: { type: string, description: "WxH (points or pixels)." }
+        displayRefit: { type: boolean }
+        disk: { type: string }
+        randomMac: { type: boolean }
+        randomSerial: { type: boolean }
+
+    RunVMRequest:
+      type: object
+      description: >
+        Mirrors the full `weave run` flag set. Each field maps to a CLI flag
+        forwarded to the detached run subprocess. Graphics is caller-controlled;
+        headless is the default only when neither graphics nor a VNC mode is set.
+      properties:
+        graphics: { type: boolean }
+        noGraphics: { type: boolean }
+        vnc: { type: boolean }
+        vncExperimental: { type: boolean }
+        vncPassword: { type: string }
+        serial: { type: boolean }
+        serialPath: { type: string }
+        noAudio: { type: boolean }
+        clipboard: { type: boolean }
+        noClipboard: { type: boolean }
+        clipboardUser: { type: string }
+        clipboardPassword: { type: string }
+        clipboardDirection: { type: string, enum: [disabled, bidirectional, hostToGuest, guestToHost] }
+        clipboardFormats: { type: string }
+        clipboardFiles: { type: string }
+        clipboardSessionMbps: { type: integer }
+        clipboardBandwidthPct: { type: integer }
+        clipboardMaxBytes: { type: integer }
+        disks: { type: array, items: { type: string } }
+        dirs: { type: array, items: { type: string } }
+        sharedDirectories: { type: array, items: { type: string } }
+        mounts: { type: array, items: { type: string }, description: "ISO mounts (read-only)." }
+        usbStorage: { type: array, items: { type: string } }
+        netProfile: { type: string }
+        netBridged: { type: array, items: { type: string } }
+        netDevice: { type: array, items: { type: string } }
+        netHost: { type: boolean }
+        netSoftnet: { type: boolean }
+        netSoftnetAllow: { type: string }
+        netSoftnetBlock: { type: string }
+        netSoftnetExpose: { type: string }
+        rosetta: { type: string }
+        nested: { type: boolean }
+        recoveryMode: { type: boolean }
+        suspendable: { type: boolean }
+        rootDiskOpts: { type: string }
+        captureSystemKeys: { type: boolean }
+        noTrackpad: { type: boolean }
+        noPointer: { type: boolean }
+        noKeyboard: { type: boolean }
+
+    ImportRequest:
+      type: object
+      required: [path, name]
+      properties:
+        path: { type: string, description: "Server-side path to the .tvm archive." }
+        name: { type: string }
+
+    SetupRequest:
+      type: object
+      properties:
+        mode: { type: string, enum: [preset, agent], default: preset }
+        unattended: { type: string, description: "Preset name or YAML path (preset mode)." }
+        anthropicKey: { type: string }
+        model: { type: string, default: claude-sonnet-4-6 }
+        maxIterations: { type: integer, default: 200 }
+        systemPrompt: { type: string }
+        showScreen: { type: boolean }
+
+    ExecRequest:
+      type: object
+      required: [command]
+      properties:
+        command: { type: array, items: { type: string } }
+        resolver: { type: string, enum: [dhcp, arp, agent], default: dhcp }
+        wait: { type: integer }
+
+    ExecResponse:
+      type: object
+      properties:
+        exitCode: { type: integer }
+        output: { type: string, description: "Combined stdout+stderr." }
+
+    SSHRequest:
+      type: object
+      required: [command]
+      properties:
+        command: { type: array, items: { type: string } }
+        user: { type: string, default: weave }
+        password: { type: string, default: weave }
+        timeout: { type: integer, description: "Seconds; default 60, 0 = no timeout." }
+        wait: { type: integer }
+        resolver: { type: string, enum: [dhcp, arp, agent], default: dhcp }
+
+    SSHResponse:
+      type: object
+      properties:
+        exitCode: { type: integer }
+        output: { type: string }
+
+    PullRequest:
+      type: object
+      required: [image]
+      properties:
+        image: { type: string }
+        concurrency: { type: integer, default: 4 }
+        insecure: { type: boolean }
+        deduplicate: { type: boolean }
+
+    PushVMRequest:
+      type: object
+      required: [name, images]
+      properties:
+        name: { type: string }
+        images: { type: array, items: { type: string } }
+        registry: { type: string }
+        concurrency: { type: integer, default: 4 }
+        insecure: { type: boolean }
+        chunkSize: { type: integer }
+        labels: { type: array, items: { type: string } }
+        populateCache: { type: boolean }
+
+    PruneRequest:
+      type: object
+      properties:
+        entries: { type: string, enum: [caches, vms], default: caches }
+        olderThan: { type: integer, description: "Days." }
+        spaceBudget: { type: integer, description: "GB." }
+        gc: { type: boolean }
+
+    LoginRequest:
+      type: object
+      required: [host, username, password]
+      properties:
+        host: { type: string }
+        username: { type: string }
+        password: { type: string }
+        insecure: { type: boolean }
+        noValidate: { type: boolean }
+
+    ConfigUpdateRequest:
+      type: object
+      properties:
+        defaultStorage: { type: string }
+        cacheDir: { type: string }
+        registry:
+          type: object
+          properties:
+            host: { type: string }
+            organization: { type: string }
+
+    JobStatus:
+      type: object
+      properties:
+        id: { type: string }
+        image: { type: string }
+        status: { type: string, enum: [running, succeeded, failed] }
+        error: { type: string }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+
+    HostStatus:
+      type: object
+      properties:
+        version: { type: string }
+        model: { type: string }
+        cpuCount: { type: integer }
+        memoryBytes: { type: integer }
+
+    LoggingSettings:
+      type: object
+      properties:
+        maxSizeMB: { type: integer, description: "Per-file cap (MB); 0 = unlimited." }
+        keepRotated: { type: boolean }
+
+    RegistryProfile:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string }
+        host: { type: string }
+        organization: { type: string }
+        insecure: { type: boolean }
+        default: { type: boolean }
+
+    RegistryProfileRequest:
+      type: object
+      required: [name, organization]
+      properties:
+        name: { type: string }
+        host: { type: string, default: ghcr.io }
+        organization: { type: string }
+        insecure: { type: boolean }
+        default: { type: boolean }

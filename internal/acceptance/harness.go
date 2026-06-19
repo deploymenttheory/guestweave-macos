@@ -320,15 +320,16 @@ func findRepoRoot() (string, error) {
 func buildAndSign(repoRoot, outDir string) (string, error) {
 	binary := filepath.Join(outDir, "weave")
 
-	build := exec.Command("go", "build", "-o", binary, "./example/weave/")
+	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = repoRoot
 	build.Env = os.Environ()
 	if output, err := build.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("build failed: %v\n%s", err, output)
 	}
 
-	entitlements := filepath.Join(repoRoot, "example", "weave", "entitlements.plist")
-	sign := exec.Command("codesign", "--entitlements", entitlements, "--force", "-s", "-", binary)
+	entitlements := filepath.Join(repoRoot, "entitlements.plist")
+	sign := exec.Command("codesign", "--entitlements", entitlements, "--force",
+		"--identifier", "com.deploymenttheory.guestweave", "-s", "-", binary)
 	if output, err := sign.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("codesign failed: %v\n%s", err, output)
 	}
@@ -347,14 +348,14 @@ func buildAndSign(repoRoot, outDir string) (string, error) {
 func buildAndSignEntitled(repoRoot, outDir, signingIdentity string) (string, error) {
 	binary := filepath.Join(outDir, "weave")
 
-	build := exec.Command("go", "build", "-o", binary, "./example/weave/")
+	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = repoRoot
 	build.Env = os.Environ()
 	if output, err := build.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("build failed: %v\n%s", err, output)
 	}
 
-	entitlements := filepath.Join(repoRoot, "example", "weave", "entitlements-bridged.plist")
+	entitlements := filepath.Join(repoRoot, "entitlements-bridged.plist")
 	sign := exec.Command("codesign",
 		"--sign", signingIdentity,
 		"--entitlements", entitlements,

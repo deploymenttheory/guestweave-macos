@@ -1,0 +1,13 @@
+# vacuum lint ruleset for the weave OpenAPI document.
+#
+# Extends vacuum's recommended rules so the lint gates on *structural*
+# correctness — valid $refs, schema types, path parameters, unique paths,
+# documented responses, etc. — and disables two house-style conventions this
+# spec intentionally does not adopt, so `vacuum lint` fails only on real
+# problems.
+extends: [[vacuum:oas, recommended]]
+rules:
+  # Schemas are documented; per-field examples are intentionally omitted.
+  oas3-missing-example: false
+  # Operations are identified by summary + path; operationIds are not used.
+  operation-operationId: false
