@@ -25,6 +25,6 @@ func (c *IPSWCommand) Run(ctx context.Context) error {
 		return err
 	}
 	spinner.Stop()
-	fmt.Println(objcutil.GoStr(image.URL().AbsoluteString()))
+	fmt.Println(objcutil.GoStr(image.URL().AbsoluteString().Ptr()))
 	return nil
 }

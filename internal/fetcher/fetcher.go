@@ -1,115 +1,97 @@
-// Port of tart's Fetcher.swift. The Swift original streams response chunks
-// through a URLSessionDataDelegate; ObjC delegate classes cannot be defined
-// through the purego bindings, so this port always uses a download task —
-// which spools the body to a temporary file, exactly like Fetcher's
-// viaFile mode — and then streams that file in 16 MiB chunks.
+// HTTP fetcher for OCI registry traffic and IPSW downloads. Built on Go's
+// net/http: the response body is streamed to the caller in 16 MiB chunks.
+//
+// A fresh client with no cookie jar is used so cookies are never carried
+// between requests — Harbor expects a CSRF token whenever the HTTP client
+// carries a session cookie and fails otherwise (cirruslabs/tart#295). The
+// default transport honours the HTTP(S)_PROXY / NO_PROXY environment variables.
 //go:build darwin
 
 package fetcher
 
 import (
+	"bytes"
 	"context"
 	"io"
-	"os"
-	"path/filepath"
+	"net/http"
 	"sync"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 )
 
-// fetcherBufferFlushSize mirrors the Delegate's 16 MiB buffer flush size.
+// fetcherBufferFlushSize is the streaming chunk size (16 MiB).
 const fetcherBufferFlushSize = 16 * 1024 * 1024
 
-// fetcherURLSession mirrors Fetcher.swift's file-private urlSession: a
-// shared session that never carries cookies between requests, because Harbor
-// expects a CSRF token to be present whenever the HTTP client carries a
-// session cookie and fails otherwise (cirruslabs/tart#295).
-var fetcherURLSession = sync.OnceValue(func() *foundation.NSURLSession {
-	config := foundation.NSURLSessionConfigurationDefaultSessionConfiguration()
-	config.SetHTTPShouldSetCookies(false)
-	return foundation.NSURLSessionSessionWithConfiguration(config)
+// fetcherClient is the shared client; no cookie jar (see package doc).
+var fetcherClient = sync.OnceValue(func() *http.Client {
+	return &http.Client{}
 })
 
-// FetchChunk is one element of the byte stream returned by FetcherFetch
-// (Swift: AsyncThrowingStream<Data, Error>).
+// FetchRequest describes an HTTP request in Go-native terms.
+type FetchRequest struct {
+	URL    string
+	Method string      // "" defaults to GET
+	Header http.Header // optional request headers (multi-value)
+	Body   []byte      // optional request body
+}
+
+// FetchResponse carries the response metadata (the body arrives via the chunk
+// channel returned alongside it).
+type FetchResponse struct {
+	StatusCode    int
+	Header        http.Header
+	ContentLength int64
+}
+
+// FetchChunk is one element of the streamed response body. A chunk with Err set
+// terminates the stream early.
 type FetchChunk struct {
 	Data []byte
 	Err  error
 }
 
-// FetcherFetch ports Fetcher.fetch(_:viaFile:). The chunk channel is closed
-// after the final chunk; a chunk with Err set terminates the stream early.
-// Unlike the Swift original, the response is returned only after the body
-// has been spooled to disk, so the viaFile parameter is accepted for parity
-// but has no effect.
-func FetcherFetch(ctx context.Context, request *foundation.NSURLRequest, viaFile bool) (<-chan FetchChunk, *foundation.NSHTTPURLResponse, error) {
+// FetcherFetch performs the request and streams the response body. The chunk
+// channel is closed after the final chunk. viaFile is accepted for parity with
+// the previous URLSession-based implementation but has no effect (the body is
+// streamed directly rather than spooled to a temporary file).
+func FetcherFetch(ctx context.Context, req FetchRequest, viaFile bool) (<-chan FetchChunk, *FetchResponse, error) {
 	_ = viaFile
 
-	type downloadResult struct {
-		spoolPath string
-		response  *foundation.NSHTTPURLResponse
-		err       error
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
 	}
-	resultCh := make(chan downloadResult, 1)
-
-	// The generated DownloadTaskWithRequestCompletionHandler cannot be used:
-	// purego's purego.NewBlock requires the Go function to take the Block as
-	// its first parameter, which the generated bindings omit. Build the
-	// block and send the message directly instead.
-	completionBlock := purego.NewBlock(func(_ purego.Block, locationID purego.ID, responseID purego.ID, errID purego.ID) {
-		if errID != 0 {
-			resultCh <- downloadResult{err: purego.NSErrorToError(errID)}
-			return
-		}
-		locationURL := foundation.NSURLFromID(purego.Retain(locationID))
-		httpResponse := foundation.NSHTTPURLResponseFromID(purego.Retain(responseID))
-
-		// The download's temporary file is deleted as soon as this handler
-		// returns, so move it aside first.
-		spoolPath := filepath.Join(os.TempDir(), "weave-fetch-"+filepath.Base(objcutil.GoStr(locationURL.Path())))
-		_, err := foundation.NSFileManagerDefaultManager().MoveItemAtURLToURLError(
-			locationURL, foundation.NSURLFileURLWithPath(objcutil.NSStr(spoolPath)))
-		if err != nil {
-			resultCh <- downloadResult{err: err}
-			return
-		}
-
-		resultCh <- downloadResult{spoolPath: spoolPath, response: httpResponse}
-	})
-
-	taskID := purego.Send[purego.ID](fetcherURLSession().Ptr(),
-		purego.RegisterName("downloadTaskWithRequest:completionHandler:"), request.Ptr(), completionBlock)
-	task := foundation.NSURLSessionDownloadTaskFromID(purego.Retain(taskID))
-	task.Resume()
-
-	var result downloadResult
-	select {
-	case result = <-resultCh:
-	case <-ctx.Done():
-		task.Cancel()
-		return nil, nil, ctx.Err()
+	var body io.Reader
+	if req.Body != nil {
+		body = bytes.NewReader(req.Body)
 	}
-	if result.err != nil {
-		return nil, nil, result.err
+	httpReq, err := http.NewRequestWithContext(ctx, method, req.URL, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	for key, values := range req.Header {
+		for _, value := range values {
+			httpReq.Header.Add(key, value)
+		}
+	}
+
+	resp, err := fetcherClient().Do(httpReq)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	response := &FetchResponse{
+		StatusCode:    resp.StatusCode,
+		Header:        resp.Header,
+		ContentLength: resp.ContentLength,
 	}
 
 	chunks := make(chan FetchChunk)
 	go func() {
 		defer close(chunks)
-		defer os.Remove(result.spoolPath)
-
-		spoolFile, err := os.Open(result.spoolPath)
-		if err != nil {
-			chunks <- FetchChunk{Err: err}
-			return
-		}
-		defer spoolFile.Close()
+		defer resp.Body.Close()
 
 		buffer := make([]byte, fetcherBufferFlushSize)
 		for {
-			n, err := spoolFile.Read(buffer)
+			n, err := resp.Body.Read(buffer)
 			if n > 0 {
 				chunk := append([]byte(nil), buffer[:n]...)
 				select {
@@ -122,11 +104,14 @@ func FetcherFetch(ctx context.Context, request *foundation.NSURLRequest, viaFile
 				return
 			}
 			if err != nil {
-				chunks <- FetchChunk{Err: err}
+				select {
+				case chunks <- FetchChunk{Err: err}:
+				case <-ctx.Done():
+				}
 				return
 			}
 		}
 	}()
 
-	return chunks, result.response, nil
+	return chunks, response, nil
 }

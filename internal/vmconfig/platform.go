@@ -6,20 +6,21 @@
 package vmconfig
 
 import (
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 )
 
-// Platform ports tart's Platform protocol.
+// Platform ports tart's Platform protocol. It returns idiomatic provider
+// interfaces so the VM-config assembly stays raw-free; the path arguments are
+// plain filesystem paths (the idiomatic constructors take string URLs).
 type Platform interface {
 	OS() weaveplatform.OS
-	BootLoader(nvramURL *foundation.NSURL) (*virtualization.VZBootLoader, error)
-	Platform(nvramURL *foundation.NSURL, needsNestedVirtualization bool) (*virtualization.VZPlatformConfiguration, error)
-	GraphicsDevice(vmConfig *VMConfig) *virtualization.VZGraphicsDeviceConfiguration
-	Keyboards() []*virtualization.VZKeyboardConfiguration
-	PointingDevices() []*virtualization.VZPointingDeviceConfiguration
-	PointingDevicesSimplified() []*virtualization.VZPointingDeviceConfiguration
+	BootLoader(nvramPath string) (virtualization.BootLoaderProvider, error)
+	Platform(nvramPath string, needsNestedVirtualization bool) (virtualization.PlatformConfigurationProvider, error)
+	GraphicsDevice(vmConfig *VMConfig) virtualization.GraphicsDeviceConfigurationProvider
+	Keyboards() []virtualization.KeyboardConfigurationProvider
+	PointingDevices() []virtualization.PointingDeviceConfigurationProvider
+	PointingDevicesSimplified() []virtualization.PointingDeviceConfigurationProvider
 
 	// platformEncodeJSON adds the platform-specific keys (e.g. Darwin's
 	// ecid/hardwareModel) to the VMConfig JSON object.
@@ -29,6 +30,6 @@ type Platform interface {
 // PlatformSuspendable ports tart's PlatformSuspendable protocol.
 type PlatformSuspendable interface {
 	Platform
-	PointingDevicesSuspendable() []*virtualization.VZPointingDeviceConfiguration
-	KeyboardsSuspendable() []*virtualization.VZKeyboardConfiguration
+	PointingDevicesSuspendable() []virtualization.PointingDeviceConfigurationProvider
+	KeyboardsSuspendable() []virtualization.KeyboardConfigurationProvider
 }

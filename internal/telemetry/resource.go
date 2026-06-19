@@ -26,14 +26,14 @@ func buildResource() (*resource.Resource, error) {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("weave"),
+			semconv.ServiceName("guestweave"),
 			semconv.ServiceVersion(ci.CIVersion()),
 			semconv.OSTypeDarwin,
 			semconv.OSVersion(osVersion),
 			semconv.OSName(fmt.Sprintf("macOS (%s)", hostArch)),
 			semconv.HostArchKey.String(hostArch),
 			semconv.ProcessPID(os.Getpid()),
-			semconv.ProcessExecutableName("weave"),
+			semconv.ProcessExecutableName("guestweave"),
 		),
 	)
 }

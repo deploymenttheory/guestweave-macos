@@ -35,7 +35,7 @@ func (vm *VM) sendURLErrorCompletion(selector string, path string) error {
 	// closure.
 	url := objcutil.NSURLFromPath(path)
 	dispatch.RunOnMainThread(func() {
-		vm.VirtualMachine.Ptr().Send(purego.RegisterName(selector), url.Ptr(), block)
+		vm.VirtualMachine.ID().Send(purego.RegisterName(selector), url.ID(), block)
 	})
 	return <-errCh
 }

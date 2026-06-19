@@ -4,10 +4,7 @@
 package vmconfig
 
 import (
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 )
 
@@ -24,46 +21,38 @@ func (p *LinuxPlatform) platformEncodeJSON(object map[string]any) error {
 
 func (p *LinuxPlatform) OS() weaveplatform.OS { return weaveplatform.OSLinux }
 
-func (p *LinuxPlatform) BootLoader(nvramURL *foundation.NSURL) (*virtualization.VZBootLoader, error) {
-	result := idiomatic.NewEFIBootLoader().Unwrap()
-
-	result.SetVariableStore(
-		virtualization.VZEFIVariableStoreFromID(objcutil.AllocClass("VZEFIVariableStore")).InitWithURL(nvramURL))
-
-	return &result.VZBootLoader, nil
+func (p *LinuxPlatform) BootLoader(nvramPath string) (virtualization.BootLoaderProvider, error) {
+	return virtualization.NewEFIBootLoader().
+		WithVariableStore(virtualization.NewEFIVariableStoreWithURL(nvramPath)), nil
 }
 
-func (p *LinuxPlatform) Platform(nvramURL *foundation.NSURL, needsNestedVirtualization bool) (*virtualization.VZPlatformConfiguration, error) {
-	config := idiomatic.NewGenericPlatformConfiguration().Unwrap()
+func (p *LinuxPlatform) Platform(nvramPath string, needsNestedVirtualization bool) (virtualization.PlatformConfigurationProvider, error) {
+	config := virtualization.NewGenericPlatformConfiguration()
 	if weaveplatform.MacOSAtLeast(15) {
-		config.SetNestedVirtualizationEnabled(needsNestedVirtualization)
+		config.WithNestedVirtualizationEnabled(needsNestedVirtualization)
 	}
-	return &config.VZPlatformConfiguration, nil
+	return config, nil
 }
 
-func (p *LinuxPlatform) GraphicsDevice(vmConfig *VMConfig) *virtualization.VZGraphicsDeviceConfiguration {
-	result := idiomatic.NewVirtioGraphicsDeviceConfiguration().Unwrap()
-
-	scanout := virtualization.VZVirtioGraphicsScanoutConfigurationFromID(objcutil.AllocClass("VZVirtioGraphicsScanoutConfiguration")).
-		InitWithWidthInPixelsHeightInPixels(vmConfig.Display.Width, vmConfig.Display.Height)
-	result.SetScanouts(objcutil.NSArrayFromIDs[*virtualization.VZVirtioGraphicsScanoutConfiguration](scanout.Ptr()))
-
-	return &result.VZGraphicsDeviceConfiguration
+func (p *LinuxPlatform) GraphicsDevice(vmConfig *VMConfig) virtualization.GraphicsDeviceConfigurationProvider {
+	scanout := virtualization.NewVirtioGraphicsScanoutConfigurationWithWidthInPixelsHeightInPixels(
+		vmConfig.Display.Width, vmConfig.Display.Height)
+	return virtualization.NewVirtioGraphicsDeviceConfiguration().WithScanouts(scanout.Unwrap())
 }
 
-func (p *LinuxPlatform) Keyboards() []*virtualization.VZKeyboardConfiguration {
-	return []*virtualization.VZKeyboardConfiguration{
-		&idiomatic.NewUSBKeyboardConfiguration().Unwrap().VZKeyboardConfiguration,
+func (p *LinuxPlatform) Keyboards() []virtualization.KeyboardConfigurationProvider {
+	return []virtualization.KeyboardConfigurationProvider{
+		virtualization.NewUSBKeyboardConfiguration(),
 	}
 }
 
-func (p *LinuxPlatform) PointingDevices() []*virtualization.VZPointingDeviceConfiguration {
-	return []*virtualization.VZPointingDeviceConfiguration{
-		&idiomatic.NewUSBScreenCoordinatePointingDeviceConfiguration().Unwrap().VZPointingDeviceConfiguration,
+func (p *LinuxPlatform) PointingDevices() []virtualization.PointingDeviceConfigurationProvider {
+	return []virtualization.PointingDeviceConfigurationProvider{
+		virtualization.NewUSBScreenCoordinatePointingDeviceConfiguration(),
 	}
 }
 
-func (p *LinuxPlatform) PointingDevicesSimplified() []*virtualization.VZPointingDeviceConfiguration {
+func (p *LinuxPlatform) PointingDevicesSimplified() []virtualization.PointingDeviceConfigurationProvider {
 	// Linux doesn't support the trackpad, so just return the regular
 	// pointing devices.
 	return p.PointingDevices()

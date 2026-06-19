@@ -12,7 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
-	appkit "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/appkit"
+	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
+
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/weave/internal/clipboard/wire"
 	"github.com/deploymenttheory/weave/internal/objcutil"
@@ -23,35 +24,26 @@ const FileURLType = "public.file-url"
 
 var errWriteObjects = errors.New("NSPasteboard writeObjects failed")
 
-// Collection-returning selectors are sent raw (purego.Send to purego.ID) rather
-// than through the generated typed accessors: the generated NSArray return
-// values are not ABI-safe through purego (they produce fake wrapper pointers,
-// the same reason objcutil.NSArrayStrings/NSArrayURLs exist). Sending raw and
-// iterating with SelCount/SelObjectAtIndex yields real element pointers.
-var (
-	selTypes           = purego.RegisterName("types")
-	selPasteboardItems = purego.RegisterName("pasteboardItems")
-)
-
 // ChangeCount returns NSPasteboard's general change counter.
 func ChangeCount() uint64 {
-	return uint64(appkit.NSPasteboardGeneralPasteboard().ChangeCount())
+	return uint64(appkit.GeneralPasteboard().ChangeCount())
 }
 
 // Read captures the general pasteboard restricted to the allowed canonical
 // formats. maxBytes drops any single item/file larger than the cap (0 =
 // unlimited). The file channel is read only when wire.CanonFiles is allowed.
 func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
-	pb := appkit.NSPasteboardGeneralPasteboard()
+	pb := appkit.GeneralPasteboard()
 	var payload wire.Payload
 
 	seen := map[wire.Canonical]bool{}
-	for _, uti := range pasteboardTypeUTIs(pb) {
+	for _, nsType := range pb.Types() {
+		uti := objcutil.GoStr(nsType.Ptr())
 		canon, ok := wire.CanonicalForUTI(uti)
 		if !ok || !allowed[canon] || seen[canon] || canon == wire.CanonFiles {
 			continue
 		}
-		data := objcutil.NSDataToBytes(pb.DataForType(objcutil.NSStr(uti)))
+		data := objcutil.NSDataToBytes(pb.DataForType(objcutil.NSStr(uti).Unwrap()).Ptr())
 		if len(data) == 0 || tooBig(int64(len(data)), maxBytes) {
 			continue
 		}
@@ -60,8 +52,8 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 	}
 
 	if allowed[wire.CanonFiles] {
-		for _, item := range pasteboardItems(pb) {
-			path := filePathFromURL(objcutil.GoStr(item.StringForType(objcutil.NSStr(FileURLType))))
+		for _, item := range pb.PasteboardItems() {
+			path := filePathFromURL(item.StringForType(objcutil.NSStr(FileURLType).Unwrap()))
 			if path == "" {
 				continue
 			}
@@ -80,19 +72,19 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 // representations are combined into a single pasteboard item; each file becomes
 // its own item, staged under stageDir and referenced by a file URL.
 func Write(p wire.Payload, stageDir string) error {
-	pb := appkit.NSPasteboardGeneralPasteboard()
-	itemIDs := make([]purego.ID, 0, len(p.Files)+1)
+	pb := appkit.GeneralPasteboard()
+	items := make([]purego.IDer, 0, len(p.Files)+1)
 
 	if len(p.Items) > 0 {
-		item := newPasteboardItem()
+		item := appkit.NewPasteboardItem()
 		for _, di := range p.Items {
 			uti, ok := wire.UTIForCanonical(di.Format)
 			if !ok {
 				continue
 			}
-			item.SetDataForType(objcutil.BytesToNSData(di.Data), objcutil.NSStr(uti))
+			item.SetDataForType(objcutil.BytesToNSData(di.Data).Unwrap(), objcutil.NSStr(uti).Unwrap())
 		}
-		itemIDs = append(itemIDs, item.Ptr())
+		items = append(items, item)
 	}
 
 	for _, file := range p.Files {
@@ -100,61 +92,22 @@ func Write(p wire.Payload, stageDir string) error {
 		if err := os.WriteFile(path, file.Data, 0o600); err != nil {
 			return err
 		}
-		item := newPasteboardItem()
-		item.SetStringForType(objcutil.NSStr((&url.URL{Scheme: "file", Path: path}).String()), objcutil.NSStr(FileURLType))
-		itemIDs = append(itemIDs, item.Ptr())
+		item := appkit.NewPasteboardItem()
+		item.SetStringForType((&url.URL{Scheme: "file", Path: path}).String(), objcutil.NSStr(FileURLType).Unwrap())
+		items = append(items, item)
 	}
 
 	pb.ClearContents()
-	if len(itemIDs) == 0 {
+	if len(items) == 0 {
 		return nil
 	}
-	if !pb.WriteObjects(objcutil.NSArrayFromIDs[appkit.NSPasteboardWriting](itemIDs...)) {
+	if !pb.WriteObjects(items...) {
 		return errWriteObjects
 	}
 	return nil
 }
 
 func tooBig(n, maxBytes int64) bool { return maxBytes > 0 && n > maxBytes }
-
-// pasteboardTypeUTIs returns the UTIs currently on the pasteboard via a raw
-// send (see selTypes).
-func pasteboardTypeUTIs(pb *appkit.NSPasteboard) []string {
-	array := purego.Send[purego.ID](pb.Ptr(), selTypes)
-	if array == 0 {
-		return nil
-	}
-	count := purego.Send[uint](array, objcutil.SelCount)
-	utis := make([]string, 0, count)
-	for i := range count {
-		id := purego.Send[purego.ID](array, objcutil.SelObjectAtIndex, i)
-		utis = append(utis, purego.GoString(id))
-	}
-	return utis
-}
-
-// pasteboardItems returns the pasteboard's items via a raw send (see
-// selPasteboardItems), each rewrapped after retaining (FromID registers a
-// releasing finalizer).
-func pasteboardItems(pb *appkit.NSPasteboard) []*appkit.NSPasteboardItem {
-	array := purego.Send[purego.ID](pb.Ptr(), selPasteboardItems)
-	if array == 0 {
-		return nil
-	}
-	count := purego.Send[uint](array, objcutil.SelCount)
-	items := make([]*appkit.NSPasteboardItem, 0, count)
-	for i := range count {
-		id := purego.Send[purego.ID](array, objcutil.SelObjectAtIndex, i)
-		items = append(items, appkit.NSPasteboardItemFromID(purego.Retain(id)))
-	}
-	return items
-}
-
-func newPasteboardItem() *appkit.NSPasteboardItem {
-	id := objcutil.AllocClass("NSPasteboardItem")
-	id = purego.Send[purego.ID](id, purego.RegisterName("init"))
-	return appkit.NSPasteboardItemFromID(id)
-}
 
 func filePathFromURL(urlStr string) string {
 	if urlStr == "" {

@@ -18,14 +18,14 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/oslog"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // VirtioSocketConnector is the slice of VM.connect(toPort:) that
 // ControlSocket needs; *vm.VM satisfies it.
 type VirtioSocketConnector interface {
-	Connect(ctx context.Context, toPort uint32) (*virtualization.VZVirtioSocketConnection, error)
+	Connect(ctx context.Context, toPort uint32) (*idvirt.VirtioSocketConnection, error)
 }
 
 // The connector is published by the run command once the VM exists
@@ -68,7 +68,7 @@ func NewControlSocketWithPort(controlSocketPath string, vmPort uint32) *ControlS
 	return &ControlSocket{
 		controlSocketPath: controlSocketPath,
 		vmPort:            vmPort,
-		logger:            oslog.NewLogger("com.deploymenttheory.weave.control-socket", "network"),
+		logger:            oslog.NewLogger("com.deploymenttheory.guestweave.control-socket", "network"),
 	}
 }
 
