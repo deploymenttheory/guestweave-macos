@@ -3,7 +3,7 @@ module github.com/deploymenttheory/weave
 go 1.26.2
 
 require (
-	github.com/deploymenttheory/go-bindings-macosplatform v0.5.0
+	github.com/deploymenttheory/go-bindings-macosplatform v0.8.1
 	github.com/getsentry/sentry-go v0.46.2
 	github.com/getsentry/sentry-go/otel v0.46.2
 	github.com/modelcontextprotocol/go-sdk v1.6.1

@@ -18,7 +18,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/oci"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
@@ -65,8 +64,7 @@ func lumePlatform(description *oci.VMDescription) (vmconfig.Platform, error) {
 		if err != nil || len(ecidData) == 0 {
 			return nil, weaveerrors.ErrPullFailed("lume image has a missing or malformed machine identifier")
 		}
-		ecid := virtualization.VZMacMachineIdentifierFromID(objcutil.AllocClass("VZMacMachineIdentifier")).
-			InitWithDataRepresentation(objcutil.BytesToNSData(ecidData))
+		ecid := idvirt.NewMacMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData).Unwrap())
 		if ecid == nil {
 			return nil, weaveerrors.ErrPullFailed("lume image machine identifier is not a valid VZMacMachineIdentifier")
 		}
@@ -75,8 +73,7 @@ func lumePlatform(description *oci.VMDescription) (vmconfig.Platform, error) {
 		if err != nil || len(hardwareModelData) == 0 {
 			return nil, weaveerrors.ErrPullFailed("lume image has a missing or malformed hardware model")
 		}
-		hardwareModel := virtualization.VZMacHardwareModelFromID(objcutil.AllocClass("VZMacHardwareModel")).
-			InitWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
+		hardwareModel := idvirt.NewMacHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData).Unwrap())
 		if hardwareModel == nil {
 			return nil, vmconfig.UnsupportedHostOSError{}
 		}

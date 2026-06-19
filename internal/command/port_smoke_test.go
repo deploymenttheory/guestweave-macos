@@ -19,8 +19,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 func tempFileURL(t *testing.T, contents string) string {
@@ -33,13 +32,13 @@ func tempFileURL(t *testing.T, contents string) string {
 }
 
 func TestResolveBinaryPath(t *testing.T) {
-	if url := objcutil.ResolveBinaryPath("diskutil"); url == nil {
+	if path := objcutil.ResolveBinaryPath("diskutil"); path == "" {
 		t.Fatal("diskutil not found in PATH")
-	} else if got := objcutil.GoStr(url.Path()); !strings.HasSuffix(got, "/diskutil") {
-		t.Fatalf("unexpected path %q", got)
+	} else if !strings.HasSuffix(path, "/diskutil") {
+		t.Fatalf("unexpected path %q", path)
 	}
-	if url := objcutil.ResolveBinaryPath("definitely-not-a-binary-name"); url != nil {
-		t.Fatalf("expected nil, got %q", objcutil.GoStr(url.Path()))
+	if path := objcutil.ResolveBinaryPath("definitely-not-a-binary-name"); path != "" {
+		t.Fatalf("expected empty, got %q", path)
 	}
 }
 
@@ -121,14 +120,12 @@ func TestFetcherFetch(t *testing.T) {
 		t.Skip("network test")
 	}
 
-	request := foundation.NSURLRequestRequestWithURL(
-		foundation.NSURLURLWithString(objcutil.NSStr("https://example.com/")))
-
-	chunks, response, err := fetcher.FetcherFetch(t.Context(), request, false)
+	chunks, response, err := fetcher.FetcherFetch(t.Context(),
+		fetcher.FetchRequest{URL: "https://example.com/"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code := response.StatusCode(); code != 200 {
+	if code := response.StatusCode; code != 200 {
 		t.Fatalf("status = %d", code)
 	}
 
@@ -146,7 +143,7 @@ func TestFetcherFetch(t *testing.T) {
 }
 
 func TestVMConfigJSONRoundtrip(t *testing.T) {
-	ecid := virtualization.VZMacMachineIdentifierFromID(objcutil.AllocClass("VZMacMachineIdentifier")).Init()
+	ecid := idvirt.NewMacMachineIdentifier()
 	if ecid == nil {
 		t.Fatal("could not create VZMacMachineIdentifier")
 	}

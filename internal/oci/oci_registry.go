@@ -1,6 +1,6 @@
 // Port of tart's OCI/Registry.swift: the OCI Distribution registry client.
 // URL/query manipulation uses net/url (Swift URLComponents is value-type
-// string work); the HTTP transport itself stays on NSURLSession via Fetcher.
+// string work); the HTTP transport runs through the net/http-based Fetcher.
 //go:build darwin
 
 package oci
@@ -10,8 +10,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,9 +27,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	"github.com/deploymenttheory/weave/internal/telemetry"
-
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 )
 
 // RegistryError ports tart's RegistryError enum.
@@ -202,7 +199,7 @@ func (r *Registry) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if code := int(response.StatusCode()); code != httpCodeOk {
+	if code := int(response.StatusCode); code != httpCodeOk {
 		return registryErrorUnexpectedStatus("doing ping", code, "")
 	}
 	return nil
@@ -220,7 +217,7 @@ func (r *Registry) PushManifest(ctx context.Context, reference string, manifest 
 	if err != nil {
 		return "", err
 	}
-	if code := int(response.StatusCode()); code != httpCodeCreated {
+	if code := int(response.StatusCode); code != httpCodeCreated {
 		return "", registryErrorUnexpectedStatus("pushing manifest", code, objcutil.TextPreview(data))
 	}
 
@@ -234,7 +231,7 @@ func (r *Registry) PullManifest(ctx context.Context, reference string) (OCIManif
 	if err != nil {
 		return OCIManifest{}, nil, err
 	}
-	if code := int(response.StatusCode()); code != httpCodeOk {
+	if code := int(response.StatusCode); code != httpCodeOk {
 		return OCIManifest{}, nil, registryErrorUnexpectedStatus("pulling manifest", code, objcutil.TextPreview(data))
 	}
 
@@ -245,15 +242,15 @@ func (r *Registry) PullManifest(ctx context.Context, reference string) (OCIManif
 	return manifest, data, nil
 }
 
-func (r *Registry) uploadLocationFromResponse(response *foundation.NSHTTPURLResponse) (*url.URL, error) {
-	locationRaw := response.ValueForHTTPHeaderField(objcutil.NSStr("Location"))
-	if locationRaw == nil {
+func (r *Registry) uploadLocationFromResponse(response *fetcher.FetchResponse) (*url.URL, error) {
+	locationRaw := response.Header.Get("Location")
+	if locationRaw == "" {
 		return nil, errRegistryMissingLocationHeader
 	}
 
-	location, err := url.Parse(objcutil.GoStr(locationRaw))
+	location, err := url.Parse(locationRaw)
 	if err != nil {
-		return nil, registryErrorMalformedHeader(fmt.Sprintf("Location header contains invalid URL: %q", objcutil.GoStr(locationRaw)))
+		return nil, registryErrorMalformedHeader(fmt.Sprintf("Location header contains invalid URL: %q", locationRaw))
 	}
 
 	// URL.absolutize(_ baseURL:) equivalent.
@@ -279,7 +276,7 @@ func (r *Registry) PushBlob(ctx context.Context, fromData []byte, chunkSizeMb in
 	if err != nil {
 		return "", err
 	}
-	if code := int(postResponse.StatusCode()); code != httpCodeAccepted {
+	if code := int(postResponse.StatusCode); code != httpCodeAccepted {
 		return "", registryErrorUnexpectedStatus("pushing blob (POST)", code, objcutil.TextPreview(data))
 	}
 
@@ -301,7 +298,7 @@ func (r *Registry) PushBlob(ctx context.Context, fromData []byte, chunkSizeMb in
 		if err != nil {
 			return "", err
 		}
-		if code := int(response.StatusCode()); code != httpCodeCreated {
+		if code := int(response.StatusCode); code != httpCodeCreated {
 			return "", registryErrorUnexpectedStatus(fmt.Sprintf("pushing blob (PUT) to %s", uploadLocation), code, objcutil.TextPreview(data))
 		}
 		return digest, nil
@@ -332,7 +329,7 @@ func (r *Registry) PushBlob(ctx context.Context, fromData []byte, chunkSizeMb in
 		}
 		// Always accept both statuses since AWS ECR is not following the
 		// specification.
-		if code := int(response.StatusCode()); code != httpCodeCreated && code != httpCodeAccepted {
+		if code := int(response.StatusCode); code != httpCodeCreated && code != httpCodeAccepted {
 			return "", registryErrorUnexpectedStatus(fmt.Sprintf("streaming blob to %s", uploadLocation), code, objcutil.TextPreview(data))
 		}
 
@@ -358,7 +355,7 @@ func (r *Registry) BlobExists(ctx context.Context, digest string) (bool, error) 
 		return false, err
 	}
 
-	switch code := int(response.StatusCode()); code {
+	switch code := int(response.StatusCode); code {
 	case httpCodeOk:
 		return true, nil
 	case httpCodeNotFound:
@@ -399,7 +396,7 @@ func (r *Registry) PullBlob(ctx context.Context, digest string, rangeStart int64
 	if err != nil {
 		return err
 	}
-	if code := int(response.StatusCode()); code != expectedStatusCode {
+	if code := int(response.StatusCode); code != expectedStatusCode {
 		body, _ := chunksAsData(chunks, 4096)
 		return registryErrorUnexpectedStatus("pulling blob", code, objcutil.TextPreview(body))
 	}
@@ -431,7 +428,7 @@ func (r *Registry) endpointURL(endpoint string) *url.URL {
 }
 
 func (r *Registry) dataRequest(ctx context.Context, method string, endpoint *url.URL,
-	headers map[string]string, parameters map[string]string, body []byte, doAuth bool) ([]byte, *foundation.NSHTTPURLResponse, error) {
+	headers map[string]string, parameters map[string]string, body []byte, doAuth bool) ([]byte, *fetcher.FetchResponse, error) {
 	chunks, response, err := r.channelRequest(ctx, method, endpoint, headers, parameters, body, doAuth, false)
 	if err != nil {
 		return nil, nil, err
@@ -445,7 +442,7 @@ func (r *Registry) dataRequest(ctx context.Context, method string, endpoint *url
 }
 
 func (r *Registry) channelRequest(ctx context.Context, method string, endpoint *url.URL,
-	headers map[string]string, parameters map[string]string, body []byte, doAuth bool, viaFile bool) (<-chan fetcher.FetchChunk, *foundation.NSHTTPURLResponse, error) {
+	headers map[string]string, parameters map[string]string, body []byte, doAuth bool, viaFile bool) (<-chan fetcher.FetchChunk, *fetcher.FetchResponse, error) {
 	requestURL := *endpoint
 	if len(parameters) > 0 {
 		query := requestURL.Query()
@@ -455,19 +452,18 @@ func (r *Registry) channelRequest(ctx context.Context, method string, endpoint *
 		requestURL.RawQuery = query.Encode()
 	}
 
-	buildRequest := func() *foundation.NSMutableURLRequest {
-		request := foundation.NSMutableURLRequestFromID(purego.Send[purego.ID](
-			objcutil.AllocClass("NSMutableURLRequest"), purego.RegisterName("initWithURL:"),
-			foundation.NSURLURLWithString(objcutil.NSStr(requestURL.String())).Ptr()))
-		request.SetHTTPMethod(objcutil.NSStr(method))
+	buildRequest := func() fetcher.FetchRequest {
+		header := http.Header{}
 		for key, value := range headers {
-			request.AddValueForHTTPHeaderField(objcutil.NSStr(value), objcutil.NSStr(key))
+			header.Add(key, value)
 		}
-		if body != nil {
-			request.AddValueForHTTPHeaderField(objcutil.NSStr(strconv.Itoa(len(body))), objcutil.NSStr("Content-Length"))
-			request.SetHTTPBody(objcutil.BytesToNSData(body))
+		// net/http sets Content-Length from the body automatically.
+		return fetcher.FetchRequest{
+			URL:    requestURL.String(),
+			Method: method,
+			Header: header,
+			Body:   body,
 		}
-		return request
 	}
 
 	chunks, response, err := r.authAwareRequest(ctx, buildRequest(), viaFile, doAuth)
@@ -475,7 +471,7 @@ func (r *Registry) channelRequest(ctx context.Context, method string, endpoint *
 		return nil, nil, err
 	}
 
-	if doAuth && int(response.StatusCode()) == httpCodeUnauthorized {
+	if doAuth && response.StatusCode == httpCodeUnauthorized {
 		if err := r.auth(ctx, response); err != nil {
 			return nil, nil, err
 		}
@@ -488,14 +484,14 @@ func (r *Registry) channelRequest(ctx context.Context, method string, endpoint *
 	return chunks, response, nil
 }
 
-func (r *Registry) auth(ctx context.Context, response *foundation.NSHTTPURLResponse) error {
+func (r *Registry) auth(ctx context.Context, response *fetcher.FetchResponse) error {
 	// Process the WWW-Authenticate header.
-	wwwAuthenticateRaw := response.ValueForHTTPHeaderField(objcutil.NSStr("WWW-Authenticate"))
-	if wwwAuthenticateRaw == nil {
+	wwwAuthenticateRaw := response.Header.Get("WWW-Authenticate")
+	if wwwAuthenticateRaw == "" {
 		return registryErrorAuthFailed("got HTTP 401, but WWW-Authenticate header is missing", "")
 	}
 
-	wwwAuthenticate, err := NewWWWAuthenticate(objcutil.GoStr(wwwAuthenticateRaw))
+	wwwAuthenticate, err := NewWWWAuthenticate(wwwAuthenticateRaw)
 	if err != nil {
 		return err
 	}
@@ -544,7 +540,7 @@ func (r *Registry) auth(ctx context.Context, response *foundation.NSHTTPURLRespo
 	if err != nil {
 		return err
 	}
-	if code := int(tokenResponse.StatusCode()); code != httpCodeOk {
+	if code := int(tokenResponse.StatusCode); code != httpCodeOk {
 		return registryErrorAuthFailed(fmt.Sprintf(
 			"received unexpected HTTP status code %d while retrieving an authentication token", code), objcutil.TextPreview(data))
 	}
@@ -575,19 +571,21 @@ func (r *Registry) lookupCredentials() (string, string, bool) {
 	return "", "", false
 }
 
-func (r *Registry) authAwareRequest(ctx context.Context, request *foundation.NSMutableURLRequest,
-	viaFile bool, doAuth bool) (<-chan fetcher.FetchChunk, *foundation.NSHTTPURLResponse, error) {
+func (r *Registry) authAwareRequest(ctx context.Context, req fetcher.FetchRequest,
+	viaFile bool, doAuth bool) (<-chan fetcher.FetchChunk, *fetcher.FetchResponse, error) {
+	if req.Header == nil {
+		req.Header = http.Header{}
+	}
 	if doAuth {
 		if name, value, ok := r.authenticationKeeper.Header(); ok {
-			request.AddValueForHTTPHeaderField(objcutil.NSStr(value), objcutil.NSStr(name))
+			req.Header.Add(name, value)
 		}
 	}
 
-	request.SetValueForHTTPHeaderField(
-		objcutil.NSStr(fmt.Sprintf("Weave/%s (%s; %s)", ci.CIVersion(), weaveplatform.DeviceInfoOS(), weaveplatform.DeviceInfoModel())),
-		objcutil.NSStr("User-Agent"))
+	req.Header.Set("User-Agent",
+		fmt.Sprintf("Weave/%s (%s; %s)", ci.CIVersion(), weaveplatform.DeviceInfoOS(), weaveplatform.DeviceInfoModel()))
 
-	return fetcher.FetcherFetch(ctx, &request.NSURLRequest, viaFile)
+	return fetcher.FetcherFetch(ctx, req, viaFile)
 }
 
 // TagsList implements the OCI distribution tags-list endpoint on the
@@ -604,7 +602,7 @@ func (r *Registry) TagsList(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if code := int(response.StatusCode()); code != httpCodeOk {
+		if code := int(response.StatusCode); code != httpCodeOk {
 			return nil, registryErrorUnexpectedStatus("listing tags", code, objcutil.TextPreview(data))
 		}
 
@@ -617,7 +615,7 @@ func (r *Registry) TagsList(ctx context.Context) ([]string, error) {
 		}
 		tags = append(tags, parsed.Tags...)
 
-		next := objcutil.GoStr(response.ValueForHTTPHeaderField(objcutil.NSStr("Link")))
+		next := response.Header.Get("Link")
 		if next == "" || len(parsed.Tags) == 0 {
 			return tags, nil
 		}

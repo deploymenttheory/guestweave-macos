@@ -11,13 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -41,18 +40,17 @@ import (
 	"github.com/deploymenttheory/weave/internal/screenviewer"
 	"github.com/deploymenttheory/weave/internal/telemetry"
 	"github.com/deploymenttheory/weave/internal/terminal"
+	"github.com/deploymenttheory/weave/internal/ui"
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
 
-	appkit "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/appkit"
-	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/corefoundation"
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // vm ports tart's global `var vm: VM?` from Run.swift.
@@ -60,14 +58,14 @@ var vm *weavevm.VM
 
 // parseDiskImageSynchronizationMode ports the VZDiskImageSynchronizationMode
 // init(_ description:) extension.
-func parseDiskImageSynchronizationMode(description string) (virtualization.VZDiskImageSynchronizationMode, error) {
+func parseDiskImageSynchronizationMode(description string) (idvirt.VZDiskImageSynchronizationMode, error) {
 	switch description {
 	case "none":
-		return virtualization.VZDiskImageSynchronizationModeNone, nil
+		return idvirt.VZDiskImageSynchronizationModeNone, nil
 	case "fsync":
-		return virtualization.VZDiskImageSynchronizationModeFsync, nil
+		return idvirt.VZDiskImageSynchronizationModeFsync, nil
 	case "full", "":
-		return virtualization.VZDiskImageSynchronizationModeFull, nil
+		return idvirt.VZDiskImageSynchronizationModeFull, nil
 	default:
 		return 0, weaveerrors.ErrVMConfigurationError("unsupported disk image synchronization mode: %q", description)
 	}
@@ -75,12 +73,12 @@ func parseDiskImageSynchronizationMode(description string) (virtualization.VZDis
 
 // parseDiskSynchronizationMode ports the VZDiskSynchronizationMode
 // init(_ description:) extension.
-func parseDiskSynchronizationMode(description string) (virtualization.VZDiskSynchronizationMode, error) {
+func parseDiskSynchronizationMode(description string) (idvirt.VZDiskSynchronizationMode, error) {
 	switch description {
 	case "none":
-		return virtualization.VZDiskSynchronizationModeNone, nil
+		return idvirt.VZDiskSynchronizationModeNone, nil
 	case "full", "":
-		return virtualization.VZDiskSynchronizationModeFull, nil
+		return idvirt.VZDiskSynchronizationModeFull, nil
 	default:
 		return 0, weaveerrors.ErrVMConfigurationError("unsupported disk synchronization mode: %q", description)
 	}
@@ -88,14 +86,14 @@ func parseDiskSynchronizationMode(description string) (virtualization.VZDiskSync
 
 // parseDiskImageCachingMode ports the VZDiskImageCachingMode
 // init?(_ description:) extension; ok=false mirrors the nil return for "".
-func parseDiskImageCachingMode(description string) (virtualization.VZDiskImageCachingMode, bool, error) {
+func parseDiskImageCachingMode(description string) (idvirt.VZDiskImageCachingMode, bool, error) {
 	switch description {
 	case "automatic":
-		return virtualization.VZDiskImageCachingModeAutomatic, true, nil
+		return idvirt.VZDiskImageCachingModeAutomatic, true, nil
 	case "cached":
-		return virtualization.VZDiskImageCachingModeCached, true, nil
+		return idvirt.VZDiskImageCachingModeCached, true, nil
 	case "uncached":
-		return virtualization.VZDiskImageCachingModeUncached, true, nil
+		return idvirt.VZDiskImageCachingModeUncached, true, nil
 	case "":
 		return 0, false, nil
 	default:
@@ -231,7 +229,7 @@ func (c *RunCommand) Validate() error {
 		if !weaveplatform.MacOSAtLeast(15) {
 			return weaveerrors.ErrGeneric("Nested virtualization is supported on hosts starting with macOS 15 (Sequoia), and later.")
 		}
-		if !virtualization.VZGenericPlatformConfigurationIsNestedVirtualizationSupported() {
+		if !idvirt.IsNestedVirtualizationSupported() {
 			return weaveerrors.ErrGeneric("Nested virtualization is available for Mac with the M3 chip, and later.")
 		}
 	}
@@ -353,20 +351,18 @@ func (c *RunCommand) RunMainThread() error {
 		}
 	}
 
-	var serialPorts []*virtualization.VZSerialPortConfiguration
+	var serialPorts []idvirt.SerialPortConfigurationProvider
 	if c.Serial {
 		ttyFD := weavevm.CreatePTY()
 		if ttyFD < 0 {
 			return weaveerrors.ErrVMConfigurationError("Failed to create PTY")
 		}
-		ttyRead := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-			InitWithFileDescriptorCloseOnDealloc(ttyFD, false)
-		ttyWrite := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-			InitWithFileDescriptorCloseOnDealloc(ttyFD, false)
+		ttyRead := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(ttyFD, false)
+		ttyWrite := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(ttyFD, false)
 		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
 	} else if c.SerialPath != "" {
-		ttyRead := foundation.NSFileHandleFileHandleForReadingAtPath(objcutil.NSStr(c.SerialPath))
-		ttyWrite := foundation.NSFileHandleFileHandleForWritingAtPath(objcutil.NSStr(c.SerialPath))
+		ttyRead := foundation.FileHandleForReadingAtPath(c.SerialPath)
+		ttyWrite := foundation.FileHandleForWritingAtPath(c.SerialPath)
 		if ttyRead == nil || ttyWrite == nil {
 			return weaveerrors.ErrVMConfigurationError("Failed to open PTY")
 		}
@@ -379,7 +375,7 @@ func (c *RunCommand) RunMainThread() error {
 	if err != nil {
 		return err
 	}
-	var caching *virtualization.VZDiskImageCachingMode
+	var caching *idvirt.VZDiskImageCachingMode
 	if cachingMode, ok, err := parseDiskImageCachingMode(diskOptions.cachingModeRaw); err != nil {
 		return err
 	} else if ok {
@@ -500,22 +496,24 @@ func (c *RunCommand) RunMainThread() error {
 		for range sigusr2 {
 			fmt.Println("Requesting guest OS to stop...")
 			dispatch.RunOnMainThread(func() {
-				_, _ = vm.VirtualMachine.RequestStopWithError()
+				_ = vm.VirtualMachine.RequestStop()
 			})
 		}
 	}()
-
-	runSuspendableFlag.Store(c.Suspendable)
 
 	useVNCWithoutGraphics := (c.VNC || c.VNCExperimental) && !c.Graphics
 	if c.NoGraphics || useVNCWithoutGraphics {
 		// Enter the main event loop without bringing up any UI, waiting for
 		// the VM to exit.
-		app := appkit.NSApplicationSharedApplication()
+		app := appkit.SharedApplication()
 		app.SetActivationPolicy(appkit.NSApplicationActivationPolicyProhibited)
 		app.Run()
 	} else {
-		c.runUI()
+		(&ui.Window{
+			VM:                vm,
+			CaptureSystemKeys: c.CaptureSystemKeys,
+			Suspendable:       c.Suspendable,
+		}).Run()
 	}
 
 	return nil
@@ -550,7 +548,7 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 	if err := vm.Start(c.Recovery, resume); err != nil {
 		var objcErr *objcerrors.ObjCError
 		if errors.As(err, &objcErr) && objcErr.Domain == "VZErrorDomain" &&
-			objcErr.Code == int64(virtualization.VZErrorVirtualMachineLimitExceeded) {
+			objcErr.Code == int64(idvirt.VZErrorVirtualMachineLimitExceeded) {
 			hint := ""
 			if entries, listErr := localStorage.List(); listErr == nil {
 				var runningVMs []string
@@ -601,7 +599,7 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 			fmt.Printf("VNC server is running at %s\n", vncURL)
 		} else {
 			fmt.Printf("Opening %s...\n", vncURL)
-			appkit.NSWorkspaceSharedWorkspace().OpenURL(foundation.NSURLURLWithString(objcutil.NSStr(vncURL)))
+			appkit.SharedWorkspace().OpenURL(vncURL)
 		}
 
 		// View-only screen viewer: a dedicated VNC client continuously
@@ -719,7 +717,7 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 
 	var validateErr error
 	dispatch.RunOnMainThread(func() {
-		_, validateErr = vm.Configuration.ValidateSaveRestoreSupportWithError()
+		validateErr = vm.Configuration.ValidateSaveRestoreSupport()
 	})
 	if validateErr == nil {
 		fmt.Println("pausing VM to take a snapshot...")
@@ -739,14 +737,9 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 	cancelRun()
 }
 
-func createSerialPortConfiguration(ttyRead *foundation.NSFileHandle, ttyWrite *foundation.NSFileHandle) *virtualization.VZSerialPortConfiguration {
-	serialPortConfiguration := virtualization.VZVirtioConsoleDeviceSerialPortConfigurationFromID(
-		objcutil.AllocClass("VZVirtioConsoleDeviceSerialPortConfiguration")).Init()
-	serialPortAttachment := virtualization.VZFileHandleSerialPortAttachmentFromID(
-		objcutil.AllocClass("VZFileHandleSerialPortAttachment")).
-		InitWithFileHandleForReadingFileHandleForWriting(ttyRead, ttyWrite)
-	serialPortConfiguration.SetAttachment(&serialPortAttachment.VZSerialPortAttachment)
-	return &serialPortConfiguration.VZSerialPortConfiguration
+func createSerialPortConfiguration(ttyRead *foundation.FileHandle, ttyWrite *foundation.FileHandle) idvirt.SerialPortConfigurationProvider {
+	attachment := idvirt.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(ttyRead.Unwrap(), ttyWrite.Unwrap())
+	return idvirt.NewVirtioConsoleDeviceSerialPortConfiguration().WithAttachment(attachment)
 }
 
 func isInteractiveSession() bool {
@@ -831,8 +824,8 @@ func firstOrEmpty(s []string) string {
 }
 
 // additionalDiskAttachments ports Run.additionalDiskAttachments().
-func (c *RunCommand) additionalDiskAttachments() ([]*virtualization.VZStorageDeviceConfiguration, error) {
-	var configurations []*virtualization.VZStorageDeviceConfiguration
+func (c *RunCommand) additionalDiskAttachments() ([]idvirt.StorageDeviceConfigurationProvider, error) {
+	var configurations []idvirt.StorageDeviceConfigurationProvider
 	for _, disk := range c.Disk {
 		configuration, err := craftAdditionalDisk(disk)
 		if err != nil {
@@ -845,7 +838,7 @@ func (c *RunCommand) additionalDiskAttachments() ([]*virtualization.VZStorageDev
 
 // usbMassStorageDevices ports lume's --usb-storage: each image is attached
 // read-write as a USB mass storage device (macOS 13+).
-func (c *RunCommand) usbMassStorageDevices() ([]*virtualization.VZStorageDeviceConfiguration, error) {
+func (c *RunCommand) usbMassStorageDevices() ([]idvirt.StorageDeviceConfigurationProvider, error) {
 	if len(c.USBStorage) == 0 {
 		return nil, nil
 	}
@@ -853,93 +846,18 @@ func (c *RunCommand) usbMassStorageDevices() ([]*virtualization.VZStorageDeviceC
 		return nil, weavevm.NewUnsupportedOSError("USB mass storage devices", "are")
 	}
 
-	var configurations []*virtualization.VZStorageDeviceConfiguration
+	var configurations []idvirt.StorageDeviceConfigurationProvider
 	for _, imagePath := range c.USBStorage {
-		attachment, err := virtualization.VZDiskImageStorageDeviceAttachmentFromID(
-			objcutil.AllocClass("VZDiskImageStorageDeviceAttachment")).
-			InitWithURLReadOnlyError(objcutil.NSURLFromPath(objcutil.ExpandTilde(imagePath)), false)
+		attachment, err := idvirt.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(
+			objcutil.ExpandTilde(imagePath), false)
 		if err != nil {
 			return nil, err
 		}
-		device := virtualization.VZUSBMassStorageDeviceConfigurationFromID(
-			objcutil.AllocClass("VZUSBMassStorageDeviceConfiguration")).
-			InitWithAttachment(&attachment.VZStorageDeviceAttachment)
-		configurations = append(configurations, &device.VZStorageDeviceConfiguration)
+		configurations = append(configurations,
+			idvirt.NewUSBMassStorageDeviceConfigurationWithAttachment(&attachment.Unwrap().VZStorageDeviceAttachment))
 	}
 	return configurations, nil
 }
-
-// runUI ports Run.runUI/MainApp: an AppKit window hosting the
-// VZVirtualMachineView.
-func (c *RunCommand) runUI() {
-	app := appkit.NSApplicationSharedApplication()
-	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
-
-	contentRect := corefoundation.CGRect{
-		Origin: corefoundation.CGPoint{X: 0, Y: 0},
-		Size: corefoundation.CGSize{
-			Width:  float64(vm.Config.Display.Width),
-			Height: float64(vm.Config.Display.Height),
-		},
-	}
-	styleMask := appkit.NSWindowStyleMaskTitled | appkit.NSWindowStyleMaskClosable |
-		appkit.NSWindowStyleMaskMiniaturizable | appkit.NSWindowStyleMaskResizable
-
-	window := appkit.NSWindowFromID(objcutil.AllocClass("NSWindow")).
-		InitWithContentRectStyleMaskBackingDefer(contentRect, styleMask, appkit.NSBackingStoreBuffered, false)
-	window.SetTitle(objcutil.NSStr(vm.Name))
-
-	machineView := virtualization.VZVirtualMachineViewFromID(
-		purego.Send[purego.ID](objcutil.AllocClass("VZVirtualMachineView"), purego.RegisterName("init")))
-	machineView.SetCapturesSystemKeys(c.CaptureSystemKeys)
-
-	// If not specified, enable automatic display reconfiguration for guests
-	// that support it. Disabled for Linux because of poor HiDPI support.
-	displayRefit := vm.Config.OS != weaveplatform.OSLinux
-	if vm.Config.DisplayRefit != nil {
-		displayRefit = *vm.Config.DisplayRefit
-	}
-	if weaveplatform.MacOSAtLeast(14) && displayRefit {
-		machineView.SetAutomaticallyReconfiguresDisplay(true)
-	}
-	machineView.SetVirtualMachine(vm.VirtualMachine)
-
-	window.SetContentView(&machineView.NSView)
-	window.SetDelegate(purego.ID(runWindowDelegateClass()).Send(purego.RegisterName("new")))
-	window.Center()
-	window.MakeKeyAndOrderFront(0)
-
-	app.ActivateIgnoringOtherApps(true)
-	app.Run()
-}
-
-// runWindowDelegateClass registers the window delegate that translates a
-// window close into SIGUSR1 (suspendable) or SIGINT, mirroring MainApp's
-// onDisappear handler.
-var runWindowDelegateClass = sync.OnceValue(func() purego.Class {
-	class, err := purego.RegisterClass("OrinRunWindowDelegate", purego.GetClass("NSObject"),
-		[]*purego.Protocol{purego.GetProtocol("NSWindowDelegate")},
-		nil,
-		[]purego.MethodDef{
-			{
-				Cmd: purego.RegisterName("windowWillClose:"),
-				Fn: func(_ purego.ID, _ purego.SEL, _ purego.ID) {
-					signum := syscall.SIGINT
-					if runSuspendableFlag.Load() {
-						signum = syscall.SIGUSR1
-					}
-					_ = syscall.Kill(syscall.Getpid(), signum)
-				},
-			},
-		})
-	if err != nil {
-		panic(fmt.Sprintf("failed to register OrinRunWindowDelegate: %v", err))
-	}
-	return class
-})
-
-// runSuspendableFlag mirrors MainApp.suspendable for the window delegate.
-var runSuspendableFlag atomic.Bool
 
 // diskOptions ports Run.swift's DiskOptions struct.
 type diskOptions struct {
@@ -971,7 +889,7 @@ func parseDiskOptions(parseFrom string) diskOptions {
 
 // craftAdditionalDisk ports Run.swift's AdditionalDisk: a disk image path,
 // block device, remote VM name or NBD URL with optional :options suffix.
-func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfiguration, error) {
+func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationProvider, error) {
 	diskPath, options := parseAdditionalDiskOptions(parseFrom)
 
 	syncMode, err := parseDiskSynchronizationMode(options.syncModeRaw)
@@ -986,16 +904,12 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 			return nil, weavevm.NewUnsupportedOSError("attaching Network Block Devices", "are")
 		}
 
-		nbdAttachment, err := virtualization.VZNetworkBlockDeviceStorageDeviceAttachmentFromID(
-			objcutil.AllocClass("VZNetworkBlockDeviceStorageDeviceAttachment")).
-			InitWithURLTimeoutForcedReadOnlySynchronizationModeError(
-				foundation.NSURLURLWithString(objcutil.NSStr(diskPath)), 30, options.readOnly, syncMode)
+		nbdAttachment, err := idvirt.NewNetworkBlockDeviceStorageDeviceAttachmentWithURLTimeoutForcedReadOnlySynchronizationModeError(
+			diskPath, 30, options.readOnly, syncMode)
 		if err != nil {
 			return nil, err
 		}
-		device := virtualization.VZVirtioBlockDeviceConfigurationFromID(objcutil.AllocClass("VZVirtioBlockDeviceConfiguration")).
-			InitWithAttachment(&nbdAttachment.VZStorageDeviceAttachment)
-		return &device.VZStorageDeviceConfiguration, nil
+		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&nbdAttachment.Unwrap().VZStorageDeviceAttachment), nil
 	}
 
 	// Expand the tilde (~) since at this point we're dealing with a local
@@ -1024,17 +938,13 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 			}
 		}
 
-		fileHandle := foundation.NSFileHandleFromID(objcutil.AllocClass("NSFileHandle")).
-			InitWithFileDescriptorCloseOnDealloc(fd, true)
-		blockAttachment, err := virtualization.VZDiskBlockDeviceStorageDeviceAttachmentFromID(
-			objcutil.AllocClass("VZDiskBlockDeviceStorageDeviceAttachment")).
-			InitWithFileHandleReadOnlySynchronizationModeError(fileHandle, options.readOnly, syncMode)
+		fileHandle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(fd, true)
+		blockAttachment, err := idvirt.NewDiskBlockDeviceStorageDeviceAttachmentWithFileHandleReadOnlySynchronizationModeError(
+			fileHandle.Unwrap(), options.readOnly, syncMode)
 		if err != nil {
 			return nil, err
 		}
-		device := virtualization.VZVirtioBlockDeviceConfigurationFromID(objcutil.AllocClass("VZVirtioBlockDeviceConfiguration")).
-			InitWithAttachment(&blockAttachment.VZStorageDeviceAttachment)
-		return &device.VZStorageDeviceConfiguration, nil
+		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&blockAttachment.Unwrap().VZStorageDeviceAttachment), nil
 	}
 
 	// Support remote VM names in the --disk command-line argument.
@@ -1068,18 +978,13 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 			return nil, err
 		}
 
-		diskImageAttachment, err := virtualization.VZDiskImageStorageDeviceAttachmentFromID(
-			objcutil.AllocClass("VZDiskImageStorageDeviceAttachment")).
-			InitWithURLReadOnlyError(objcutil.NSURLFromPath(clonedDiskPath), options.readOnly)
+		diskImageAttachment, err := idvirt.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyError(
+			clonedDiskPath, options.readOnly)
 		if err != nil {
 			return nil, err
 		}
-		device := virtualization.VZVirtioBlockDeviceConfigurationFromID(objcutil.AllocClass("VZVirtioBlockDeviceConfiguration")).
-			InitWithAttachment(&diskImageAttachment.VZStorageDeviceAttachment)
-		return &device.VZStorageDeviceConfiguration, nil
+		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&diskImageAttachment.Unwrap().VZStorageDeviceAttachment), nil
 	}
-
-	diskFileURL := objcutil.NSURLFromPath(expandedDiskPath)
 
 	// Error out if the disk is locked by the host (e.g. it was mounted in
 	// Finder), see cirruslabs/tart#323.
@@ -1095,7 +1000,7 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 		}
 	}
 
-	cachingMode := virtualization.VZDiskImageCachingModeAutomatic
+	cachingMode := idvirt.VZDiskImageCachingModeAutomatic
 	if mode, ok, err := parseDiskImageCachingMode(options.cachingModeRaw); err != nil {
 		return nil, err
 	} else if ok {
@@ -1106,15 +1011,12 @@ func craftAdditionalDisk(parseFrom string) (*virtualization.VZStorageDeviceConfi
 		return nil, err
 	}
 
-	diskImageAttachment, err := virtualization.VZDiskImageStorageDeviceAttachmentFromID(
-		objcutil.AllocClass("VZDiskImageStorageDeviceAttachment")).
-		InitWithURLReadOnlyCachingModeSynchronizationModeError(diskFileURL, options.readOnly, cachingMode, imageSyncMode)
+	diskImageAttachment, err := idvirt.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyCachingModeSynchronizationModeError(
+		expandedDiskPath, options.readOnly, cachingMode, imageSyncMode)
 	if err != nil {
 		return nil, err
 	}
-	device := virtualization.VZVirtioBlockDeviceConfigurationFromID(objcutil.AllocClass("VZVirtioBlockDeviceConfiguration")).
-		InitWithAttachment(&diskImageAttachment.VZStorageDeviceAttachment)
-	return &device.VZStorageDeviceConfiguration, nil
+	return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(&diskImageAttachment.Unwrap().VZStorageDeviceAttachment), nil
 }
 
 // parseAdditionalDiskOptions ports AdditionalDisk.parseOptions(_:).
@@ -1139,7 +1041,7 @@ type directoryShare struct {
 
 func parseDirectoryShare(parseFrom string) directoryShare {
 	share := directoryShare{
-		mountTag: objcutil.GoStr(virtualization.VZVirtioFileSystemDeviceConfigurationMacOSGuestAutomountTag()),
+		mountTag: idvirt.MacOSGuestAutomountTag(),
 	}
 
 	// Consume options.
@@ -1180,7 +1082,7 @@ func parseDirectoryShare(parseFrom string) directoryShare {
 // --dir. The macOS automount tag is always used.
 func parseSharedDirectoryShare(parseFrom string) (directoryShare, error) {
 	share := directoryShare{
-		mountTag: objcutil.GoStr(virtualization.VZVirtioFileSystemDeviceConfigurationMacOSGuestAutomountTag()),
+		mountTag: idvirt.MacOSGuestAutomountTag(),
 	}
 
 	path := parseFrom
@@ -1204,7 +1106,7 @@ func parseSharedDirectoryShare(parseFrom string) (directoryShare, error) {
 
 // directoryShares ports Run.directoryShares(), extended with lume's
 // --shared-dir entries which funnel into the same sharing devices.
-func (c *RunCommand) directoryShares() ([]*virtualization.VZDirectorySharingDeviceConfiguration, error) {
+func (c *RunCommand) directoryShares() ([]idvirt.DirectorySharingDeviceConfigurationProvider, error) {
 	if len(c.Dir) == 0 && len(c.SharedDir) == 0 {
 		return nil, nil
 	}
@@ -1234,12 +1136,11 @@ func (c *RunCommand) directoryShares() ([]*virtualization.VZDirectorySharingDevi
 		sharesByTag[share.mountTag] = append(sharesByTag[share.mountTag], share)
 	}
 
-	var devices []*virtualization.VZDirectorySharingDeviceConfiguration
+	var devices []idvirt.DirectorySharingDeviceConfigurationProvider
 	for _, mountTag := range tagOrder {
 		shares := sharesByTag[mountTag]
 
-		sharingDevice := virtualization.VZVirtioFileSystemDeviceConfigurationFromID(
-			objcutil.AllocClass("VZVirtioFileSystemDeviceConfiguration")).InitWithTag(objcutil.NSStr(mountTag))
+		sharingDevice := idvirt.NewVirtioFileSystemDeviceConfigurationWithTag(mountTag)
 
 		allNamedShares := true
 		for _, share := range shares {
@@ -1253,27 +1154,22 @@ func (c *RunCommand) directoryShares() ([]*virtualization.VZDirectorySharingDevi
 			if err != nil {
 				return nil, err
 			}
-			singleShare := virtualization.VZSingleDirectoryShareFromID(
-				objcutil.AllocClass("VZSingleDirectoryShare")).InitWithDirectory(sharedDirectory)
-			sharingDevice.SetShare(&singleShare.VZDirectoryShare)
+			sharingDevice.WithShare(idvirt.NewSingleDirectoryShareWithDirectory(sharedDirectory.Unwrap()))
 		} else if !allNamedShares {
 			return nil, weaveerrors.ErrGeneric("invalid --dir syntax: for multiple directory shares each one of them should be named")
 		} else {
-			directories := purego.Send[purego.ID](purego.ID(purego.GetClass("NSMutableDictionary")), objcutil.SelDictionary)
+			directories := foundation.NewMutableDictionary()
 			for _, share := range shares {
 				sharedDirectory, err := share.createConfiguration()
 				if err != nil {
 					return nil, err
 				}
-				directories.Send(objcutil.SelSetObjectForKey, sharedDirectory.Ptr(), purego.NSString(share.name))
+				directories.SetString(share.name, sharedDirectory.ID())
 			}
-			multipleShare := virtualization.VZMultipleDirectoryShareFromID(
-				objcutil.AllocClass("VZMultipleDirectoryShare")).
-				InitWithDirectories(foundation.NSDictionaryFromID[*foundation.NSString, *virtualization.VZSharedDirectory](purego.Retain(directories)))
-			sharingDevice.SetShare(&multipleShare.VZDirectoryShare)
+			sharingDevice.WithShare(idvirt.NewMultipleDirectoryShareWithDirectories(directories))
 		}
 
-		devices = append(devices, &sharingDevice.VZDirectorySharingDeviceConfiguration)
+		devices = append(devices, sharingDevice)
 	}
 
 	return devices, nil
@@ -1283,10 +1179,9 @@ func (c *RunCommand) directoryShares() ([]*virtualization.VZDirectorySharingDevi
 // paths are shared directly; remote archives are downloaded (with an
 // on-disk cache, mirroring Swift's URLCache usage) and unpacked into a
 // temporary directory with tar.
-func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory, error) {
+func (s directoryShare) createConfiguration() (*idvirt.SharedDirectory, error) {
 	if !strings.HasPrefix(s.path, "http:") && !strings.HasPrefix(s.path, "https:") {
-		return virtualization.VZSharedDirectoryFromID(objcutil.AllocClass("VZSharedDirectory")).
-			InitWithURLReadOnly(objcutil.NSURLFromPath(s.path), s.readOnly), nil
+		return idvirt.NewSharedDirectoryWithURLReadOnly(s.path, s.readOnly), nil
 	}
 
 	config, err := weaveconfig.NewConfig()
@@ -1301,7 +1196,7 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 	if _, err := os.Stat(cachePath); err != nil {
 		fmt.Printf("Downloading %s...\n", s.path)
 		chunks, response, err := fetcher.FetcherFetch(context.Background(),
-			foundation.NSURLRequestRequestWithURL(foundation.NSURLURLWithString(objcutil.NSStr(s.path))), true)
+			fetcher.FetchRequest{URL: s.path}, true)
 		if err != nil {
 			return nil, err
 		}
@@ -1310,7 +1205,7 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 		// progress (the spinner is only for indeterminate waits — see
 		// terminal/spinner.go).
 		var progress *logging.DownloadProgress
-		if expectedLength := response.ExpectedContentLength(); expectedLength > 0 {
+		if expectedLength := response.ContentLength; expectedLength > 0 {
 			if err := vmstorage.EnsureDiskSpace(uint64(expectedLength), nil); err != nil {
 				return nil, err
 			}
@@ -1365,33 +1260,23 @@ func (s directoryShare) createConfiguration() (*virtualization.VZSharedDirectory
 		return nil, err
 	}
 
-	tarURL := objcutil.ResolveBinaryPath("tar")
-	if tarURL == nil {
+	if _, err := exec.LookPath("tar"); err != nil {
 		return nil, weaveerrors.ErrGeneric("tar not found in PATH")
 	}
 
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	task.SetExecutableURL(tarURL)
-	task.SetCurrentDirectoryURL(objcutil.NSURLFromPath(temporaryPath))
-	task.SetArguments(objcutil.NSStringArray([]string{"-xzf", cachePath}))
-
-	if _, err := task.LaunchAndReturnError(); err != nil {
-		return nil, err
-	}
-	task.WaitUntilExit()
-
-	if !(task.TerminationReason() == foundation.NSTaskTerminationReasonExit && task.TerminationStatus() == 0) {
+	cmd := exec.Command("tar", "-xzf", cachePath)
+	cmd.Dir = temporaryPath
+	if err := cmd.Run(); err != nil {
 		return nil, weaveerrors.ErrGeneric("Unarchiving failed!")
 	}
 
 	fmt.Println("Unarchived into a temporary directory!")
 
-	return virtualization.VZSharedDirectoryFromID(objcutil.AllocClass("VZSharedDirectory")).
-		InitWithURLReadOnly(objcutil.NSURLFromPath(temporaryPath), s.readOnly), nil
+	return idvirt.NewSharedDirectoryWithURLReadOnly(temporaryPath, s.readOnly), nil
 }
 
 // rosettaDirectoryShare ports Run.rosettaDirectoryShare().
-func (c *RunCommand) rosettaDirectoryShare() ([]*virtualization.VZDirectorySharingDeviceConfiguration, error) {
+func (c *RunCommand) rosettaDirectoryShare() ([]idvirt.DirectorySharingDeviceConfigurationProvider, error) {
 	if c.RosettaTag == "" {
 		return nil, nil
 	}
@@ -1403,26 +1288,20 @@ func (c *RunCommand) rosettaDirectoryShare() ([]*virtualization.VZDirectoryShari
 		return nil, weavevm.NewUnsupportedOSError("Rosetta directory share", "is")
 	}
 
-	switch virtualization.VZLinuxRosettaDirectoryShareAvailability() {
-	case virtualization.VZLinuxRosettaAvailabilityNotInstalled:
+	switch idvirt.Availability() {
+	case idvirt.VZLinuxRosettaAvailabilityNotInstalled:
 		return nil, &weavevm.UnsupportedOSError{What: "Rosetta directory share", Plural: "is", Requires: "that have Rosetta installed"}
-	case virtualization.VZLinuxRosettaAvailabilityNotSupported:
+	case idvirt.VZLinuxRosettaAvailabilityNotSupported:
 		return nil, &weavevm.UnsupportedOSError{What: "Rosetta directory share", Plural: "is", Requires: "running Apple silicon"}
 	}
 
-	if _, err := virtualization.VZVirtioFileSystemDeviceConfigurationValidateTagError(objcutil.NSStr(c.RosettaTag)); err != nil {
+	if _, err := idvirt.ValidateTagError(c.RosettaTag); err != nil {
 		return nil, err
 	}
-	device := virtualization.VZVirtioFileSystemDeviceConfigurationFromID(
-		objcutil.AllocClass("VZVirtioFileSystemDeviceConfiguration")).InitWithTag(objcutil.NSStr(c.RosettaTag))
-	rosettaShare, err := virtualization.VZLinuxRosettaDirectoryShareFromID(
-		objcutil.AllocClass("VZLinuxRosettaDirectoryShare")).InitWithError()
-	if err != nil {
-		return nil, err
-	}
-	device.SetShare(&rosettaShare.VZDirectoryShare)
+	device := idvirt.NewVirtioFileSystemDeviceConfigurationWithTag(c.RosettaTag).
+		WithShare(idvirt.NewLinuxRosettaDirectoryShare())
 
-	return []*virtualization.VZDirectorySharingDeviceConfiguration{&device.VZDirectorySharingDeviceConfiguration}, nil
+	return []idvirt.DirectorySharingDeviceConfigurationProvider{device}, nil
 }
 
 // pathHasMode ports Run.swift's pathHasMode(_:mode:).

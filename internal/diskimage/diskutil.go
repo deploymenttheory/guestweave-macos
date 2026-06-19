@@ -1,4 +1,4 @@
-// Port of tart's Diskutil.swift: shells out to diskutil(8) via NSTask and
+// Port of tart's Diskutil.swift: shells out to diskutil(8) via os/exec and
 // parses the --plist output with NSPropertyListSerialization (Swift:
 // Process + PropertyListDecoder).
 //go:build darwin
@@ -6,15 +6,26 @@
 package diskimage
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
+	"unsafe"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 )
+
+// nsData builds an idiomatic NSData from a Go byte slice.
+func nsData(b []byte) *foundation.Data {
+	if len(b) == 0 {
+		return foundation.NewDataWithBytesLength(nil, 0)
+	}
+	return foundation.NewDataWithBytesLength(unsafe.Pointer(&b[0]), uint(len(b)))
+}
 
 // SizeInfo ports Diskutil.swift's SizeInfo ("Size Info" plist dictionary).
 type SizeInfo struct {
@@ -64,21 +75,22 @@ func DiskutilImageInfo(diskPath string) (*ImageInfo, error) {
 		return nil, err
 	}
 
-	plistID, err := foundation.NSPropertyListSerializationPropertyListWithDataOptionsFormatError(
-		objcutil.BytesToNSData(stdoutData), 0, nil)
+	plistID, err := foundation.PropertyListWithDataOptionsFormatError(nsData(stdoutData).Unwrap(), 0, nil)
 	if err != nil || plistID == 0 {
 		return nil, weaveerrors.ErrGeneric("Failed to parse \"diskutil image info --plist\" output: %v", err)
 	}
+	plist := foundation.DictionaryFromID(plistID)
 
 	info := &ImageInfo{}
-	if sizeID := purego.Send[purego.ID](plistID, objcutil.SelObjectForKey, purego.NSString("Size")); sizeID != 0 {
-		size := foundation.NSNumberFromID(purego.Retain(sizeID)).UnsignedLongLongValue()
+	if sizeID := plist.ObjectForKey(purego.NSString("Size")); sizeID != 0 {
+		size := foundation.NumberFromID(purego.Retain(sizeID)).UnsignedLongLongValue()
 		info.Size = &size
 	}
-	if sizeInfoID := purego.Send[purego.ID](plistID, objcutil.SelObjectForKey, purego.NSString("Size Info")); sizeInfoID != 0 {
+	if sizeInfoID := plist.ObjectForKey(purego.NSString("Size Info")); sizeInfoID != 0 {
 		info.SizeInfo = &SizeInfo{}
-		if totalID := purego.Send[purego.ID](sizeInfoID, objcutil.SelObjectForKey, purego.NSString("Total Bytes")); totalID != 0 {
-			totalBytes := foundation.NSNumberFromID(purego.Retain(totalID)).UnsignedLongLongValue()
+		sizeInfo := foundation.DictionaryFromID(purego.Retain(sizeInfoID))
+		if totalID := sizeInfo.ObjectForKey(purego.NSString("Total Bytes")); totalID != 0 {
+			totalBytes := foundation.NumberFromID(purego.Retain(totalID)).UnsignedLongLongValue()
 			info.SizeInfo.TotalBytes = &totalBytes
 		}
 	}
@@ -89,40 +101,27 @@ func DiskutilImageInfo(diskPath string) (*ImageInfo, error) {
 // DiskutilRun ports Diskutil.run(_:): executes diskutil with the given
 // arguments and returns (stdout, stderr).
 func DiskutilRun(arguments []string) ([]byte, []byte, error) {
-	diskutilURL := objcutil.ResolveBinaryPath("diskutil")
-	if diskutilURL == nil {
+	if _, err := exec.LookPath("diskutil"); err != nil {
 		return nil, nil, weaveerrors.ErrGeneric("\"diskutil\" binary is not found in PATH")
 	}
 
-	task := foundation.NSTaskFromID(purego.Send[purego.ID](purego.ID(purego.GetClass("NSTask")), purego.RegisterName("new")))
-	task.SetExecutableURL(diskutilURL)
-	task.SetArguments(objcutil.NSStringArray(arguments))
+	cmd := exec.Command("diskutil", arguments...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	stdoutPipe := foundation.NSPipePipe()
-	task.SetStandardOutput(stdoutPipe.Ptr())
-	stderrPipe := foundation.NSPipePipe()
-	task.SetStandardError(stderrPipe.Ptr())
+	err := cmd.Run()
+	stdoutData := stdout.Bytes()
+	stderrData := stderr.Bytes()
 
-	if _, err := task.LaunchAndReturnError(); err != nil {
-		return nil, nil, weaveerrors.ErrGeneric("\"%s\" failed: %v", strings.Join(arguments, " "), err)
-	}
-	task.WaitUntilExit()
-
-	stdoutNSData, err := stdoutPipe.FileHandleForReading().ReadDataToEndOfFileAndReturnError()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, nil, weaveerrors.ErrGeneric("\"%s\" failed with exit code %d: %s",
+				strings.Join(arguments, " "), exitErr.ExitCode(),
+				FirstNonEmptyLine(string(stderrData), string(stdoutData)))
+		}
 		return nil, nil, weaveerrors.ErrGeneric("\"%s\" failed: %v", strings.Join(arguments, " "), err)
-	}
-	stderrNSData, err := stderrPipe.FileHandleForReading().ReadDataToEndOfFileAndReturnError()
-	if err != nil {
-		return nil, nil, weaveerrors.ErrGeneric("\"%s\" failed: %v", strings.Join(arguments, " "), err)
-	}
-
-	stdoutData := objcutil.NSDataToBytes(stdoutNSData)
-	stderrData := objcutil.NSDataToBytes(stderrNSData)
-
-	if status := task.TerminationStatus(); status != 0 {
-		return nil, nil, weaveerrors.ErrGeneric("\"%s\" failed with exit code %d: %s",
-			strings.Join(arguments, " "), status, FirstNonEmptyLine(string(stderrData), string(stdoutData)))
 	}
 
 	return stdoutData, stderrData, nil

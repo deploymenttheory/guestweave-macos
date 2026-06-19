@@ -15,10 +15,8 @@ import (
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/diskimage"
 	"github.com/deploymenttheory/weave/internal/fsutil"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
@@ -79,7 +77,7 @@ func (c *SetCommand) Run(ctx context.Context) error {
 
 	if c.RandomSerial && runtime.GOARCH == "arm64" {
 		if oldPlatform, ok := vmConfig.Platform.(*vmconfig.DarwinPlatform); ok {
-			ecid := virtualization.VZMacMachineIdentifierFromID(objcutil.AllocClass("VZMacMachineIdentifier")).Init()
+			ecid := idvirt.NewMacMachineIdentifier()
 			vmConfig.Platform = vmconfig.NewDarwinPlatform(ecid, oldPlatform.HardwareModel)
 		}
 	}

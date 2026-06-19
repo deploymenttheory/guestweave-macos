@@ -6,7 +6,7 @@
     <true/>
     <!-- com.apple.developer.networking.vmnet is the Apple-granted entitlement
          for VZBridgedNetworkDeviceAttachment. It must be present in the
-         embedded provisioning profile (weave_cli.provisionprofile). -->
+         embedded provisioning profile (guestweave_cli.provisionprofile). -->
     <key>com.apple.developer.networking.vmnet</key>
     <true/>
 </dict>

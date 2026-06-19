@@ -1,5 +1,5 @@
-// Port of tart's Platform/Darwin.swift: the macOS guest platform. idiomatic
-// wrappers provide the constructors; raw setters configure the objects.
+// Port of tart's Platform/Darwin.swift: the macOS guest platform. Idiomatic
+// wrappers provide the constructors and fluent setters.
 //go:build darwin
 
 package vmconfig
@@ -12,10 +12,8 @@ import (
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 
-	appkit "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/appkit"
-	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/corefoundation"
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
+	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
+	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
 	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
@@ -29,8 +27,8 @@ func (UnsupportedHostOSError) Error() string {
 // DarwinPlatform ports tart's Darwin struct (named to avoid clashing with
 // the weaveplatform.OS constant).
 type DarwinPlatform struct {
-	ECID          *virtualization.VZMacMachineIdentifier
-	HardwareModel *virtualization.VZMacHardwareModel
+	ECID          *idiomatic.MacMachineIdentifier
+	HardwareModel *idiomatic.MacHardwareModel
 }
 
 var (
@@ -39,7 +37,7 @@ var (
 )
 
 // NewDarwinPlatform ports Darwin.init(ecid:hardwareModel:).
-func NewDarwinPlatform(ecid *virtualization.VZMacMachineIdentifier, hardwareModel *virtualization.VZMacHardwareModel) *DarwinPlatform {
+func NewDarwinPlatform(ecid *idiomatic.MacMachineIdentifier, hardwareModel *idiomatic.MacHardwareModel) *DarwinPlatform {
 	return &DarwinPlatform{ECID: ecid, HardwareModel: hardwareModel}
 }
 
@@ -50,8 +48,7 @@ func newDarwinPlatformFromJSON(config vmConfigJSON) (*DarwinPlatform, error) {
 	if err != nil {
 		return nil, weaveerrors.ErrGeneric("failed to initialize Data using the provided value")
 	}
-	ecid := virtualization.VZMacMachineIdentifierFromID(objcutil.AllocClass("VZMacMachineIdentifier")).
-		InitWithDataRepresentation(objcutil.BytesToNSData(ecidData))
+	ecid := idiomatic.NewMacMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData).Unwrap())
 	if ecid == nil {
 		return nil, weaveerrors.ErrGeneric("failed to initialize VZMacMachineIdentifier using the provided value")
 	}
@@ -60,8 +57,7 @@ func newDarwinPlatformFromJSON(config vmConfigJSON) (*DarwinPlatform, error) {
 	if err != nil {
 		return nil, weaveerrors.ErrGeneric("failed to initialize Data using the provided value")
 	}
-	hardwareModel := virtualization.VZMacHardwareModelFromID(objcutil.AllocClass("VZMacHardwareModel")).
-		InitWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
+	hardwareModel := idiomatic.NewMacHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData).Unwrap())
 	if hardwareModel == nil {
 		return nil, UnsupportedHostOSError{}
 	}
@@ -70,27 +66,21 @@ func newDarwinPlatformFromJSON(config vmConfigJSON) (*DarwinPlatform, error) {
 }
 
 func (p *DarwinPlatform) platformEncodeJSON(object map[string]any) error {
-	object["ecid"] = base64.StdEncoding.EncodeToString(objcutil.NSDataToBytes(p.ECID.DataRepresentation()))
-	object["hardwareModel"] = base64.StdEncoding.EncodeToString(objcutil.NSDataToBytes(p.HardwareModel.DataRepresentation()))
+	object["ecid"] = base64.StdEncoding.EncodeToString(objcutil.NSDataToBytes(p.ECID.DataRepresentation().Ptr()))
+	object["hardwareModel"] = base64.StdEncoding.EncodeToString(objcutil.NSDataToBytes(p.HardwareModel.DataRepresentation().Ptr()))
 	return nil
 }
 
 func (p *DarwinPlatform) OS() weaveplatform.OS { return weaveplatform.OSDarwin }
 
-func (p *DarwinPlatform) BootLoader(nvramURL *foundation.NSURL) (*virtualization.VZBootLoader, error) {
-	return &idiomatic.NewMacOSBootLoader().Unwrap().VZBootLoader, nil
+func (p *DarwinPlatform) BootLoader(nvramPath string) (idiomatic.BootLoaderProvider, error) {
+	return idiomatic.NewMacOSBootLoader(), nil
 }
 
-func (p *DarwinPlatform) Platform(nvramURL *foundation.NSURL, needsNestedVirtualization bool) (*virtualization.VZPlatformConfiguration, error) {
+func (p *DarwinPlatform) Platform(nvramPath string, needsNestedVirtualization bool) (idiomatic.PlatformConfigurationProvider, error) {
 	if needsNestedVirtualization {
 		return nil, weaveerrors.ErrVMConfigurationError("macOS virtual machines do not support nested virtualization")
 	}
-
-	result := idiomatic.NewMacPlatformConfiguration().Unwrap()
-
-	result.SetMachineIdentifier(p.ECID)
-	result.SetAuxiliaryStorage(
-		virtualization.VZMacAuxiliaryStorageFromID(objcutil.AllocClass("VZMacAuxiliaryStorage")).InitWithURL(nvramURL))
 
 	if !p.HardwareModel.IsSupported() {
 		// At the moment support of the M1 chip is not yet dropped in any
@@ -99,80 +89,75 @@ func (p *DarwinPlatform) Platform(nvramURL *foundation.NSURL, needsNestedVirtual
 		return nil, UnsupportedHostOSError{}
 	}
 
-	result.SetHardwareModel(p.HardwareModel)
-
-	return &result.VZPlatformConfiguration, nil
+	return idiomatic.NewMacPlatformConfiguration().
+		WithMachineIdentifier(p.ECID).
+		WithAuxiliaryStorage(idiomatic.NewMacAuxiliaryStorageWithURL(nvramPath)).
+		WithHardwareModel(p.HardwareModel), nil
 }
 
-func (p *DarwinPlatform) GraphicsDevice(vmConfig *VMConfig) *virtualization.VZGraphicsDeviceConfiguration {
-	result := idiomatic.NewMacGraphicsDeviceConfiguration().Unwrap()
-
+func (p *DarwinPlatform) GraphicsDevice(vmConfig *VMConfig) idiomatic.GraphicsDeviceConfigurationProvider {
 	unit := VMDisplayConfigUnitPoint
 	if vmConfig.Display.Unit != nil {
 		unit = *vmConfig.Display.Unit
 	}
-	if hostMainScreen := appkit.NSScreenMainScreen(); unit == VMDisplayConfigUnitPoint && hostMainScreen != nil {
+	if hostMainScreen := appkit.MainScreen(); unit == VMDisplayConfigUnitPoint && hostMainScreen != nil {
 		vmScreenSize := corefoundation.CGSize{
 			Width:  float64(vmConfig.Display.Width),
 			Height: float64(vmConfig.Display.Height),
 		}
-		display := virtualization.VZMacGraphicsDisplayConfigurationFromID(objcutil.AllocClass("VZMacGraphicsDisplayConfiguration")).
-			InitForScreenSizeInPoints(hostMainScreen, vmScreenSize)
-		result.SetDisplays(objcutil.NSArrayFromIDs[*virtualization.VZMacGraphicsDisplayConfiguration](display.Ptr()))
-		return &result.VZGraphicsDeviceConfiguration
+		display := idiomatic.NewMacGraphicsDisplayConfigurationForScreenSizeInPoints(hostMainScreen.Unwrap(), vmScreenSize)
+		return idiomatic.NewMacGraphicsDeviceConfiguration().WithDisplays(display.Unwrap())
 	}
 
-	display := virtualization.VZMacGraphicsDisplayConfigurationFromID(objcutil.AllocClass("VZMacGraphicsDisplayConfiguration")).
-		// 72 PPI is a reasonable guess according to Apple's
-		// CGDisplayScreenSize documentation.
-		InitWithWidthInPixelsHeightInPixelsPixelsPerInch(vmConfig.Display.Width, vmConfig.Display.Height, 72)
-	result.SetDisplays(objcutil.NSArrayFromIDs[*virtualization.VZMacGraphicsDisplayConfiguration](display.Ptr()))
-
-	return &result.VZGraphicsDeviceConfiguration
+	// 72 PPI is a reasonable guess according to Apple's CGDisplayScreenSize
+	// documentation.
+	display := idiomatic.NewMacGraphicsDisplayConfigurationWithWidthInPixelsHeightInPixelsPixelsPerInch(
+		vmConfig.Display.Width, vmConfig.Display.Height, 72)
+	return idiomatic.NewMacGraphicsDeviceConfiguration().WithDisplays(display.Unwrap())
 }
 
-func (p *DarwinPlatform) Keyboards() []*virtualization.VZKeyboardConfiguration {
+func (p *DarwinPlatform) Keyboards() []idiomatic.KeyboardConfigurationProvider {
 	// The Mac keyboard is only supported by guests starting with macOS
 	// Ventura; tart gates it on the host running macOS 14.
 	if weaveplatform.MacOSAtLeast(14) {
-		return []*virtualization.VZKeyboardConfiguration{
-			&idiomatic.NewUSBKeyboardConfiguration().Unwrap().VZKeyboardConfiguration,
-			&idiomatic.NewMacKeyboardConfiguration().Unwrap().VZKeyboardConfiguration,
+		return []idiomatic.KeyboardConfigurationProvider{
+			idiomatic.NewUSBKeyboardConfiguration(),
+			idiomatic.NewMacKeyboardConfiguration(),
 		}
 	}
-	return []*virtualization.VZKeyboardConfiguration{
-		&idiomatic.NewUSBKeyboardConfiguration().Unwrap().VZKeyboardConfiguration,
+	return []idiomatic.KeyboardConfigurationProvider{
+		idiomatic.NewUSBKeyboardConfiguration(),
 	}
 }
 
-func (p *DarwinPlatform) KeyboardsSuspendable() []*virtualization.VZKeyboardConfiguration {
+func (p *DarwinPlatform) KeyboardsSuspendable() []idiomatic.KeyboardConfigurationProvider {
 	if weaveplatform.MacOSAtLeast(14) {
-		return []*virtualization.VZKeyboardConfiguration{
-			&idiomatic.NewMacKeyboardConfiguration().Unwrap().VZKeyboardConfiguration,
+		return []idiomatic.KeyboardConfigurationProvider{
+			idiomatic.NewMacKeyboardConfiguration(),
 		}
 	}
 	return p.Keyboards()
 }
 
-func (p *DarwinPlatform) PointingDevices() []*virtualization.VZPointingDeviceConfiguration {
+func (p *DarwinPlatform) PointingDevices() []idiomatic.PointingDeviceConfigurationProvider {
 	// The trackpad is only supported by guests starting with macOS Ventura.
-	return []*virtualization.VZPointingDeviceConfiguration{
-		&idiomatic.NewUSBScreenCoordinatePointingDeviceConfiguration().Unwrap().VZPointingDeviceConfiguration,
-		&idiomatic.NewMacTrackpadConfiguration().Unwrap().VZPointingDeviceConfiguration,
+	return []idiomatic.PointingDeviceConfigurationProvider{
+		idiomatic.NewUSBScreenCoordinatePointingDeviceConfiguration(),
+		idiomatic.NewMacTrackpadConfiguration(),
 	}
 }
 
-func (p *DarwinPlatform) PointingDevicesSimplified() []*virtualization.VZPointingDeviceConfiguration {
+func (p *DarwinPlatform) PointingDevicesSimplified() []idiomatic.PointingDeviceConfigurationProvider {
 	// Only include the USB pointing device, not the trackpad.
-	return []*virtualization.VZPointingDeviceConfiguration{
-		&idiomatic.NewUSBScreenCoordinatePointingDeviceConfiguration().Unwrap().VZPointingDeviceConfiguration,
+	return []idiomatic.PointingDeviceConfigurationProvider{
+		idiomatic.NewUSBScreenCoordinatePointingDeviceConfiguration(),
 	}
 }
 
-func (p *DarwinPlatform) PointingDevicesSuspendable() []*virtualization.VZPointingDeviceConfiguration {
+func (p *DarwinPlatform) PointingDevicesSuspendable() []idiomatic.PointingDeviceConfigurationProvider {
 	if weaveplatform.MacOSAtLeast(14) {
-		return []*virtualization.VZPointingDeviceConfiguration{
-			&idiomatic.NewMacTrackpadConfiguration().Unwrap().VZPointingDeviceConfiguration,
+		return []idiomatic.PointingDeviceConfigurationProvider{
+			idiomatic.NewMacTrackpadConfiguration(),
 		}
 	}
 	return p.PointingDevices()

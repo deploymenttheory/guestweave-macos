@@ -20,9 +20,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // CreateCommand ports the Create command.
@@ -81,7 +79,7 @@ func (c *CreateCommand) Run(ctx context.Context) error {
 	}
 
 	if c.FromIPSW != "" {
-		var ipswURL *foundation.NSURL
+		var ipswLocation string
 
 		switch {
 		case c.FromIPSW == "latest":
@@ -94,14 +92,14 @@ func (c *CreateCommand) Run(ctx context.Context) error {
 				return err
 			}
 			spinner.Success("Found the latest supported IPSW")
-			ipswURL = image.URL()
+			ipswLocation = objcutil.GoStr(image.URL().AbsoluteString().Ptr())
 		case strings.HasPrefix(c.FromIPSW, "http://") || strings.HasPrefix(c.FromIPSW, "https://"):
-			ipswURL = foundation.NSURLURLWithString(objcutil.NSStr(c.FromIPSW))
+			ipswLocation = c.FromIPSW
 		default:
-			ipswURL = objcutil.NSURLFromPath(objcutil.ExpandTilde(c.FromIPSW))
+			ipswLocation = objcutil.ExpandTilde(c.FromIPSW)
 		}
 
-		if _, err := weavevm.NewVMInstallingFromIPSW(ctx, tmpVMDir, ipswURL, c.DiskSize, c.DiskFormat, weavevm.VMOptions{}); err != nil {
+		if _, err := weavevm.NewVMInstallingFromIPSW(ctx, tmpVMDir, ipswLocation, c.DiskSize, c.DiskFormat, weavevm.VMOptions{}); err != nil {
 			cleanup()
 			return err
 		}
@@ -165,29 +163,8 @@ func (c *CreateCommand) persistNetworkProfile(vmDir *vmdirectory.VMDirectory) er
 	return config.Save(vmDir.ConfigURL())
 }
 
-// FetchLatestSupportedRestoreImage bridges
-// VZMacOSRestoreImage.fetchLatestSupported() through a manual block.
-func FetchLatestSupportedRestoreImage(ctx context.Context) (*virtualization.VZMacOSRestoreImage, error) {
-	type result struct {
-		image *virtualization.VZMacOSRestoreImage
-		err   error
-	}
-	resultCh := make(chan result, 1)
-
-	block := purego.NewBlock(func(_ purego.Block, imageID purego.ID, errID purego.ID) {
-		if errID != 0 {
-			resultCh <- result{err: purego.NSErrorToError(errID)}
-			return
-		}
-		resultCh <- result{image: virtualization.VZMacOSRestoreImageFromID(purego.Retain(imageID))}
-	})
-	purego.ID(purego.GetClass("VZMacOSRestoreImage")).Send(
-		purego.RegisterName("fetchLatestSupportedWithCompletionHandler:"), block)
-
-	select {
-	case r := <-resultCh:
-		return r.image, r.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+// FetchLatestSupportedRestoreImage fetches the latest supported macOS restore
+// image, blocking until it resolves or ctx is cancelled.
+func FetchLatestSupportedRestoreImage(ctx context.Context) (*idvirt.MacOSRestoreImage, error) {
+	return idvirt.FetchLatestSupported(ctx)
 }

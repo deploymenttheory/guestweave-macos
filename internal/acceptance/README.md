@@ -122,7 +122,7 @@ default and is gated by `WEAVE_ACC_BRIDGED=1`.
 
 2. **Register a Mac App ID** — Certificates, Identifiers & Profiles →
    Identifiers → `+` → Mac App. Bundle ID:
-   `com.deploymenttheory.weave` (or your own). Enable the
+   `com.deploymenttheory.guestweave` (or your own). Enable the
    `com.apple.vm.networking` capability once Apple has granted it.
 
 3. **Create a Mac Provisioning Profile** — Profiles → `+` → Mac App
@@ -133,7 +133,7 @@ default and is gated by `WEAVE_ACC_BRIDGED=1`.
 
 ```sh
 export WEAVE_SIGNING_IDENTITY="Developer ID Application: D Watkins (5GM6DW5337)"
-export WEAVE_PROVISIONING_PROFILE=example/weave/weave_cli.provisionprofile
+export WEAVE_PROVISIONING_PROFILE=example/weave/guestweave_cli.provisionprofile
 WEAVE_ACC_BRIDGED=1 sudo go run ./example/weave/acceptance -suites netbehavior-linux
 ```
 

@@ -6,11 +6,11 @@
 package vm
 
 import (
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 )
 
 type nsProgressWrapper struct {
-	inner *foundation.NSProgress
+	inner *foundation.Progress
 }
 
 func (p *nsProgressWrapper) FractionCompleted() float64 { return p.inner.FractionCompleted() }

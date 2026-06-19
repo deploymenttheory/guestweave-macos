@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,16 +42,14 @@ import (
 	weavelock "github.com/deploymenttheory/weave/internal/lock"
 	"github.com/deploymenttheory/weave/internal/logging"
 	weavenetwork "github.com/deploymenttheory/weave/internal/network"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/oci"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/virtualization"
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
@@ -95,9 +94,9 @@ type VMOptions struct {
 	// when absent). The primary NIC's MAC is bound from the VM config; missing
 	// MACs on secondary NICs are derived deterministically.
 	NICs                     []vmconfig.NICConfig
-	AdditionalStorageDevices []*virtualization.VZStorageDeviceConfiguration
-	DirectorySharingDevices  []*virtualization.VZDirectorySharingDeviceConfiguration
-	SerialPorts              []*virtualization.VZSerialPortConfiguration
+	AdditionalStorageDevices []idiomatic.StorageDeviceConfigurationProvider
+	DirectorySharingDevices  []idiomatic.DirectorySharingDeviceConfigurationProvider
+	SerialPorts              []idiomatic.SerialPortConfigurationProvider
 	Suspendable              bool
 	Nested                   bool
 	NoAudio                  bool
@@ -106,8 +105,8 @@ type VMOptions struct {
 	// authoritative; the SPICE agent clipboard is disabled so policy controls
 	// (direction, formats, files, bandwidth) are not bypassed by the OS path.
 	ClipboardPolicyEnabled bool
-	Sync                   virtualization.VZDiskImageSynchronizationMode
-	Caching                *virtualization.VZDiskImageCachingMode
+	Sync                   idiomatic.VZDiskImageSynchronizationMode
+	Caching                *idiomatic.VZDiskImageCachingMode
 	NoTrackpad             bool
 	NoPointer              bool
 	NoKeyboard             bool
@@ -115,7 +114,7 @@ type VMOptions struct {
 
 func (o *VMOptions) normalize() {
 	if o.Sync == 0 {
-		o.Sync = virtualization.VZDiskImageSynchronizationModeFull
+		o.Sync = idiomatic.VZDiskImageSynchronizationModeFull
 	}
 }
 
@@ -150,10 +149,10 @@ func resolveTopology(vmConfig *vmconfig.VMConfig, options VMOptions) (*weavenetw
 // VM ports tart's VM class.
 type VM struct {
 	// VirtualMachine is Virtualization.Framework's virtual machine.
-	VirtualMachine *virtualization.VZVirtualMachine
+	VirtualMachine *idiomatic.VirtualMachine
 
 	// Configuration is the machine's VZVirtualMachineConfiguration.
-	Configuration *virtualization.VZVirtualMachineConfiguration
+	Configuration *idiomatic.VirtualMachineConfiguration
 
 	// sema communicates with the VZVirtualMachineDelegate.
 	sema *weavenetwork.AsyncSemaphore
@@ -237,7 +236,7 @@ func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
 		return nil, err
 	}
 
-	configuration, err := craftConfiguration(objcutil.NSURLFromPath(vmDir.DiskURL()), objcutil.NSURLFromPath(vmDir.NvramURL()), config, options, topology)
+	configuration, err := craftConfiguration(vmDir.DiskURL(), vmDir.NvramURL(), config, options, topology)
 	if err != nil {
 		return nil, err
 	}
@@ -258,123 +257,119 @@ func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
 // installs the delegate (Swift: VZVirtualMachine(configuration:) + delegate).
 func (vm *VM) attachVirtualMachine() {
 	dispatch.RunOnMainThread(func() {
-		vm.VirtualMachine = virtualization.VZVirtualMachineFromID(objcutil.AllocClass("VZVirtualMachine")).
-			InitWithConfiguration(vm.Configuration)
+		vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfiguration(vm.Configuration.Unwrap())
 
 		delegateID := purego.ID(vmDelegateClass()).Send(purego.RegisterName("new"))
 		vmDelegateRegistry.Store(delegateID, vm)
 		vm.delegateID = delegateID
-		vm.VirtualMachine.Ptr().Send(purego.RegisterName("setDelegate:"), delegateID)
+		vm.VirtualMachine.ID().Send(purego.RegisterName("setDelegate:"), delegateID)
 	})
 }
 
 // VMRetrieveIPSW ports VM.retrieveIPSW(remoteURL:): returns a cached *.ipsw
 // location, downloading and caching it when missing.
-func VMRetrieveIPSW(ctx context.Context, remoteURL *foundation.NSURL) (*foundation.NSURL, error) {
+func VMRetrieveIPSW(ctx context.Context, remoteURLString string) (string, error) {
 	// Check if we already have this IPSW in cache.
-	headRequest := foundation.NSMutableURLRequestFromID(
-		purego.Send[purego.ID](objcutil.AllocClass("NSMutableURLRequest"), purego.RegisterName("initWithURL:"), remoteURL.Ptr()))
-	headRequest.SetHTTPMethod(objcutil.NSStr("HEAD"))
-	_, headResponse, err := fetcher.FetcherFetch(ctx, &headRequest.NSURLRequest, false)
+	_, headResponse, err := fetcher.FetcherFetch(ctx, fetcher.FetchRequest{URL: remoteURLString, Method: "HEAD"}, false)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	if hash := headResponse.ValueForHTTPHeaderField(objcutil.NSStr("x-amz-meta-digest-sha256")); hash != nil {
+	if hash := headResponse.Header.Get("x-amz-meta-digest-sha256"); hash != "" {
 		cache, err := ipsw.NewIPSWCache()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		ipswLocation := cache.LocationFor("sha256:" + objcutil.GoStr(hash) + ".ipsw")
+		ipswLocation := cache.LocationFor("sha256:" + hash + ".ipsw")
 
 		if fsutil.Exists(ipswLocation) {
 			logging.DefaultLogger().AppendNewLine("Using cached *.ipsw file...")
 			if err := prune.UpdateAccessDate(ipswLocation, time.Now()); err != nil {
-				return nil, err
+				return "", err
 			}
-			return objcutil.NSURLFromPath(ipswLocation), nil
+			return ipswLocation, nil
 		}
 	}
 
 	// Download the IPSW.
-	logging.DefaultLogger().AppendNewLine(fmt.Sprintf("Fetching %s...", objcutil.GoStr(remoteURL.LastPathComponent())))
+	logging.DefaultLogger().AppendNewLine(fmt.Sprintf("Fetching %s...", filepath.Base(remoteURLString)))
 
-	chunks, response, err := fetcher.FetcherFetch(ctx, foundation.NSURLRequestRequestWithURL(remoteURL), true)
+	chunks, response, err := fetcher.FetcherFetch(ctx, fetcher.FetchRequest{URL: remoteURLString}, true)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	config, err := weaveconfig.NewConfig()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	temporaryLocation := filepath.Join(config.WeaveTmpDir, fsutil.UUID()+".ipsw")
 
 	// Refuse the download up front if the host volume cannot hold it
-	// (framework-queried capacity; prunable cache entries reclaimed first).
-	if expectedLength := response.ExpectedContentLength(); expectedLength > 0 {
+	// (prunable cache entries reclaimed first).
+	if expectedLength := response.ContentLength; expectedLength > 0 {
 		if err := vmstorage.EnsureDiskSpace(uint64(expectedLength), nil); err != nil {
-			return nil, err
+			return "", err
 		}
 	}
 
-	progress := logging.NewDownloadProgress(response.ExpectedContentLength())
+	progress := logging.NewDownloadProgress(response.ContentLength)
 	logging.NewProgressObserver(progress).Log(logging.DefaultLogger())
 
 	temporaryPath := temporaryLocation
 	temporaryFile, err := os.Create(temporaryPath)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer temporaryFile.Close()
 
 	lock, err := weavelock.NewFileLock(temporaryLocation)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer lock.Close()
 	if err := lock.Lock(); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	digest := oci.NewDigest()
 	for chunk := range chunks {
 		if chunk.Err != nil {
-			return nil, chunk.Err
+			return "", chunk.Err
 		}
 		if _, err := temporaryFile.Write(chunk.Data); err != nil {
-			return nil, err
+			return "", err
 		}
 		digest.Update(chunk.Data)
 		progress.Add(int64(len(chunk.Data)))
 	}
 	if err := temporaryFile.Close(); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	cache, err := ipsw.NewIPSWCache()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	finalLocation := cache.LocationFor(digest.Finalize() + ".ipsw")
 
 	// Swift uses FileManager.replaceItemAt; an atomic rename is equivalent.
 	if err := os.Rename(temporaryPath, finalLocation); err != nil {
-		return nil, err
+		return "", err
 	}
-	return objcutil.NSURLFromPath(finalLocation), nil
+	return finalLocation, nil
 }
 
 // InFinalState ports VM.inFinalState.
 func (vm *VM) InFinalState() bool {
 	state := vm.machineState()
-	return state == virtualization.VZVirtualMachineStateStopped ||
-		state == virtualization.VZVirtualMachineStatePaused ||
-		state == virtualization.VZVirtualMachineStateError
+	return state == idiomatic.VZVirtualMachineStateStopped ||
+		state == idiomatic.VZVirtualMachineStatePaused ||
+		state == idiomatic.VZVirtualMachineStateError
 }
 
-func (vm *VM) machineState() virtualization.VZVirtualMachineState {
-	var state virtualization.VZVirtualMachineState
+func (vm *VM) machineState() idiomatic.VZVirtualMachineState {
+	var state idiomatic.VZVirtualMachineState
 	dispatch.RunOnMainThread(func() {
 		state = vm.VirtualMachine.State()
 	})
@@ -384,7 +379,7 @@ func (vm *VM) machineState() virtualization.VZVirtualMachineState {
 // NewVMInstallingFromIPSW ports the arm64-only VM.init(vmDir:ipswURL:…):
 // creates NVRAM, disk and config from a restore image, then runs the
 // automated macOS installation.
-func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory, ipswURL *foundation.NSURL,
+func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory, ipswLocation string,
 	diskSizeGB uint16, diskFormat diskimage.DiskImageFormat, options VMOptions) (*VM, error) {
 	ctx, span := otel.Tracer("weave").Start(ctx, "vm.create_from_ipsw",
 		trace.WithAttributes(attribute.String("vm.name", vmDir.Name())))
@@ -394,21 +389,24 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 
 	options.normalize()
 
-	if !ipswURL.IsFileURL() {
-		remoteIPSW, err := VMRetrieveIPSW(ctx, ipswURL)
+	ipswPath := ipswLocation
+	if isRemoteIPSW(ipswLocation) {
+		downloaded, err := VMRetrieveIPSW(ctx, ipswLocation)
 		if err != nil {
 			return nil, err
 		}
-		ipswURL = remoteIPSW
+		ipswPath = downloaded
 	}
 
 	// The Virtualization.Framework cannot deal with paths that contain
 	// symlinks, so expand them first.
-	ipswURL = ipswURL.URLByResolvingSymlinksInPath()
+	if resolved, err := filepath.EvalSymlinks(ipswPath); err == nil {
+		ipswPath = resolved
+	}
 
 	// Load the restore image and get the requirements that match both the
 	// image and our platform.
-	image, err := loadMacOSRestoreImage(ctx, ipswURL)
+	image, err := loadMacOSRestoreImage(ctx, ipswPath)
 	if err != nil {
 		return nil, err
 	}
@@ -419,8 +417,8 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 	}
 
 	// Create NVRAM.
-	if _, err := virtualization.VZMacAuxiliaryStorageFromID(objcutil.AllocClass("VZMacAuxiliaryStorage")).
-		InitCreatingStorageAtURLHardwareModelOptionsError(objcutil.NSURLFromPath(vmDir.NvramURL()), requirements.HardwareModel(), 0); err != nil {
+	if _, err := idiomatic.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
+		vmDir.NvramURL(), requirements.HardwareModel().Unwrap(), 0); err != nil {
 		return nil, err
 	}
 
@@ -430,7 +428,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 	}
 
 	// Create config.
-	ecid := virtualization.VZMacMachineIdentifierFromID(objcutil.AllocClass("VZMacMachineIdentifier")).Init()
+	ecid := idiomatic.NewMacMachineIdentifier()
 	config := vmconfig.NewVMConfig(
 		vmconfig.NewDarwinPlatform(ecid, requirements.HardwareModel()),
 		int(requirements.MinimumSupportedCPUCount()),
@@ -451,7 +449,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 		return nil, err
 	}
 
-	configuration, err := craftConfiguration(objcutil.NSURLFromPath(vmDir.DiskURL()), objcutil.NSURLFromPath(vmDir.NvramURL()), config, options, topology)
+	configuration, err := craftConfiguration(vmDir.DiskURL(), vmDir.NvramURL(), config, options, topology)
 	if err != nil {
 		return nil, err
 	}
@@ -466,50 +464,34 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 	vm.attachVirtualMachine()
 
 	// Run automated installation.
-	if err := vm.install(ctx, ipswURL); err != nil {
+	if err := vm.install(ctx, ipswPath); err != nil {
 		return nil, err
 	}
 
 	return vm, nil
 }
 
-// loadMacOSRestoreImage bridges VZMacOSRestoreImage.load(from:) through a
-// manually built block.
-func loadMacOSRestoreImage(ctx context.Context, ipswURL *foundation.NSURL) (*virtualization.VZMacOSRestoreImage, error) {
-	type result struct {
-		image *virtualization.VZMacOSRestoreImage
-		err   error
-	}
-	resultCh := make(chan result, 1)
+// isRemoteIPSW reports whether the IPSW location is an http(s) URL (as opposed
+// to a local filesystem path).
+func isRemoteIPSW(location string) bool {
+	return strings.HasPrefix(location, "http://") || strings.HasPrefix(location, "https://")
+}
 
-	block := purego.NewBlock(func(_ purego.Block, imageID purego.ID, errID purego.ID) {
-		if errID != 0 {
-			resultCh <- result{err: purego.NSErrorToError(errID)}
-			return
-		}
-		resultCh <- result{image: virtualization.VZMacOSRestoreImageFromID(purego.Retain(imageID))}
-	})
-	purego.ID(purego.GetClass("VZMacOSRestoreImage")).Send(
-		purego.RegisterName("loadFileURL:completionHandler:"), ipswURL.Ptr(), block)
-
-	select {
-	case r := <-resultCh:
-		return r.image, r.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+// loadMacOSRestoreImage loads a restore image from a local *.ipsw path.
+func loadMacOSRestoreImage(ctx context.Context, ipswPath string) (*idiomatic.MacOSRestoreImage, error) {
+	return idiomatic.LoadFileURL(ctx, ipswPath)
 }
 
 // install ports VM.install(_:): runs VZMacOSInstaller with progress logging.
-func (vm *VM) install(ctx context.Context, ipswURL *foundation.NSURL) error {
-	var installer *virtualization.VZMacOSInstaller
+func (vm *VM) install(ctx context.Context, ipswPath string) error {
+	var installer *idiomatic.MacOSInstaller
 	dispatch.RunOnMainThread(func() {
-		installer = virtualization.VZMacOSInstallerFromID(objcutil.AllocClass("VZMacOSInstaller")).
-			InitWithVirtualMachineRestoreImageURL(vm.VirtualMachine, ipswURL)
+		installer = idiomatic.NewMacOSInstallerWithVirtualMachineRestoreImageURL(
+			vm.VirtualMachine.Unwrap(), ipswPath)
 	})
 
 	logging.DefaultLogger().AppendNewLine("Installing OS...")
-	observer := logging.NewProgressObserver(&nsProgressWrapper{inner: installer.Progress()})
+	observer := logging.NewProgressObserver(&nsProgressWrapper{inner: idfoundation.ProgressFromID(purego.Retain(installer.Progress().Ptr()))})
 	observer.Log(logging.DefaultLogger())
 
 	errCh := make(chan error, 1)
@@ -521,7 +503,7 @@ func (vm *VM) install(ctx context.Context, ipswURL *foundation.NSURL) error {
 		}
 	})
 	dispatch.RunOnMainThread(func() {
-		installer.Ptr().Send(purego.RegisterName("installWithCompletionHandler:"), block)
+		installer.ID().Send(purego.RegisterName("installWithCompletionHandler:"), block)
 	})
 
 	select {
@@ -536,8 +518,7 @@ func (vm *VM) install(ctx context.Context, ipswURL *foundation.NSURL) error {
 // VMLinux ports VM.linux(vmDir:diskSizeGB:diskFormat:).
 func VMLinux(vmDir *vmdirectory.VMDirectory, diskSizeGB uint16, diskFormat diskimage.DiskImageFormat) (*VM, error) {
 	// Create NVRAM.
-	if _, err := virtualization.VZEFIVariableStoreFromID(objcutil.AllocClass("VZEFIVariableStore")).
-		InitCreatingVariableStoreAtURLOptionsError(objcutil.NSURLFromPath(vmDir.NvramURL()), 0); err != nil {
+	if _, err := idiomatic.NewEFIVariableStoreCreatingVariableStoreAtURLOptionsError(vmDir.NvramURL(), 0); err != nil {
 		return nil, err
 	}
 
@@ -579,12 +560,12 @@ func (vm *VM) Start(recovery bool, shouldResume bool) error {
 
 // Connect ports VM.connect(toPort:); it satisfies the controlsocket.VirtioSocketConnector
 // interface used by ControlSocket.
-func (vm *VM) Connect(ctx context.Context, toPort uint32) (*virtualization.VZVirtioSocketConnection, error) {
+func (vm *VM) Connect(ctx context.Context, toPort uint32) (*idiomatic.VirtioSocketConnection, error) {
 	var socketDeviceID purego.ID
 	dispatch.RunOnMainThread(func() {
 		devices := vm.VirtualMachine.SocketDevices()
-		if devices != nil && purego.Send[uint](devices.Ptr(), objcutil.SelCount) > 0 {
-			socketDeviceID = purego.Send[purego.ID](devices.Ptr(), objcutil.SelObjectAtIndex, uint(0))
+		if len(devices) > 0 {
+			socketDeviceID = devices[0].ID()
 		}
 	})
 
@@ -599,7 +580,7 @@ func (vm *VM) Connect(ctx context.Context, toPort uint32) (*virtualization.VZVir
 	}
 
 	type result struct {
-		connection *virtualization.VZVirtioSocketConnection
+		connection *idiomatic.VirtioSocketConnection
 		err        error
 	}
 	resultCh := make(chan result, 1)
@@ -608,7 +589,7 @@ func (vm *VM) Connect(ctx context.Context, toPort uint32) (*virtualization.VZVir
 			resultCh <- result{err: purego.NSErrorToError(errID)}
 			return
 		}
-		resultCh <- result{connection: virtualization.VZVirtioSocketConnectionFromID(purego.Retain(connectionID))}
+		resultCh <- result{connection: idiomatic.VirtioSocketConnectionFromID(purego.Retain(connectionID))}
 	})
 	dispatch.RunOnMainThread(func() {
 		socketDeviceID.Send(purego.RegisterName("connectToPort:completionHandler:"), toPort, block)
@@ -630,7 +611,7 @@ func (vm *VM) Run(ctx context.Context) error {
 	_ = vm.sema.WaitUnlessCancelled(ctx)
 
 	if ctx.Err() != nil {
-		if vm.machineState() == virtualization.VZVirtualMachineStateRunning {
+		if vm.machineState() == idiomatic.VZVirtualMachineStateRunning {
 			fmt.Println("Stopping VM...")
 			if err := vm.stopMachine(); err != nil {
 				return err
@@ -639,6 +620,13 @@ func (vm *VM) Run(ctx context.Context) error {
 	}
 
 	return vm.network.Stop()
+}
+
+// StartMachine starts the underlying virtual machine without re-running network
+// setup, backing the Control → Start menu item (ports MainApp's Start button,
+// Run.swift:849, which calls vm.virtualMachine.start()).
+func (vm *VM) StartMachine(recovery bool) error {
+	return vm.startMachine(recovery)
 }
 
 // startMachine ports the @MainActor VM.start(_ recovery:).
@@ -653,10 +641,10 @@ func (vm *VM) startMachine(recovery bool) error {
 	})
 
 	dispatch.RunOnMainThread(func() {
-		startOptions := idiomatic.NewMacOSVirtualMachineStartOptions().Unwrap()
+		startOptions := idiomatic.NewMacOSVirtualMachineStartOptions()
 		startOptions.SetStartUpFromMacOSRecovery(recovery)
-		vm.VirtualMachine.Ptr().Send(
-			purego.RegisterName("startWithOptions:completionHandler:"), startOptions.Ptr(), block)
+		vm.VirtualMachine.ID().Send(
+			purego.RegisterName("startWithOptions:completionHandler:"), startOptions.ID(), block)
 	})
 
 	return <-errCh
@@ -682,168 +670,148 @@ func (vm *VM) SendErrorCompletion(selector string) error {
 		}
 	})
 	dispatch.RunOnMainThread(func() {
-		vm.VirtualMachine.Ptr().Send(purego.RegisterName(selector), block)
+		vm.VirtualMachine.ID().Send(purego.RegisterName(selector), block)
 	})
 	return <-errCh
 }
 
-// craftConfiguration ports VM.craftConfiguration(…).
-func craftConfiguration(diskURL *foundation.NSURL, nvramURL *foundation.NSURL,
-	vmConfig *vmconfig.VMConfig, options VMOptions, topology *weavenetwork.Topology) (*virtualization.VZVirtualMachineConfiguration, error) {
-	configuration := idiomatic.NewVirtualMachineConfiguration().Unwrap()
+// craftConfiguration ports VM.craftConfiguration(…). It assembles the machine
+// configuration through the idiomatic fluent builders; path arguments are plain
+// filesystem paths (the idiomatic constructors take string URLs).
+func craftConfiguration(diskPath string, nvramPath string,
+	vmConfig *vmconfig.VMConfig, options VMOptions, topology *weavenetwork.Topology) (*idiomatic.VirtualMachineConfiguration, error) {
+	configuration := idiomatic.NewVirtualMachineConfiguration()
 
 	// Boot loader.
-	bootLoader, err := vmConfig.Platform.BootLoader(nvramURL)
+	bootLoader, err := vmConfig.Platform.BootLoader(nvramPath)
 	if err != nil {
 		return nil, err
 	}
-	configuration.SetBootLoader(bootLoader)
-
-	// CPU and memory.
-	configuration.SetCPUCount(uint(vmConfig.CPUCount))
-	configuration.SetMemorySize(vmConfig.MemorySize)
 
 	// vmconfig.Platform.
-	platform, err := vmConfig.Platform.Platform(nvramURL, options.Nested)
+	platform, err := vmConfig.Platform.Platform(nvramPath, options.Nested)
 	if err != nil {
 		return nil, err
 	}
-	configuration.SetPlatform(platform)
 
-	// Display.
-	graphicsDevice := vmConfig.Platform.GraphicsDevice(vmConfig)
-	configuration.SetGraphicsDevices(objcutil.NSArrayFromIDs[*virtualization.VZGraphicsDeviceConfiguration](graphicsDevice.Ptr()))
+	configuration.
+		WithBootLoader(bootLoader).
+		WithCPUCount(uint(vmConfig.CPUCount)).
+		WithMemorySize(vmConfig.MemorySize).
+		WithPlatform(platform).
+		WithGraphicsDevices(vmConfig.Platform.GraphicsDevice(vmConfig))
 
 	// Audio.
-	soundDeviceConfiguration := idiomatic.NewVirtioSoundDeviceConfiguration().Unwrap()
+	soundDeviceConfiguration := idiomatic.NewVirtioSoundDeviceConfiguration()
 	if !options.NoAudio && !options.Suspendable {
-		inputStream := idiomatic.NewVirtioSoundDeviceInputStreamConfiguration().Unwrap()
-		outputStream := idiomatic.NewVirtioSoundDeviceOutputStreamConfiguration().Unwrap()
-
-		inputStream.SetSource(&idiomatic.NewHostAudioInputStreamSource().Unwrap().VZAudioInputStreamSource)
-		outputStream.SetSink(&idiomatic.NewHostAudioOutputStreamSink().Unwrap().VZAudioOutputStreamSink)
-
-		soundDeviceConfiguration.SetStreams(
-			objcutil.NSArrayFromIDs[*virtualization.VZVirtioSoundDeviceStreamConfiguration](inputStream.Ptr(), outputStream.Ptr()))
+		inputStream := idiomatic.NewVirtioSoundDeviceInputStreamConfiguration().
+			WithSource(idiomatic.NewHostAudioInputStreamSource())
+		outputStream := idiomatic.NewVirtioSoundDeviceOutputStreamConfiguration().
+			WithSink(idiomatic.NewHostAudioOutputStreamSink())
+		soundDeviceConfiguration.WithStreams(inputStream, outputStream)
 	} else {
 		// Just a null speaker.
-		outputStream := idiomatic.NewVirtioSoundDeviceOutputStreamConfiguration().Unwrap()
-		soundDeviceConfiguration.SetStreams(
-			objcutil.NSArrayFromIDs[*virtualization.VZVirtioSoundDeviceStreamConfiguration](outputStream.Ptr()))
+		soundDeviceConfiguration.WithStreams(idiomatic.NewVirtioSoundDeviceOutputStreamConfiguration())
 	}
-	configuration.SetAudioDevices(objcutil.NSArrayFromIDs[*virtualization.VZAudioDeviceConfiguration](soundDeviceConfiguration.Ptr()))
+	configuration.WithAudioDevices(soundDeviceConfiguration)
 
 	// Keyboard and mouse.
 	suspendablePlatform, isSuspendable := vmConfig.Platform.(vmconfig.PlatformSuspendable)
 	if options.Suspendable && isSuspendable {
-		configuration.SetKeyboards(keyboardArray(suspendablePlatform.KeyboardsSuspendable()))
-		configuration.SetPointingDevices(pointingDeviceArray(suspendablePlatform.PointingDevicesSuspendable()))
+		configuration.WithKeyboards(suspendablePlatform.KeyboardsSuspendable()...)
+		configuration.WithPointingDevices(suspendablePlatform.PointingDevicesSuspendable()...)
 	} else {
 		if options.NoKeyboard {
-			configuration.SetKeyboards(objcutil.EmptyNSArray[*virtualization.VZKeyboardConfiguration]())
+			configuration.WithKeyboards()
 		} else {
-			configuration.SetKeyboards(keyboardArray(vmConfig.Platform.Keyboards()))
+			configuration.WithKeyboards(vmConfig.Platform.Keyboards()...)
 		}
 
 		switch {
 		case options.NoPointer:
-			configuration.SetPointingDevices(objcutil.EmptyNSArray[*virtualization.VZPointingDeviceConfiguration]())
+			configuration.WithPointingDevices()
 		case options.NoTrackpad:
-			configuration.SetPointingDevices(pointingDeviceArray(vmConfig.Platform.PointingDevicesSimplified()))
+			configuration.WithPointingDevices(vmConfig.Platform.PointingDevicesSimplified()...)
 		default:
-			configuration.SetPointingDevices(pointingDeviceArray(vmConfig.Platform.PointingDevices()))
+			configuration.WithPointingDevices(vmConfig.Platform.PointingDevices()...)
 		}
 	}
 
 	// Networking: one VZVirtioNetworkDeviceConfiguration per NIC, each with its
 	// own attachment and MAC address (multi-NIC with per-NIC properties).
-	networkDeviceIDs := make([]purego.ID, 0, len(topology.NICs()))
+	networkDevices := make([]idiomatic.NetworkDeviceConfigurationProvider, 0, len(topology.NICs()))
 	for _, nic := range topology.NICs() {
-		vio := idiomatic.NewVirtioNetworkDeviceConfiguration().
+		networkDevices = append(networkDevices, idiomatic.NewVirtioNetworkDeviceConfiguration().
 			WithAttachment(nic.Attachment).
-			WithMACAddress(nic.MAC)
-		networkDeviceIDs = append(networkDeviceIDs, vio.ID())
+			WithMACAddress(nic.MAC))
 	}
-	configuration.SetNetworkDevices(objcutil.NSArrayFromIDs[*virtualization.VZNetworkDeviceConfiguration](networkDeviceIDs...))
+	configuration.WithNetworkDevices(networkDevices...)
 
-	consoleDeviceIDs := make([]purego.ID, 0, 2)
+	consoleDevices := make([]idiomatic.ConsoleDeviceConfigurationProvider, 0, 2)
 
 	// Clipboard sharing via Spice agent. Skipped when the enterprise clipboard
 	// engine owns the clipboard, so its policy is the single source of truth.
 	if !options.NoClipboard && !options.ClipboardPolicyEnabled {
-		spiceAgentConsoleDevice := idiomatic.NewVirtioConsoleDeviceConfiguration().Unwrap()
-		spiceAgentPort := idiomatic.NewVirtioConsolePortConfiguration().Unwrap()
-		spiceAgentPort.SetName(virtualization.VZSpiceAgentPortAttachmentSpiceAgentPortName())
-		spiceAgentPortAttachment := idiomatic.NewSpiceAgentPortAttachment().Unwrap()
+		spiceAgentPortAttachment := idiomatic.NewSpiceAgentPortAttachment()
 		spiceAgentPortAttachment.SetSharesClipboard(true)
-		spiceAgentPort.SetAttachment(&spiceAgentPortAttachment.VZSerialPortAttachment)
+		spiceAgentPort := idiomatic.NewVirtioConsolePortConfiguration().
+			WithName(idiomatic.SpiceAgentPortName()).
+			WithAttachment(spiceAgentPortAttachment)
+		spiceAgentConsoleDevice := idiomatic.NewVirtioConsoleDeviceConfiguration()
 		setConsolePort(spiceAgentConsoleDevice, 0, spiceAgentPort)
-		consoleDeviceIDs = append(consoleDeviceIDs, spiceAgentConsoleDevice.Ptr())
+		consoleDevices = append(consoleDevices, spiceAgentConsoleDevice)
 	}
 
 	// Storage.
-	cachingMode := virtualization.VZDiskImageCachingModeAutomatic
+	cachingMode := idiomatic.VZDiskImageCachingModeAutomatic
 	if vmConfig.OS == weaveplatform.OSLinux {
 		// When not specified, use "cached" caching mode for Linux VMs to
 		// prevent file-system corruption (cirruslabs/tart#675).
-		cachingMode = virtualization.VZDiskImageCachingModeCached
+		cachingMode = idiomatic.VZDiskImageCachingModeCached
 	}
 	if options.Caching != nil {
 		cachingMode = *options.Caching
 	}
-	attachment, err := virtualization.VZDiskImageStorageDeviceAttachmentFromID(objcutil.AllocClass("VZDiskImageStorageDeviceAttachment")).
-		InitWithURLReadOnlyCachingModeSynchronizationModeError(diskURL, false, cachingMode, options.Sync)
+	attachment, err := idiomatic.NewDiskImageStorageDeviceAttachmentWithURLReadOnlyCachingModeSynchronizationModeError(
+		diskPath, false, cachingMode, options.Sync)
 	if err != nil {
 		return nil, err
 	}
 
-	deviceIDs := []purego.ID{
-		virtualization.VZVirtioBlockDeviceConfigurationFromID(objcutil.AllocClass("VZVirtioBlockDeviceConfiguration")).
-			InitWithAttachment(&attachment.VZStorageDeviceAttachment).Ptr(),
-	}
-	for _, device := range options.AdditionalStorageDevices {
-		deviceIDs = append(deviceIDs, device.Ptr())
-	}
-	configuration.SetStorageDevices(objcutil.NSArrayFromIDs[*virtualization.VZStorageDeviceConfiguration](deviceIDs...))
+	storageDevices := make([]idiomatic.StorageDeviceConfigurationProvider, 0, 1+len(options.AdditionalStorageDevices))
+	storageDevices = append(storageDevices,
+		idiomatic.NewVirtioBlockDeviceConfigurationWithAttachment(&attachment.Unwrap().VZStorageDeviceAttachment))
+	storageDevices = append(storageDevices, options.AdditionalStorageDevices...)
+	configuration.WithStorageDevices(storageDevices...)
 
 	// Entropy.
 	if !options.Suspendable {
-		entropy := idiomatic.NewVirtioEntropyDeviceConfiguration().Unwrap()
-		configuration.SetEntropyDevices(objcutil.NSArrayFromIDs[*virtualization.VZEntropyDeviceConfiguration](entropy.Ptr()))
+		configuration.WithEntropyDevices(idiomatic.NewVirtioEntropyDeviceConfiguration())
 	}
 
 	// Directory sharing devices.
-	sharingIDs := make([]purego.ID, 0, len(options.DirectorySharingDevices))
-	for _, device := range options.DirectorySharingDevices {
-		sharingIDs = append(sharingIDs, device.Ptr())
-	}
-	configuration.SetDirectorySharingDevices(objcutil.NSArrayFromIDs[*virtualization.VZDirectorySharingDeviceConfiguration](sharingIDs...))
+	configuration.WithDirectorySharingDevices(options.DirectorySharingDevices...)
 
 	// Serial ports.
-	serialIDs := make([]purego.ID, 0, len(options.SerialPorts))
-	for _, port := range options.SerialPorts {
-		serialIDs = append(serialIDs, port.Ptr())
-	}
-	configuration.SetSerialPorts(objcutil.NSArrayFromIDs[*virtualization.VZSerialPortConfiguration](serialIDs...))
+	configuration.WithSerialPorts(options.SerialPorts...)
 
 	// Version console device: a dummy console device useful for implementing
 	// host feature checks in the guest agent software. The "tart-version-"
 	// port name is a wire contract — the Tart Guest Agent running inside
 	// guest images discovers the host by this exact prefix, so it must not
 	// be renamed to weave.
-	consolePort := idiomatic.NewVirtioConsolePortConfiguration().Unwrap()
-	consolePort.SetName(objcutil.NSStr("tart-version-" + ci.CIVersion()))
-	consoleDevice := idiomatic.NewVirtioConsoleDeviceConfiguration().Unwrap()
+	consolePort := idiomatic.NewVirtioConsolePortConfiguration()
+	consolePort.SetName("tart-version-" + ci.CIVersion())
+	consoleDevice := idiomatic.NewVirtioConsoleDeviceConfiguration()
 	setConsolePort(consoleDevice, 0, consolePort)
-	consoleDeviceIDs = append(consoleDeviceIDs, consoleDevice.Ptr())
+	consoleDevices = append(consoleDevices, consoleDevice)
 
-	configuration.SetConsoleDevices(objcutil.NSArrayFromIDs[*virtualization.VZConsoleDeviceConfiguration](consoleDeviceIDs...))
+	configuration.WithConsoleDevices(consoleDevices...)
 
 	// Socket device.
-	socketDevice := idiomatic.NewVirtioSocketDeviceConfiguration().Unwrap()
-	configuration.SetSocketDevices(objcutil.NSArrayFromIDs[*virtualization.VZSocketDeviceConfiguration](socketDevice.Ptr()))
+	configuration.WithSocketDevices(idiomatic.NewVirtioSocketDeviceConfiguration())
 
-	if _, err := configuration.ValidateWithError(); err != nil {
+	if err := configuration.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -851,23 +819,6 @@ func craftConfiguration(diskURL *foundation.NSURL, nvramURL *foundation.NSURL,
 }
 
 // setConsolePort mirrors Swift's consoleDevice.ports[0] = port subscript.
-func setConsolePort(device *virtualization.VZVirtioConsoleDeviceConfiguration, index uint, port *virtualization.VZVirtioConsolePortConfiguration) {
-	ports := device.Ports()
-	ports.Ptr().Send(purego.RegisterName("setObject:atIndexedSubscript:"), port.Ptr(), index)
-}
-
-func keyboardArray(keyboards []*virtualization.VZKeyboardConfiguration) *foundation.NSArray[*virtualization.VZKeyboardConfiguration] {
-	ids := make([]purego.ID, 0, len(keyboards))
-	for _, keyboard := range keyboards {
-		ids = append(ids, keyboard.Ptr())
-	}
-	return objcutil.NSArrayFromIDs[*virtualization.VZKeyboardConfiguration](ids...)
-}
-
-func pointingDeviceArray(devices []*virtualization.VZPointingDeviceConfiguration) *foundation.NSArray[*virtualization.VZPointingDeviceConfiguration] {
-	ids := make([]purego.ID, 0, len(devices))
-	for _, device := range devices {
-		ids = append(ids, device.Ptr())
-	}
-	return objcutil.NSArrayFromIDs[*virtualization.VZPointingDeviceConfiguration](ids...)
+func setConsolePort(device *idiomatic.VirtioConsoleDeviceConfiguration, index uint, port *idiomatic.VirtioConsolePortConfiguration) {
+	device.Ports().SetObjectAtIndexedSubscript(port.Unwrap(), index)
 }

@@ -35,7 +35,7 @@ func (vm *VM) startMachineWithRecoveryPrivateAPI(recovery bool) error {
 	dispatch.RunOnMainThread(func() {
 		options := purego.ID(purego.GetClass("_VZVirtualMachineStartOptions")).Send(purego.RegisterName("new"))
 		options.Send(purego.RegisterName("setBootMacOSRecovery:"), recovery)
-		vm.VirtualMachine.Ptr().Send(
+		vm.VirtualMachine.ID().Send(
 			purego.RegisterName("_startWithOptions:completionHandler:"), options, block)
 	})
 

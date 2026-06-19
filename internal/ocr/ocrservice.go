@@ -17,9 +17,8 @@ import (
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
-	vision "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/vision"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	vision "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vision"
 )
 
 // ocrMinimumConfidence mirrors OCRService's default minimumConfidence.
@@ -59,38 +58,33 @@ func RecognizeText(img image.Image) ([]TextObservation, error) {
 	width := img.Bounds().Dx()
 	height := img.Bounds().Dy()
 
-	request := vision.VNRecognizeTextRequestFromID(
-		purego.Send[purego.ID](objcutil.AllocClass("VNRecognizeTextRequest"), purego.RegisterName("init")))
-	request.SetRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate)
-	request.SetUsesLanguageCorrection(false)
-	// Revision 3 supports the latest recognition features (OCRService.swift).
-	request.VNRequest.SetRevision(3)
+	request := vision.NewRecognizeTextRequest().
+		WithRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate).
+		WithUsesLanguageCorrection(false).
+		// Revision 3 supports the latest recognition features (OCRService.swift).
+		WithRevision(3)
 
-	handler := vision.VNImageRequestHandlerFromID(objcutil.AllocClass("VNImageRequestHandler")).
-		InitWithURLOptions(objcutil.NSURLFromPath(tempPath), nil)
+	handler := vision.NewImageRequestHandlerWithURLOptions(tempPath, nil)
 
-	requests := foundation.NSArrayFromID[*vision.VNRequest](purego.Retain(purego.Send[purego.ID](
-		purego.ID(purego.GetClass("NSArray")), purego.RegisterName("arrayWithObject:"), request.Ptr())))
-	if _, err := handler.PerformRequestsError(requests); err != nil {
+	if _, err := handler.PerformRequestsError(request); err != nil {
 		return nil, weaveerrors.ErrOCRFailed(err.Error())
 	}
 
-	results := request.Results()
+	// Results live on the base VNRequest; rewrap the request to read them.
+	results := vision.RequestFromID(request.ID()).Results()
 	if results == nil {
 		return nil, nil
 	}
 
 	var observations []TextObservation
-	count := purego.Send[uint](results.Ptr(), objcutil.SelCount)
-	for i := range count {
-		id := purego.Send[purego.ID](results.Ptr(), objcutil.SelObjectAtIndex, i)
-		textObservation := vision.VNRecognizedTextObservationFromID(purego.Retain(id))
+	for _, observation := range results {
+		textObservation := vision.RecognizedTextObservationFromID(observation.ID())
 
 		candidates := textObservation.TopCandidates(1)
 		if candidates == nil || purego.Send[uint](candidates.Ptr(), objcutil.SelCount) == 0 {
 			continue
 		}
-		candidate := vision.VNRecognizedTextFromID(purego.Retain(
+		candidate := vision.RecognizedTextFromID(purego.Retain(
 			purego.Send[purego.ID](candidates.Ptr(), objcutil.SelObjectAtIndex, uint(0))))
 
 		confidence := candidate.Confidence()
@@ -100,14 +94,14 @@ func RecognizeText(img image.Image) ([]TextObservation, error) {
 
 		// Vision bounding boxes are normalized with a bottom-left origin;
 		// convert to top-left pixel coordinates (OCRService.screenRect).
-		box := textObservation.BoundingBox()
+		box := vision.DetectedObjectObservationFromID(observation.ID()).BoundingBox()
 		x := box.Origin.X * float64(width)
 		y := (1 - box.Origin.Y - box.Size.Height) * float64(height)
 		w := box.Size.Width * float64(width)
 		h := box.Size.Height * float64(height)
 
 		observations = append(observations, TextObservation{
-			Text:       objcutil.GoStr(candidate.String()),
+			Text:       candidate.String(),
 			Confidence: confidence,
 			Box:        image.Rect(int(x), int(y), int(x+w), int(y+h)),
 		})

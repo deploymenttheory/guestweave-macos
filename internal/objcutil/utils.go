@@ -7,93 +7,42 @@ package objcutil
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"unsafe"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
 )
 
 var (
-	SelObjectForKey  = purego.RegisterName("objectForKey:")
 	SelCount         = purego.RegisterName("count")
 	SelObjectAtIndex = purego.RegisterName("objectAtIndex:")
-	SelAddObject     = purego.RegisterName("addObject:")
-	SelArray         = purego.RegisterName("array")
+
+	selLength = purego.RegisterName("length")
+	selBytes  = purego.RegisterName("bytes")
 )
 
-// WrapperID recovers the raw ObjC pointer from a generated-binding value
-// whose generic instantiation returned the object address as a Go wrapper
-// pointer (e.g. ResourceValuesForKeysError); such values must never have
-// their methods called directly.
-func WrapperID[T any](p *T) purego.ID {
-	return purego.ID(uintptr(unsafe.Pointer(p)))
+// NSStr converts a Go string to an idiomatic Foundation String. Callers pass
+// .ID() where an objc.ID is wanted, or .Unwrap() where a raw *NSString is.
+func NSStr(s string) *foundation.String {
+	return foundation.NewStringWithUTF8String(s)
 }
 
-// NSStr converts a Go string to a Foundation NSString.
-func NSStr(s string) *foundation.NSString {
-	return foundation.NSStringStringWithUTF8String(s)
-}
-
-// GoStr converts a Foundation NSString to a Go string.
-func GoStr(s *foundation.NSString) string {
-	if s == nil {
+// GoStr converts an NSString — raw or idiomatic, identified by its objc.ID — to
+// a Go string. Callers pass the value's .Ptr() (raw) or .ID() (idiomatic).
+func GoStr(id purego.ID) string {
+	if id == 0 {
 		return ""
 	}
-	return purego.GoString(s.Ptr())
+	return purego.GoString(id)
 }
 
-// EnvironmentValue mirrors Swift's ProcessInfo.processInfo.environment[name],
-// going through NSProcessInfo rather than os.Getenv.
+// EnvironmentValue mirrors Swift's ProcessInfo.processInfo.environment[name].
 func EnvironmentValue(name string) (string, bool) {
-	environment := foundation.NSProcessInfoProcessInfo().Environment()
-	value := purego.Send[purego.ID](environment.Ptr(), SelObjectForKey, purego.NSString(name))
-	if value == 0 {
-		return "", false
-	}
-	return purego.GoString(value), true
-}
-
-// The generic NSArray accessors instantiate purego.Send with wrapper-pointer
-// type parameters, which is not ABI-safe through purego, so the helpers below
-// iterate containers with direct sends and rewrap each element via FromID
-// (retaining first, because FromID registers a releasing finalizer).
-
-// NSArrayURLs converts an NSArray<NSURL *> to a Go slice.
-func NSArrayURLs(array *foundation.NSArray[*foundation.NSURL]) []*foundation.NSURL {
-	if array == nil {
-		return nil
-	}
-	count := purego.Send[uint](array.Ptr(), SelCount)
-	urls := make([]*foundation.NSURL, 0, count)
-	for i := range count {
-		id := purego.Send[purego.ID](array.Ptr(), SelObjectAtIndex, i)
-		urls = append(urls, foundation.NSURLFromID(purego.Retain(id)))
-	}
-	return urls
-}
-
-// NSArrayStrings converts an NSArray<NSString *> to a Go slice of strings.
-func NSArrayStrings(array *foundation.NSArray[*foundation.NSString]) []string {
-	if array == nil {
-		return nil
-	}
-	count := purego.Send[uint](array.Ptr(), SelCount)
-	strs := make([]string, 0, count)
-	for i := range count {
-		id := purego.Send[purego.ID](array.Ptr(), SelObjectAtIndex, i)
-		strs = append(strs, purego.GoString(id))
-	}
-	return strs
-}
-
-// EmptyNSArray builds an empty NSArray typed for use as a generated-binding
-// parameter (e.g. includingPropertiesForKeys:), which cannot be nil because
-// the generated body dereferences it.
-func EmptyNSArray[T any]() *foundation.NSArray[T] {
-	empty := foundation.NSArrayArray()
-	return foundation.NSArrayFromID[T](purego.Retain(empty.Ptr()))
+	return os.LookupEnv(name)
 }
 
 // AllocClass sends +alloc to the named class, for use with the generated
@@ -102,59 +51,29 @@ func AllocClass(className string) purego.ID {
 	return purego.Send[purego.ID](purego.ID(purego.GetClass(className)), purego.RegisterName("alloc"))
 }
 
-// NSArrayFromIDs builds a typed NSArray from raw ObjC object pointers.
-func NSArrayFromIDs[T any](ids ...purego.ID) *foundation.NSArray[T] {
-	array := purego.Send[purego.ID](purego.ID(purego.GetClass("NSMutableArray")), SelArray)
-	for _, id := range ids {
-		array.Send(SelAddObject, id)
-	}
-	return foundation.NSArrayFromID[T](purego.Retain(array))
-}
-
-// NSStringArray converts a Go string slice to an NSArray<NSString *>.
-func NSStringArray(items []string) *foundation.NSArray[*foundation.NSString] {
-	ids := make([]purego.ID, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, purego.NSString(item))
-	}
-	return NSArrayFromIDs[*foundation.NSString](ids...)
-}
-
-// NSDataToBytes copies an NSData's contents into a Go byte slice.
-func NSDataToBytes(data *foundation.NSData) []byte {
-	if data == nil {
+// NSDataToBytes copies an NSData's contents — raw or idiomatic, identified by
+// its objc.ID — into a Go byte slice. The length/bytes are read with direct
+// message sends so no wrapper (and thus no releasing finalizer) is created over
+// a borrowed object.
+func NSDataToBytes(id purego.ID) []byte {
+	if id == 0 {
 		return nil
 	}
-	length := data.Length()
+	length := purego.Send[uint](id, selLength)
 	if length == 0 {
 		return nil
 	}
-	return append([]byte(nil), unsafe.Slice((*byte)(data.Bytes()), length)...)
+	bytes := purego.Send[unsafe.Pointer](id, selBytes)
+	return append([]byte(nil), unsafe.Slice((*byte)(bytes), length)...)
 }
 
-// BytesToNSData copies a Go byte slice into a new NSData.
-func BytesToNSData(b []byte) *foundation.NSData {
+// BytesToNSData copies a Go byte slice into a new idiomatic Foundation Data.
+// Callers pass .Unwrap() where a raw *NSData is wanted.
+func BytesToNSData(b []byte) *foundation.Data {
 	if len(b) == 0 {
-		return foundation.NSDataDataWithBytesLength(nil, 0)
+		return foundation.NewDataWithBytesLength(nil, 0)
 	}
-	return foundation.NSDataDataWithBytesLength(unsafe.Pointer(&b[0]), uint(len(b)))
-}
-
-// URLResourceValue fetches a single NSURL resource value (Swift:
-// resourceValues(forKeys:)), returning the raw object or 0 when absent.
-// keyID is the raw ObjC pointer of an NSURLResourceKey — for the generated
-// extern accessors that is WrapperID(foundation.NSURL…Key()), because those
-// return the object address cast to *NSString rather than a real wrapper.
-func URLResourceValue(url *foundation.NSURL, keyID purego.ID) (purego.ID, error) {
-	keys := NSArrayFromIDs[*foundation.NSString](keyID)
-	values, err := url.ResourceValuesForKeysError(keys)
-	if err != nil {
-		return 0, err
-	}
-	if values == nil {
-		return 0, nil
-	}
-	return purego.Send[purego.ID](WrapperID(values), SelObjectForKey, keyID), nil
+	return foundation.NewDataWithBytesLength(unsafe.Pointer(&b[0]), uint(len(b)))
 }
 
 // IsURLError reports whether err is an NSURLErrorDomain error — the Go
@@ -181,34 +100,21 @@ func RetryOnURLError(maxAttempts int, fn func() error) error {
 	return err
 }
 
-// SafeIndex ports tart's Collection subscript(safe:) extension.
-func SafeIndex[T any](collection []T, index int) (T, bool) {
-	var zero T
-	if index < 0 || index >= len(collection) {
-		return zero, false
-	}
-	return collection[index], true
-}
-
-// ResolveBinaryPath ports tart's ResolveBinaryPath: it walks $PATH and
-// returns the URL of the first entry containing a file called name, or nil.
-func ResolveBinaryPath(name string) *foundation.NSURL {
-	path, ok := EnvironmentValue("PATH")
+// ResolveBinaryPath ports tart's ResolveBinaryPath: it walks $PATH and returns
+// the path of the first entry containing an executable file called name, or ""
+// when not found.
+func ResolveBinaryPath(name string) string {
+	path, ok := os.LookupEnv("PATH")
 	if !ok {
-		return nil
+		return ""
 	}
-
-	fileManager := foundation.NSFileManagerDefaultManager()
-	for pathComponent := range strings.SplitSeq(path, ":") {
-		url := foundation.NSURLFileURLWithPath(NSStr(pathComponent)).
-			URLByAppendingPathComponentIsDirectory(NSStr(name), false)
-
-		if fileManager.FileExistsAtPath(url.Path()) {
-			return url
+	for _, dir := range strings.Split(path, ":") {
+		candidate := filepath.Join(dir, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
 		}
 	}
-
-	return nil
+	return ""
 }
 
 // TextPreview ports Data.asTextPreview(limit:).
@@ -220,17 +126,21 @@ func TextPreview(data []byte) string {
 	return string(data[:limit]) + "..."
 }
 
-// ExpandTilde ports NSString.expandingTildeInPath.
+// ExpandTilde ports NSString.expandingTildeInPath for the common ~ and ~/ forms.
 func ExpandTilde(path string) string {
-	return GoStr(NSStr(path).StringByExpandingTildeInPath())
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			if path == "~" {
+				return home
+			}
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
 }
 
-// NSURLFromPath builds a file NSURL from a Go path string.
-func NSURLFromPath(path string) *foundation.NSURL {
-	return foundation.NSURLFileURLWithPath(NSStr(path))
+// NSURLFromPath builds a file URL from a Go path string. Callers pass .ID()
+// where an objc.ID is wanted, or .Unwrap() for a raw *NSURL.
+func NSURLFromPath(path string) *foundation.URL {
+	return foundation.NewURLFileURLWithPath(path)
 }
-
-var (
-	SelDictionary      = purego.RegisterName("dictionary")
-	SelSetObjectForKey = purego.RegisterName("setObject:forKey:")
-)

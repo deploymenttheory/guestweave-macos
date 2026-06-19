@@ -400,7 +400,7 @@ func (s *APIServer) handleIPSW(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"url": objcutil.GoStr(image.URL().AbsoluteString())})
+	writeJSON(w, http.StatusOK, map[string]string{"url": objcutil.GoStr(image.URL().AbsoluteString().Ptr())})
 }
 
 func (s *APIServer) pullCommandFrom(request pullVMRequest) *weavecommand.PullCommand {

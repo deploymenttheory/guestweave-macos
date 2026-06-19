@@ -5,8 +5,8 @@
 // the disk to ENOSPC mid-transfer.
 //
 // Capacity is read against the actual filesystem via the Foundation
-// framework: the idiomatic URL wrapper (opinionated/idiomatic/framework/foundation) is
-// unwrapped onto NSURL's volume resource values, preferring
+// framework's idiomatic layer (opinionated/idiomatic/framework/foundation):
+// NSURL's volume resource values, preferring
 // NSURLVolumeAvailableCapacityForImportantUsageKey — Apple's recommended
 // "how much can a user-initiated operation really write" figure, which
 // accounts for purgeable space that statfs(2) cannot see.
@@ -17,35 +17,36 @@ package vmstorage
 import (
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	idiomaticfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 )
 
 // AvailableCapacityBytes returns the volume capacity available for a
 // user-initiated write at path, queried through the framework.
 func AvailableCapacityBytes(path string) (uint64, error) {
-	url := idiomaticfoundation.NewURLFileURLWithPathIsDirectory(path, true).Unwrap()
+	url := foundation.NewURLFileURLWithPathIsDirectory(path, true)
 
-	available, err := objcutil.URLResourceValue(url, objcutil.WrapperID(foundation.NSURLVolumeAvailableCapacityKey()))
+	availableKey := foundation.NSURLVolumeAvailableCapacityKey()
+	importantKey := foundation.NSURLVolumeAvailableCapacityForImportantUsageKey()
+
+	values, err := url.ResourceValuesForKeysError(availableKey, importantKey)
 	if err != nil {
 		return 0, err
 	}
-	availableImportant, err := objcutil.URLResourceValue(url, objcutil.WrapperID(foundation.NSURLVolumeAvailableCapacityForImportantUsageKey()))
-	if err != nil {
-		return 0, err
+	if values == nil {
+		return 0, nil
 	}
+	dict := foundation.DictionaryFromID(values.Ptr())
 
 	var capacity uint64
-	if available != 0 {
-		capacity = uint64(foundation.NSNumberFromID(purego.Retain(available)).IntegerValue())
+	if id := dict.ObjectForKey(availableKey.ID()); id != 0 {
+		capacity = uint64(foundation.NumberFromID(purego.Retain(id)).IntegerValue())
 	}
-	if availableImportant != 0 {
-		if v := uint64(foundation.NSNumberFromID(purego.Retain(availableImportant)).UnsignedLongLongValue()); v > capacity {
+	if id := dict.ObjectForKey(importantKey.ID()); id != 0 {
+		if v := foundation.NumberFromID(purego.Retain(id)).UnsignedLongLongValue(); v > capacity {
 			capacity = v
 		}
 	}
