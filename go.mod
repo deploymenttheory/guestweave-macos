@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/deploymenttheory/go-bindings-macosplatform v0.5.0
-	github.com/getsentry/sentry-go v0.46.2
+	github.com/getsentry/sentry-go v0.47.0
 	github.com/getsentry/sentry-go/otel v0.46.2
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	go.opentelemetry.io/contrib/bridges/otelslog v0.19.0
