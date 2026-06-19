@@ -1,14 +1,16 @@
 // File logger backing the logs command (port of lume's daemon log files).
 // Lines are appended to weave.info.log / weave.error.log under
-// $WEAVE_HOME/logs (so WEAVE_HOME relocates the logs too), with a simple
-// size-capped rotation: at 10MB the file is renamed to .old, keeping one
-// generation. Logging failures are silent — logging must never break a
-// command.
+// $WEAVE_HOME/logs (so WEAVE_HOME relocates the logs too), with a size-capped
+// rotation governed by the `logging` settings block (config.LogMaxSizeBytes /
+// LogKeepRotated): once a file exceeds the cap it is renamed to .old (keeping
+// one generation) or truncated in place. Logging failures are silent — logging
+// must never break a command.
 //go:build darwin
 
 package logging
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,9 +21,8 @@ import (
 )
 
 const (
-	fileLoggerMaxSize = 10 * 1024 * 1024
-	LogFileInfoName   = "weave.info.log"
-	LogFileErrorName  = "weave.error.log"
+	LogFileInfoName  = "weave.info.log"
+	LogFileErrorName = "weave.error.log"
 )
 
 var fileLoggerMutex sync.Mutex
@@ -71,6 +72,29 @@ func LogError(format string, args ...any) {
 	}
 }
 
+// Clear removes every log file — info, error, and their rotated .old copies.
+// Used by `weave logs clear` and the run window's Clear Logs menu item.
+func Clear() error {
+	dir := LogsDir()
+	if dir == "" {
+		return errors.New("cannot determine the logs directory")
+	}
+
+	fileLoggerMutex.Lock()
+	defer fileLoggerMutex.Unlock()
+
+	var firstErr error
+	for _, name := range []string{
+		LogFileInfoName, LogFileErrorName,
+		LogFileInfoName + ".old", LogFileErrorName + ".old",
+	} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 func appendLogLine(fileName string, message string) {
 	dir := LogsDir()
 	if dir == "" {
@@ -81,8 +105,14 @@ func appendLogLine(fileName string, message string) {
 	defer fileLoggerMutex.Unlock()
 
 	path := filepath.Join(dir, fileName)
-	if info, err := os.Stat(path); err == nil && info.Size() >= fileLoggerMaxSize {
-		_ = os.Rename(path, path+".old")
+	if maxSize := weaveconfig.LogMaxSizeBytes(); maxSize > 0 {
+		if info, err := os.Stat(path); err == nil && info.Size() >= maxSize {
+			if weaveconfig.LogKeepRotated() {
+				_ = os.Rename(path, path+".old")
+			} else {
+				_ = os.Remove(path)
+			}
+		}
 	}
 
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

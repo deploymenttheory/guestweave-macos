@@ -46,7 +46,6 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
 
-	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	dispatch "github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/cgo"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
@@ -505,14 +504,13 @@ func (c *RunCommand) RunMainThread() error {
 	if c.NoGraphics || useVNCWithoutGraphics {
 		// Enter the main event loop without bringing up any UI, waiting for
 		// the VM to exit.
-		app := appkit.SharedApplication()
-		app.SetActivationPolicy(appkit.NSApplicationActivationPolicyProhibited)
-		app.Run()
+		ui.RunHeadless()
 	} else {
 		(&ui.Window{
 			VM:                vm,
 			CaptureSystemKeys: c.CaptureSystemKeys,
 			Suspendable:       c.Suspendable,
+			VMDir:             vmDir.BaseURL,
 		}).Run()
 	}
 
@@ -577,6 +575,7 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 				engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
 					c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
 				go engine.Run(ctx)
+				ui.SetClipboardStatus(string(c.clipboardPolicy.Direction))
 			}
 		}
 	}
@@ -587,6 +586,10 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 			fail(err)
 			return
 		}
+
+		// Surface the URL to the run window's Connect ▸ Open VNC Viewer and
+		// View ▸ Toggle Screen Share menu items.
+		ui.SetVNCURL(vncURL)
 
 		// Record the VNC endpoint so other processes (the MCP screen tools)
 		// can connect to drive or view this VM by name; clear it on exit.
@@ -599,7 +602,7 @@ func (c *RunCommand) driveVM(ctx context.Context, localStorage *vmstorage.VMStor
 			fmt.Printf("VNC server is running at %s\n", vncURL)
 		} else {
 			fmt.Printf("Opening %s...\n", vncURL)
-			appkit.SharedWorkspace().OpenURL(vncURL)
+			ui.OpenURL(vncURL)
 		}
 
 		// View-only screen viewer: a dedicated VNC client continuously

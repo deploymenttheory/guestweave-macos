@@ -542,6 +542,9 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		return name, command, nil
 
 	case "logs":
+		if len(rest) == 1 && rest[0] == "clear" {
+			return name, &weavecommand.LogsCommand{Clear: true}, nil
+		}
 		command := &weavecommand.LogsCommand{}
 		fs := weavecommand.NewFlagSet(name)
 		fs.IntVar(&command.Lines, "lines", 0, "")
@@ -552,7 +555,7 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 			return name, nil, err
 		}
 		if len(positionals) != 1 {
-			return name, nil, weaveerrors.ErrGeneric("usage: weave logs <info|error|all> [--lines N] [-f]")
+			return name, nil, weaveerrors.ErrGeneric("usage: weave logs <info|error|all> [--lines N] [-f] | weave logs clear")
 		}
 		command.Type = positionals[0]
 		return name, command, command.Validate()
