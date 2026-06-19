@@ -206,7 +206,7 @@ var menuTargetClass = sync.OnceValue(func() purego.Class {
 func showAboutPanel() {
 	app := appkit.SharedApplication()
 
-	credits := fmt.Sprintf("CPU: %d cores\nMemory: %d MB\nDisplay: %s\nhttps://github.com/deploymenttheory/weave",
+	credits := fmt.Sprintf("CPU: %d cores\nMemory: %d MB\nDisplay: %s\nhttps://github.com/deploymenttheory/guestweave-macos",
 		activeVM.Config.CPUCount, activeVM.Config.MemorySize/1024/1024, activeVM.Config.Display.String())
 	attributedCredits := purego.Send[purego.ID](objcutil.AllocClass("NSAttributedString"),
 		purego.RegisterName("initWithString:"), objcutil.NSStr(credits).ID())
