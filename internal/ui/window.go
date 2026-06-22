@@ -17,11 +17,12 @@ import (
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
 
+	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // Window hosts a running VM's VZVirtualMachineView in an AppKit window with the
@@ -52,7 +53,7 @@ func (w *Window) Run() {
 	suspendableFlag.Store(w.Suspendable)
 
 	app := appkit.SharedApplication()
-	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyRegular)
+	app.SetActivationPolicy(appkit.ApplicationActivationPolicyRegular)
 	installMainMenu(app, w.Suspendable)
 
 	contentRect := corefoundation.CGRect{
@@ -62,11 +63,11 @@ func (w *Window) Run() {
 			Height: float64(w.VM.Config.Display.Height),
 		},
 	}
-	styleMask := appkit.NSWindowStyleMaskTitled | appkit.NSWindowStyleMaskClosable |
-		appkit.NSWindowStyleMaskMiniaturizable | appkit.NSWindowStyleMaskResizable
+	styleMask := appkit.WindowStyleMaskTitled | appkit.WindowStyleMaskClosable |
+		appkit.WindowStyleMaskMiniaturizable | appkit.WindowStyleMaskResizable
 
 	window := appkit.NewWindowWithContentRectStyleMaskBackingDefer(
-		contentRect, styleMask, appkit.NSBackingStoreBuffered, false)
+		contentRect, styleMask, appkit.BackingStoreBuffered, false)
 	window.SetTitle(w.VM.Name)
 
 	machineView := virtualization.VirtualMachineViewFromID(
@@ -83,12 +84,14 @@ func (w *Window) Run() {
 	if weaveplatform.MacOSAtLeast(14) && displayRefit {
 		machineView.SetAutomaticallyReconfiguresDisplay(true)
 	}
-	machineView.SetVirtualMachine(w.VM.VirtualMachine.Unwrap())
+	machineView.SetVirtualMachine(w.VM.VirtualMachine)
 
-	window.SetContentView(&machineView.Unwrap().NSView)
-	window.SetDelegate(purego.ID(windowDelegateClass()).Send(purego.RegisterName("new")))
+	window.SetContentView(appkit.ViewFromID(obj.ID(machineView)))
+	// NSWindow's delegate is a runtime class (target/action), set by hand.
+	obj.ID(window).Send(purego.RegisterName("setDelegate:"),
+		purego.ID(windowDelegateClass()).Send(purego.RegisterName("new")))
 	window.Center()
-	window.MakeKeyAndOrderFront(0)
+	window.MakeKeyAndOrderFront(nil)
 
 	app.ActivateIgnoringOtherApps(true)
 	app.Run()
@@ -126,36 +129,55 @@ var windowDelegateClass = sync.OnceValue(func() purego.Class {
 // Window (Minimize/Zoom) and a custom Control menu. Raw AppKit starts with no
 // menu at all, so we rebuild that effective menu bar by hand: App (custom About,
 // Services, Hide/Hide Others/Show All, custom Quit), View, Control, Window.
+// newBlankMenuItem creates an empty NSMenuItem, used as the carrier for a
+// submenu. The plain title/action/key constructor takes an Objective-C selector
+// for the action, which the idiomatic binding does not express, so the item is
+// allocated directly.
+func newBlankMenuItem() *appkit.MenuItem {
+	return appkit.MenuItemFromID(objcutil.AllocClass("NSMenuItem").Send(purego.RegisterName("init")))
+}
+
+// addMenuItemWithAction appends a menu item whose action is an Objective-C
+// selector — the target/action wiring that drives every command and is not
+// expressible idiomatically — and returns the item as an idiomatic wrapper. A
+// blank selector leaves the action nil (a plain separator-free label).
+func addMenuItemWithAction(menu *appkit.Menu, title, selector, keyEquivalent string) *appkit.MenuItem {
+	var action purego.SEL
+	if selector != "" {
+		action = purego.RegisterName(selector)
+	}
+	itemID := obj.ID(menu).Send(
+		purego.RegisterName("addItemWithTitle:action:keyEquivalent:"),
+		obj.ID(objcutil.NSStr(title)), action, obj.ID(objcutil.NSStr(keyEquivalent)))
+	return appkit.MenuItemFromID(itemID)
+}
+
 func installMainMenu(app *appkit.Application, suspendable bool) {
 	target := purego.ID(menuTargetClass()).Send(purego.RegisterName("new"))
 
 	newMenu := func(title string) *appkit.Menu {
 		return appkit.NewMenuWithTitle(title)
 	}
-	newSubmenuItem := func() *appkit.MenuItem {
-		return appkit.NewMenuItemWithTitleActionKeyEquivalent("", 0, "")
-	}
+	newSubmenuItem := newBlankMenuItem
 	// addItem adds an item routed to weave's custom action target (About, the
 	// Control verbs, Quit).
 	addItem := func(menu *appkit.Menu, title, selector, keyEquivalent string) *appkit.MenuItem {
-		item := menu.AddItemWithTitleActionKeyEquivalent(
-			title, purego.RegisterName(selector), keyEquivalent)
-		item.SetTarget(target)
+		item := addMenuItemWithAction(menu, title, selector, keyEquivalent)
+		item.SetTarget(obj.Wrap(target))
 		return item
 	}
 	// addStd adds a standard AppKit item with a nil target, so the action travels
 	// the responder chain to NSApp / the key window (Hide, Minimize, Full Screen…).
 	addStd := func(menu *appkit.Menu, title, selector, keyEquivalent string) *appkit.MenuItem {
-		return menu.AddItemWithTitleActionKeyEquivalent(
-			title, purego.RegisterName(selector), keyEquivalent)
+		return addMenuItemWithAction(menu, title, selector, keyEquivalent)
 	}
 	// addTopMenu attaches a titled submenu under the main menu bar.
 	mainMenu := newMenu("")
 	addTopMenu := func(title string) *appkit.Menu {
 		item := newSubmenuItem()
-		mainMenu.AddItem(item.Unwrap())
+		mainMenu.AddItem(item)
 		sub := newMenu(title)
-		mainMenu.SetSubmenuForItem(sub.Unwrap(), item.Unwrap())
+		mainMenu.SetSubmenuForItem(sub, item)
 		return sub
 	}
 
@@ -163,20 +185,20 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	// regardless of its title (the displayed name comes from the process).
 	appMenu := addTopMenu("")
 	addItem(appMenu, "About Weave", "weaveAbout:", "")
-	appMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	appMenu.AddItem(appkit.SeparatorItem())
 	// Services submenu — macOS populates and manages it once registered.
-	servicesItem := appMenu.AddItemWithTitleActionKeyEquivalent("Services", 0, "")
+	servicesItem := addMenuItemWithAction(appMenu, "Services", "", "")
 	servicesMenu := newMenu("Services")
-	servicesItem.SetSubmenu(servicesMenu.Unwrap())
-	app.SetServicesMenu(servicesMenu.Unwrap())
-	appMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	servicesItem.SetSubmenu(servicesMenu)
+	app.SetServicesMenu(servicesMenu)
+	appMenu.AddItem(appkit.SeparatorItem())
 	addStd(appMenu, "Hide Weave", "hide:", "h")
 	hideOthers := addStd(appMenu, "Hide Others", "hideOtherApplications:", "h")
-	hideOthers.SetKeyEquivalentModifierMask(appkit.NSEventModifierFlagOption | appkit.NSEventModifierFlagCommand)
+	hideOthers.SetKeyEquivalentModifierMask(appkit.EventModifierFlagOption | appkit.EventModifierFlagCommand)
 	addStd(appMenu, "Show All", "unhideAllApplications:", "")
-	appMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	appMenu.AddItem(appkit.SeparatorItem())
 	addItem(appMenu, "VM Info…", "weaveVMInfo:", "")
-	appMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	appMenu.AddItem(appkit.SeparatorItem())
 	// Quit honours suspend-on-close, so it routes to the custom target.
 	addItem(appMenu, "Quit Weave", "weaveQuit:", "q")
 
@@ -190,15 +212,15 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	connectMenu := addTopMenu("Connect")
 	addItem(connectMenu, "SSH in Terminal", "weaveSSH:", "")
 	addItem(connectMenu, "Open Guest Shell", "weaveShell:", "")
-	connectMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	connectMenu.AddItem(appkit.SeparatorItem())
 	addItem(connectMenu, "Open VNC Viewer", "weaveVNC:", "")
 	addItem(connectMenu, "Copy IP Address", "weaveCopyIP:", "")
 
 	// ── View menu: full-screen toggle (AppKit auto-swaps Enter/Exit on the title).
 	viewMenu := addTopMenu("View")
 	fullScreen := addStd(viewMenu, "Enter Full Screen", "toggleFullScreen:", "f")
-	fullScreen.SetKeyEquivalentModifierMask(appkit.NSEventModifierFlagControl | appkit.NSEventModifierFlagCommand)
-	viewMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	fullScreen.SetKeyEquivalentModifierMask(appkit.EventModifierFlagControl | appkit.EventModifierFlagCommand)
+	viewMenu.AddItem(appkit.SeparatorItem())
 	addItem(viewMenu, "Take Screenshot", "weaveScreenshot:", "s")
 	addItem(viewMenu, "Toggle Screen Share", "weaveScreenShare:", "")
 
@@ -211,10 +233,10 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	if weaveplatform.MacOSAtLeast(14) && suspendable {
 		addItem(controlMenu, "Suspend", "weaveSuspend:", "")
 	}
-	controlMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	controlMenu.AddItem(appkit.SeparatorItem())
 	addItem(controlMenu, "Restart", "weaveRestart:", "")
 	addItem(controlMenu, "Force Stop", "weaveForceStop:", "")
-	controlMenu.AddItem(appkit.SeparatorItem().Unwrap())
+	controlMenu.AddItem(appkit.SeparatorItem())
 	addItem(controlMenu, "Clipboard Status…", "weaveClipboard:", "")
 
 	// ── Window menu: standard window management; AppKit appends "Bring All to
@@ -222,9 +244,9 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	windowMenu := addTopMenu("Window")
 	addStd(windowMenu, "Minimize", "performMiniaturize:", "m")
 	addStd(windowMenu, "Zoom", "performZoom:", "")
-	app.SetWindowsMenu(windowMenu.Unwrap())
+	app.SetWindowsMenu(windowMenu)
 
-	app.SetMainMenu(mainMenu.Unwrap())
+	app.SetMainMenu(mainMenu)
 }
 
 // menuTargetClass registers the menu action target. Each Control menu item
@@ -287,17 +309,17 @@ func showAboutPanel() {
 	credits := fmt.Sprintf("CPU: %d cores\nMemory: %d MB\nDisplay: %s\nhttps://github.com/deploymenttheory/guestweave-macos",
 		activeVM.Config.CPUCount, activeVM.Config.MemorySize/1024/1024, activeVM.Config.Display.String())
 	attributedCredits := purego.Send[purego.ID](objcutil.AllocClass("NSAttributedString"),
-		purego.RegisterName("initWithString:"), objcutil.NSStr(credits).ID())
+		purego.RegisterName("initWithString:"), objcutil.NSStr(credits))
 
 	// The idiomatic appkit option-key accessors return the NSString objc.ID
 	// directly (no symbol-address dereference needed); build the options map with
 	// the idiomatic MutableDictionary and send the panel request via the runtime.
 	options := foundation.NewMutableDictionary()
-	options.Set(appkit.NSAboutPanelOptionApplicationName(), objcutil.NSStr("Weave").ID())
-	options.Set(appkit.NSAboutPanelOptionApplicationVersion(), objcutil.NSStr(ci.CIVersion()).ID())
-	options.Set(appkit.NSAboutPanelOptionCredits(), attributedCredits)
+	options.Set(appkit.NSAboutPanelOptionApplicationName(), objcutil.NSStr("Weave"))
+	options.Set(appkit.NSAboutPanelOptionApplicationVersion(), objcutil.NSStr(ci.CIVersion()))
+	options.Set(appkit.NSAboutPanelOptionCredits(), obj.Wrap(attributedCredits))
 
-	purego.Send[purego.ID](app.ID(), purego.RegisterName("orderFrontStandardAboutPanelWithOptions:"), options.ID())
+	obj.ID(app).Send(purego.RegisterName("orderFrontStandardAboutPanelWithOptions:"), obj.ID(options))
 }
 
 // RunHeadless enters the AppKit run loop without bringing up a window, waiting
@@ -305,7 +327,7 @@ func showAboutPanel() {
 // VNC-only runs): NSApplication.setActivationPolicy(.prohibited) + run().
 func RunHeadless() {
 	app := appkit.SharedApplication()
-	app.SetActivationPolicy(appkit.NSApplicationActivationPolicyProhibited)
+	app.SetActivationPolicy(appkit.ApplicationActivationPolicyProhibited)
 	app.Run()
 }
 

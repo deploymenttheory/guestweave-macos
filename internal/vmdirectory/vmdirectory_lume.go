@@ -35,7 +35,7 @@ func (d *VMDirectory) writeLumeConfig(description *oci.VMDescription) error {
 	var macAddress *idvirt.MACAddress
 	if description.MACAddress != "" {
 		macAddress = idvirt.NewMACAddressWithString(description.MACAddress)
-		if macAddress.Unwrap() == nil {
+		if macAddress == nil {
 			macAddress = nil
 			logging.DefaultLogger().AppendNewLine("warning: lume image carries a malformed MAC address; generating a random one")
 		}
@@ -64,7 +64,7 @@ func lumePlatform(description *oci.VMDescription) (vmconfig.Platform, error) {
 		if err != nil || len(ecidData) == 0 {
 			return nil, weaveerrors.ErrPullFailed("lume image has a missing or malformed machine identifier")
 		}
-		ecid := idvirt.NewMacMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData).Unwrap())
+		ecid := idvirt.NewMacMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData))
 		if ecid == nil {
 			return nil, weaveerrors.ErrPullFailed("lume image machine identifier is not a valid VZMacMachineIdentifier")
 		}
@@ -73,7 +73,7 @@ func lumePlatform(description *oci.VMDescription) (vmconfig.Platform, error) {
 		if err != nil || len(hardwareModelData) == 0 {
 			return nil, weaveerrors.ErrPullFailed("lume image has a missing or malformed hardware model")
 		}
-		hardwareModel := idvirt.NewMacHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData).Unwrap())
+		hardwareModel := idvirt.NewMacHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
 		if hardwareModel == nil {
 			return nil, vmconfig.UnsupportedHostOSError{}
 		}

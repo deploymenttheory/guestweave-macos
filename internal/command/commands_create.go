@@ -92,7 +92,7 @@ func (c *CreateCommand) Run(ctx context.Context) error {
 				return err
 			}
 			spinner.Success("Found the latest supported IPSW")
-			ipswLocation = objcutil.GoStr(image.URL().AbsoluteString().Ptr())
+			ipswLocation = absoluteURLString(image.URL())
 		case strings.HasPrefix(c.FromIPSW, "http://") || strings.HasPrefix(c.FromIPSW, "https://"):
 			ipswLocation = c.FromIPSW
 		default:

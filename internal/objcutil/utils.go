@@ -12,9 +12,11 @@ import (
 	"strings"
 	"unsafe"
 
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/errkit"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/rt"
 )
 
 var (
@@ -68,19 +70,15 @@ func NSDataToBytes(id purego.ID) []byte {
 }
 
 // BytesToNSData copies a Go byte slice into a new idiomatic Foundation Data.
-// Callers pass .Unwrap() where a raw *NSData is wanted.
 func BytesToNSData(b []byte) *foundation.Data {
-	if len(b) == 0 {
-		return foundation.NewDataWithBytesLength(nil, 0)
-	}
-	return foundation.NewDataWithBytesLength(unsafe.Pointer(&b[0]), uint(len(b)))
+	return foundation.DataFromID(rt.BytesToNSData(b))
 }
 
 // IsURLError reports whether err is an NSURLErrorDomain error — the Go
 // equivalent of Swift's `error is URLError` checks.
 func IsURLError(err error) bool {
-	var objcErr *objcerrors.ObjCError
-	return errors.As(err, &objcErr) && objcErr.Domain == "NSURLErrorDomain"
+	var e *errkit.Error
+	return errors.As(err, &e) && e.Domain() == "NSURLErrorDomain"
 }
 
 // RetryOnURLError ports the Retry package usage: retry fn up to maxAttempts
@@ -143,4 +141,14 @@ func ExpandTilde(path string) string {
 // where an objc.ID is wanted, or .Unwrap() for a raw *NSURL.
 func NSURLFromPath(path string) *foundation.URL {
 	return foundation.NewURLFileURLWithPath(path)
+}
+
+// AbsoluteURLString returns the absolute string of an NSURL handed back as an
+// untyped object (e.g. RestoreImage.URL()), or "" when it is not a URL.
+func AbsoluteURLString(o obj.Object) string {
+	u, ok := obj.As(o, "NSURL", foundation.URLFromID)
+	if !ok {
+		return ""
+	}
+	return u.AbsoluteString()
 }

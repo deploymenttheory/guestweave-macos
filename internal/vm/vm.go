@@ -51,6 +51,7 @@ import (
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // Error types ported from VM.swift.
@@ -105,8 +106,8 @@ type VMOptions struct {
 	// authoritative; the SPICE agent clipboard is disabled so policy controls
 	// (direction, formats, files, bandwidth) are not bypassed by the OS path.
 	ClipboardPolicyEnabled bool
-	Sync                   idiomatic.VZDiskImageSynchronizationMode
-	Caching                *idiomatic.VZDiskImageCachingMode
+	Sync                   idiomatic.DiskImageSynchronizationMode
+	Caching                *idiomatic.DiskImageCachingMode
 	NoTrackpad             bool
 	NoPointer              bool
 	NoKeyboard             bool
@@ -114,7 +115,7 @@ type VMOptions struct {
 
 func (o *VMOptions) normalize() {
 	if o.Sync == 0 {
-		o.Sync = idiomatic.VZDiskImageSynchronizationModeFull
+		o.Sync = idiomatic.DiskImageSynchronizationModeFull
 	}
 }
 
@@ -257,12 +258,12 @@ func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
 // installs the delegate (Swift: VZVirtualMachine(configuration:) + delegate).
 func (vm *VM) attachVirtualMachine() {
 	mainthread.Do(func() {
-		vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfiguration(vm.Configuration.Unwrap())
+		vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfiguration(vm.Configuration)
 
 		delegateID := purego.ID(vmDelegateClass()).Send(purego.RegisterName("new"))
 		vmDelegateRegistry.Store(delegateID, vm)
 		vm.delegateID = delegateID
-		vm.VirtualMachine.ID().Send(purego.RegisterName("setDelegate:"), delegateID)
+		obj.ID(vm.VirtualMachine).Send(purego.RegisterName("setDelegate:"), delegateID)
 	})
 }
 
@@ -363,13 +364,13 @@ func VMRetrieveIPSW(ctx context.Context, remoteURLString string) (string, error)
 // InFinalState ports VM.inFinalState.
 func (vm *VM) InFinalState() bool {
 	state := vm.machineState()
-	return state == idiomatic.VZVirtualMachineStateStopped ||
-		state == idiomatic.VZVirtualMachineStatePaused ||
-		state == idiomatic.VZVirtualMachineStateError
+	return state == idiomatic.VirtualMachineStateStopped ||
+		state == idiomatic.VirtualMachineStatePaused ||
+		state == idiomatic.VirtualMachineStateError
 }
 
-func (vm *VM) machineState() idiomatic.VZVirtualMachineState {
-	var state idiomatic.VZVirtualMachineState
+func (vm *VM) machineState() idiomatic.VirtualMachineState {
+	var state idiomatic.VirtualMachineState
 	mainthread.Do(func() {
 		state = vm.VirtualMachine.State()
 	})
@@ -418,7 +419,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 
 	// Create NVRAM.
 	if _, err := idiomatic.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
-		vmDir.NvramURL(), requirements.HardwareModel().Unwrap(), 0); err != nil {
+		vmDir.NvramURL(), requirements.HardwareModel(), 0); err != nil {
 		return nil, err
 	}
 
@@ -487,11 +488,11 @@ func (vm *VM) install(ctx context.Context, ipswPath string) error {
 	var installer *idiomatic.MacOSInstaller
 	mainthread.Do(func() {
 		installer = idiomatic.NewMacOSInstallerWithVirtualMachineRestoreImageURL(
-			vm.VirtualMachine.Unwrap(), ipswPath)
+			vm.VirtualMachine, ipswPath)
 	})
 
 	logging.DefaultLogger().AppendNewLine("Installing OS...")
-	observer := logging.NewProgressObserver(&nsProgressWrapper{inner: idfoundation.ProgressFromID(purego.Retain(installer.Progress().Ptr()))})
+	observer := logging.NewProgressObserver(&nsProgressWrapper{inner: idfoundation.ProgressFromID(obj.ID(installer.Progress()))})
 	observer.Log(logging.DefaultLogger())
 
 	errCh := make(chan error, 1)
@@ -503,14 +504,16 @@ func (vm *VM) install(ctx context.Context, ipswPath string) error {
 		}
 	})
 	mainthread.Do(func() {
-		installer.ID().Send(purego.RegisterName("installWithCompletionHandler:"), block)
+		obj.ID(installer).Send(purego.RegisterName("installWithCompletionHandler:"), block)
 	})
 
 	select {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		installer.Progress().Cancel()
+		if p, ok := obj.As(installer.Progress(), "NSProgress", idfoundation.ProgressFromID); ok {
+			p.Cancel()
+		}
 		return <-errCh
 	}
 }
@@ -565,7 +568,7 @@ func (vm *VM) Connect(ctx context.Context, toPort uint32) (*idiomatic.VirtioSock
 	mainthread.Do(func() {
 		devices := vm.VirtualMachine.SocketDevices()
 		if len(devices) > 0 {
-			socketDeviceID = devices[0].ID()
+			socketDeviceID = obj.ID(devices[0])
 		}
 	})
 
@@ -611,7 +614,7 @@ func (vm *VM) Run(ctx context.Context) error {
 	_ = vm.sema.WaitUnlessCancelled(ctx)
 
 	if ctx.Err() != nil {
-		if vm.machineState() == idiomatic.VZVirtualMachineStateRunning {
+		if vm.machineState() == idiomatic.VirtualMachineStateRunning {
 			fmt.Println("Stopping VM...")
 			if err := vm.stopMachine(); err != nil {
 				return err
@@ -643,8 +646,8 @@ func (vm *VM) startMachine(recovery bool) error {
 	mainthread.Do(func() {
 		startOptions := idiomatic.NewMacOSVirtualMachineStartOptions()
 		startOptions.SetStartUpFromMacOSRecovery(recovery)
-		vm.VirtualMachine.ID().Send(
-			purego.RegisterName("startWithOptions:completionHandler:"), startOptions.ID(), block)
+		obj.ID(vm.VirtualMachine).Send(
+			purego.RegisterName("startWithOptions:completionHandler:"), obj.ID(startOptions), block)
 	})
 
 	return <-errCh
@@ -670,7 +673,7 @@ func (vm *VM) SendErrorCompletion(selector string) error {
 		}
 	})
 	mainthread.Do(func() {
-		vm.VirtualMachine.ID().Send(purego.RegisterName(selector), block)
+		obj.ID(vm.VirtualMachine).Send(purego.RegisterName(selector), block)
 	})
 	return <-errCh
 }
@@ -696,7 +699,7 @@ func craftConfiguration(diskPath string, nvramPath string,
 
 	configuration.
 		WithBootLoader(bootLoader).
-		WithCPUCount(uint(vmConfig.CPUCount)).
+		WithCPUCount(int(vmConfig.CPUCount)).
 		WithMemorySize(vmConfig.MemorySize).
 		WithPlatform(platform).
 		WithGraphicsDevices(vmConfig.Platform.GraphicsDevice(vmConfig))
@@ -763,11 +766,11 @@ func craftConfiguration(diskPath string, nvramPath string,
 	}
 
 	// Storage.
-	cachingMode := idiomatic.VZDiskImageCachingModeAutomatic
+	cachingMode := idiomatic.DiskImageCachingModeAutomatic
 	if vmConfig.OS == weaveplatform.OSLinux {
 		// When not specified, use "cached" caching mode for Linux VMs to
 		// prevent file-system corruption (cirruslabs/tart#675).
-		cachingMode = idiomatic.VZDiskImageCachingModeCached
+		cachingMode = idiomatic.DiskImageCachingModeCached
 	}
 	if options.Caching != nil {
 		cachingMode = *options.Caching
@@ -779,8 +782,11 @@ func craftConfiguration(diskPath string, nvramPath string,
 	}
 
 	storageDevices := make([]idiomatic.StorageDeviceConfigurationProvider, 0, 1+len(options.AdditionalStorageDevices))
+	// The block-device constructor takes the base storage-attachment type; the
+	// disk-image attachment is one, so narrow it to the base.
+	blockAttachment, _ := obj.As(attachment, "VZStorageDeviceAttachment", idiomatic.StorageDeviceAttachmentFromID)
 	storageDevices = append(storageDevices,
-		idiomatic.NewVirtioBlockDeviceConfigurationWithAttachment(&attachment.Unwrap().VZStorageDeviceAttachment))
+		idiomatic.NewVirtioBlockDeviceConfigurationWithAttachment(blockAttachment))
 	storageDevices = append(storageDevices, options.AdditionalStorageDevices...)
 	configuration.WithStorageDevices(storageDevices...)
 
@@ -820,5 +826,5 @@ func craftConfiguration(diskPath string, nvramPath string,
 
 // setConsolePort mirrors Swift's consoleDevice.ports[0] = port subscript.
 func setConsolePort(device *idiomatic.VirtioConsoleDeviceConfiguration, index uint, port *idiomatic.VirtioConsolePortConfiguration) {
-	device.Ports().SetObjectAtIndexedSubscript(port.Unwrap(), index)
+	device.Ports().SetObjectAtIndexedSubscript(port, int(index))
 }

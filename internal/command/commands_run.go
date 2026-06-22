@@ -24,6 +24,7 @@ import (
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/weave/internal/clipboard"
 	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
@@ -57,14 +58,14 @@ var vm *weavevm.VM
 // init(_ description:) extension.
 func parseDiskImageSynchronizationMode(
 	description string,
-) (idvirt.VZDiskImageSynchronizationMode, error) {
+) (idvirt.DiskImageSynchronizationMode, error) {
 	switch description {
 	case "none":
-		return idvirt.VZDiskImageSynchronizationModeNone, nil
+		return idvirt.DiskImageSynchronizationModeNone, nil
 	case "fsync":
-		return idvirt.VZDiskImageSynchronizationModeFsync, nil
+		return idvirt.DiskImageSynchronizationModeFsync, nil
 	case "full", "":
-		return idvirt.VZDiskImageSynchronizationModeFull, nil
+		return idvirt.DiskImageSynchronizationModeFull, nil
 	default:
 		return 0, weaveerrors.ErrVMConfigurationError(
 			"unsupported disk image synchronization mode: %q",
@@ -75,12 +76,12 @@ func parseDiskImageSynchronizationMode(
 
 // parseDiskSynchronizationMode ports the VZDiskSynchronizationMode
 // init(_ description:) extension.
-func parseDiskSynchronizationMode(description string) (idvirt.VZDiskSynchronizationMode, error) {
+func parseDiskSynchronizationMode(description string) (idvirt.DiskSynchronizationMode, error) {
 	switch description {
 	case "none":
-		return idvirt.VZDiskSynchronizationModeNone, nil
+		return idvirt.DiskSynchronizationModeNone, nil
 	case "full", "":
-		return idvirt.VZDiskSynchronizationModeFull, nil
+		return idvirt.DiskSynchronizationModeFull, nil
 	default:
 		return 0, weaveerrors.ErrVMConfigurationError(
 			"unsupported disk synchronization mode: %q",
@@ -91,14 +92,14 @@ func parseDiskSynchronizationMode(description string) (idvirt.VZDiskSynchronizat
 
 // parseDiskImageCachingMode ports the VZDiskImageCachingMode
 // init?(_ description:) extension; ok=false mirrors the nil return for "".
-func parseDiskImageCachingMode(description string) (idvirt.VZDiskImageCachingMode, bool, error) {
+func parseDiskImageCachingMode(description string) (idvirt.DiskImageCachingMode, bool, error) {
 	switch description {
 	case "automatic":
-		return idvirt.VZDiskImageCachingModeAutomatic, true, nil
+		return idvirt.DiskImageCachingModeAutomatic, true, nil
 	case "cached":
-		return idvirt.VZDiskImageCachingModeCached, true, nil
+		return idvirt.DiskImageCachingModeCached, true, nil
 	case "uncached":
-		return idvirt.VZDiskImageCachingModeUncached, true, nil
+		return idvirt.DiskImageCachingModeUncached, true, nil
 	case "":
 		return 0, false, nil
 	default:
@@ -401,7 +402,7 @@ func (c *RunCommand) RunMainThread() error {
 	if err != nil {
 		return err
 	}
-	var caching *idvirt.VZDiskImageCachingMode
+	var caching *idvirt.DiskImageCachingMode
 	if cachingMode, ok, err := parseDiskImageCachingMode(diskOptions.cachingModeRaw); err != nil {
 		return err
 	} else if ok {
@@ -578,7 +579,7 @@ func (c *RunCommand) driveVM(
 	if err := vm.Start(c.Recovery, resume); err != nil {
 		var objcErr *objcerrors.ObjCError
 		if errors.As(err, &objcErr) && objcErr.Domain == "VZErrorDomain" &&
-			objcErr.Code == int64(idvirt.VZErrorVirtualMachineLimitExceeded) {
+			objcErr.Code == int64(idvirt.ErrorVirtualMachineLimitExceeded) {
 			hint := ""
 			if entries, listErr := localStorage.List(); listErr == nil {
 				var runningVMs []string
@@ -790,8 +791,8 @@ func createSerialPortConfiguration(
 	ttyWrite *foundation.FileHandle,
 ) idvirt.SerialPortConfigurationProvider {
 	attachment := idvirt.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(
-		ttyRead.Unwrap(),
-		ttyWrite.Unwrap(),
+		ttyRead,
+		ttyWrite,
 	)
 	return idvirt.NewVirtioConsoleDeviceSerialPortConfiguration().WithAttachment(attachment)
 }
@@ -913,7 +914,7 @@ func (c *RunCommand) usbMassStorageDevices() ([]idvirt.StorageDeviceConfiguratio
 		configurations = append(
 			configurations,
 			idvirt.NewUSBMassStorageDeviceConfigurationWithAttachment(
-				&attachment.Unwrap().VZStorageDeviceAttachment,
+				storageBase(attachment),
 			),
 		)
 	}
@@ -975,7 +976,7 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 			return nil, err
 		}
 		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
-			&nbdAttachment.Unwrap().VZStorageDeviceAttachment,
+			storageBase(nbdAttachment),
 		), nil
 	}
 
@@ -1016,7 +1017,7 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 
 		fileHandle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(fd, true)
 		blockAttachment, err := idvirt.NewDiskBlockDeviceStorageDeviceAttachmentWithFileHandleReadOnlySynchronizationModeError(
-			fileHandle.Unwrap(),
+			fileHandle,
 			options.readOnly,
 			syncMode,
 		)
@@ -1024,7 +1025,7 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 			return nil, err
 		}
 		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
-			&blockAttachment.Unwrap().VZStorageDeviceAttachment,
+			storageBase(blockAttachment),
 		), nil
 	}
 
@@ -1065,7 +1066,7 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 			return nil, err
 		}
 		return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
-			&diskImageAttachment.Unwrap().VZStorageDeviceAttachment,
+			storageBase(diskImageAttachment),
 		), nil
 	}
 
@@ -1086,7 +1087,7 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 		}
 	}
 
-	cachingMode := idvirt.VZDiskImageCachingModeAutomatic
+	cachingMode := idvirt.DiskImageCachingModeAutomatic
 	if mode, ok, err := parseDiskImageCachingMode(options.cachingModeRaw); err != nil {
 		return nil, err
 	} else if ok {
@@ -1107,7 +1108,7 @@ func craftAdditionalDisk(parseFrom string) (idvirt.StorageDeviceConfigurationPro
 		return nil, err
 	}
 	return idvirt.NewVirtioBlockDeviceConfigurationWithAttachment(
-		&diskImageAttachment.Unwrap().VZStorageDeviceAttachment,
+		storageBase(diskImageAttachment),
 	), nil
 }
 
@@ -1253,7 +1254,7 @@ func (c *RunCommand) directoryShares() ([]idvirt.DirectorySharingDeviceConfigura
 				return nil, err
 			}
 			sharingDevice.WithShare(
-				idvirt.NewSingleDirectoryShareWithDirectory(sharedDirectory.Unwrap()),
+				idvirt.NewSingleDirectoryShareWithDirectory(sharedDirectory),
 			)
 		} else if !allNamedShares {
 			return nil, weaveerrors.ErrGeneric(
@@ -1266,7 +1267,7 @@ func (c *RunCommand) directoryShares() ([]idvirt.DirectorySharingDeviceConfigura
 				if err != nil {
 					return nil, err
 				}
-				directories.SetString(share.name, sharedDirectory.ID())
+				directories.SetString(share.name, sharedDirectory)
 			}
 			sharingDevice.WithShare(idvirt.NewMultipleDirectoryShareWithDirectories(directories))
 		}
@@ -1391,13 +1392,13 @@ func (c *RunCommand) rosettaDirectoryShare() ([]idvirt.DirectorySharingDeviceCon
 	}
 
 	switch idvirt.Availability() {
-	case idvirt.VZLinuxRosettaAvailabilityNotInstalled:
+	case idvirt.LinuxRosettaAvailabilityNotInstalled:
 		return nil, &weavevm.UnsupportedOSError{
 			What:     "Rosetta directory share",
 			Plural:   "is",
 			Requires: "that have Rosetta installed",
 		}
-	case idvirt.VZLinuxRosettaAvailabilityNotSupported:
+	case idvirt.LinuxRosettaAvailabilityNotSupported:
 		return nil, &weavevm.UnsupportedOSError{
 			What:     "Rosetta directory share",
 			Plural:   "is",
@@ -1405,7 +1406,7 @@ func (c *RunCommand) rosettaDirectoryShare() ([]idvirt.DirectorySharingDeviceCon
 		}
 	}
 
-	if _, err := idvirt.ValidateTagError(c.RosettaTag); err != nil {
+	if err := idvirt.ValidateTag(c.RosettaTag); err != nil {
 		return nil, err
 	}
 	device := idvirt.NewVirtioFileSystemDeviceConfigurationWithTag(c.RosettaTag).
@@ -1421,4 +1422,21 @@ func pathHasMode(path string, mode uint16) bool {
 		return false
 	}
 	return st.Mode&syscall.S_IFMT == mode
+}
+
+// storageBase narrows a concrete disk/NBD/block storage attachment to the base
+// VZStorageDeviceAttachment type the block/USB device constructors expect.
+func storageBase(a obj.Object) *idvirt.StorageDeviceAttachment {
+	base, _ := obj.As(a, "VZStorageDeviceAttachment", idvirt.StorageDeviceAttachmentFromID)
+	return base
+}
+
+// absoluteURLString returns the absolute string of an NSURL handed back as an
+// untyped object, or "" when it is not a URL.
+func absoluteURLString(o obj.Object) string {
+	u, ok := obj.As(o, "NSURL", foundation.URLFromID)
+	if !ok {
+		return ""
+	}
+	return u.AbsoluteString()
 }

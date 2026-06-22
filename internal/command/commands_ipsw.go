@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/terminal"
 )
 
@@ -25,6 +24,6 @@ func (c *IPSWCommand) Run(ctx context.Context) error {
 		return err
 	}
 	spinner.Stop()
-	fmt.Println(objcutil.GoStr(image.URL().AbsoluteString().Ptr()))
+	fmt.Println(absoluteURLString(image.URL()))
 	return nil
 }

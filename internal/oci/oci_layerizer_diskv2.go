@@ -28,6 +28,8 @@ import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/rt"
 )
 
 const (
@@ -56,27 +58,17 @@ var _ Disk = DiskV2{}
 
 // bytesToData builds an idiomatic NSData from a Go byte slice.
 func bytesToData(b []byte) *foundation.Data {
-	if len(b) == 0 {
-		return foundation.NewDataWithBytesLength(nil, 0)
-	}
-	return foundation.NewDataWithBytesLength(unsafe.Pointer(&b[0]), uint(len(b)))
+	return foundation.DataFromID(rt.BytesToNSData(b))
 }
 
 // dataToBytes copies an idiomatic NSData's contents into a Go byte slice.
 func dataToBytes(data *foundation.Data) []byte {
-	if data == nil {
-		return nil
-	}
-	length := data.Length()
-	if length == 0 {
-		return nil
-	}
-	return append([]byte(nil), unsafe.Slice((*byte)(data.Bytes()), length)...)
+	return obj.Bytes(data)
 }
 
 // compressLZ4 wraps NSData compressedDataUsingAlgorithm:.
 func compressLZ4(data []byte) ([]byte, error) {
-	compressed, err := bytesToData(data).CompressedDataUsingAlgorithmError(foundation.NSDataCompressionAlgorithmLZ4)
+	compressed, err := bytesToData(data).CompressedDataUsingAlgorithmError(foundation.DataCompressionAlgorithmLZ4)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +77,7 @@ func compressLZ4(data []byte) ([]byte, error) {
 
 // decompressLZ4 wraps NSData decompressedDataUsingAlgorithm:.
 func decompressLZ4(data []byte) ([]byte, error) {
-	decompressed, err := bytesToData(data).DecompressedDataUsingAlgorithmError(foundation.NSDataCompressionAlgorithmLZ4)
+	decompressed, err := bytesToData(data).DecompressedDataUsingAlgorithmError(foundation.DataCompressionAlgorithmLZ4)
 	if err != nil {
 		return nil, err
 	}

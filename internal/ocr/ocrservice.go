@@ -15,10 +15,9 @@ import (
 	"strings"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	vision "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vision"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vision"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // ocrMinimumConfidence mirrors OCRService's default minimumConfidence.
@@ -59,42 +58,52 @@ func RecognizeText(img image.Image) ([]TextObservation, error) {
 	height := img.Bounds().Dy()
 
 	request := vision.NewRecognizeTextRequest().
-		WithRecognitionLevel(vision.VNRequestTextRecognitionLevelAccurate).
+		WithRecognitionLevel(vision.RequestTextRecognitionLevelAccurate).
 		WithUsesLanguageCorrection(false).
 		// Revision 3 supports the latest recognition features (OCRService.swift).
 		WithRevision(3)
 
 	handler := vision.NewImageRequestHandlerWithURLOptions(tempPath, nil)
 
-	if _, err := handler.PerformRequestsError(request); err != nil {
+	// PerformRequests and Results are defined on the base VNRequest; narrow the
+	// concrete request to it.
+	baseRequest, ok := obj.As(request, "VNRequest", vision.RequestFromID)
+	if !ok {
+		return nil, weaveerrors.ErrOCRFailed("could not access the Vision request")
+	}
+	if err := handler.PerformRequests([]*vision.Request{baseRequest}); err != nil {
 		return nil, weaveerrors.ErrOCRFailed(err.Error())
 	}
 
-	// Results live on the base VNRequest; rewrap the request to read them.
-	results := vision.RequestFromID(request.ID()).Results()
+	results := baseRequest.Results()
 	if results == nil {
 		return nil, nil
 	}
 
 	var observations []TextObservation
 	for _, observation := range results {
-		textObservation := vision.RecognizedTextObservationFromID(observation.ID())
-
-		candidates := textObservation.TopCandidates(1)
-		if candidates == nil || purego.Send[uint](candidates.Ptr(), objcutil.SelCount) == 0 {
+		textObservation, ok := obj.As(observation, "VNRecognizedTextObservation", vision.RecognizedTextObservationFromID)
+		if !ok {
 			continue
 		}
-		candidate := vision.RecognizedTextFromID(purego.Retain(
-			purego.Send[purego.ID](candidates.Ptr(), objcutil.SelObjectAtIndex, uint(0))))
+		candidates := textObservation.TopCandidates(1)
+		if len(candidates) == 0 {
+			continue
+		}
+		candidate := candidates[0]
 
 		confidence := candidate.Confidence()
 		if confidence < ocrMinimumConfidence {
 			continue
 		}
 
+		detected, ok := obj.As(observation, "VNDetectedObjectObservation", vision.DetectedObjectObservationFromID)
+		if !ok {
+			continue
+		}
 		// Vision bounding boxes are normalized with a bottom-left origin;
 		// convert to top-left pixel coordinates (OCRService.screenRect).
-		box := vision.DetectedObjectObservationFromID(observation.ID()).BoundingBox()
+		box := detected.BoundingBox()
 		x := box.Origin.X * float64(width)
 		y := (1 - box.Origin.Y - box.Size.Height) * float64(height)
 		w := box.Size.Width * float64(width)

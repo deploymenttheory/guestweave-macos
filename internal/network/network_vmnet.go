@@ -16,11 +16,9 @@
 package network
 
 import (
-	"runtime"
-	"unsafe"
-
 	vmnet "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vmnet"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 )
@@ -32,14 +30,16 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 		return NIC{}, err
 	}
 
-	var status vmnet.Vmnet_return_t
-	config := vmnet.NetworkConfigurationCreate(mode, &status)
-	if config == nil || status != vmnet.VMNET_SUCCESS {
+	// configRef stays an objc.ID for the bridged lifecycle calls; config wraps it
+	// as an obj.Object for the generated idiomatic configuration calls.
+	configRef, status := vmnetNetworkConfigurationCreate(mode)
+	if configRef == 0 || status != vmnet.VMNET_SUCCESS {
 		return NIC{}, weaveerrors.ErrGeneric(
 			"failed to create vmnet network configuration (status %s); the vmnet "+
 				"engine requires the com.apple.vm.networking entitlement or root — "+
 				"consider a softnet-based profile instead", status.String())
 	}
+	config := obj.Wrap(configRef)
 
 	if nicConfig.VmnetMode == "bridged" {
 		if nicConfig.BridgedInterface == "" {
@@ -52,13 +52,7 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 	}
 
 	if nicConfig.VmnetSubnet != "" && nicConfig.VmnetMask != "" {
-		subnet := cString(nicConfig.VmnetSubnet)
-		mask := cString(nicConfig.VmnetMask)
-		rc := vmnet.NetworkConfigurationSetIpv4Subnet(config,
-			unsafe.Pointer(&subnet[0]), unsafe.Pointer(&mask[0]))
-		runtime.KeepAlive(subnet)
-		runtime.KeepAlive(mask)
-		if rc != vmnet.VMNET_SUCCESS {
+		if rc := vmnetNetworkConfigurationSetIpv4Subnet(configRef, nicConfig.VmnetSubnet, nicConfig.VmnetMask); rc != vmnet.VMNET_SUCCESS {
 			return NIC{}, weaveerrors.ErrGeneric("failed to set vmnet subnet %s/%s (status %s)",
 				nicConfig.VmnetSubnet, nicConfig.VmnetMask, rc.String())
 		}
@@ -71,18 +65,18 @@ func buildVmnetNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, e
 		vmnet.NetworkConfigurationDisableNat44(config)
 	}
 
-	netStatus := vmnet.VMNET_SUCCESS
-	netPtr := vmnet.NetworkCreate(config, &netStatus)
-	if netPtr == nil || netStatus != vmnet.VMNET_SUCCESS {
+	netRef, netStatus := vmnetNetworkCreate(configRef)
+	if netRef == 0 || netStatus != vmnet.VMNET_SUCCESS {
 		return NIC{}, weaveerrors.ErrGeneric(
 			"failed to create vmnet network (status %s); the vmnet engine requires "+
 				"the com.apple.vm.networking entitlement or root", netStatus.String())
 	}
+	network := obj.Wrap(netRef)
 
 	return NIC{
-		Attachment: idvirt.NewVmnetNetworkDeviceAttachmentWithNetwork(netPtr),
+		Attachment: idvirt.NewVmnetNetworkDeviceAttachmentWithNetwork(network),
 		MAC:        mac,
-		engine:     &vmnetEngine{network: netPtr},
+		engine:     &vmnetEngine{network: network},
 	}, nil
 }
 
@@ -100,16 +94,11 @@ func vmnetOperatingMode(mode string) (vmnet.Operating_modes_t, error) {
 	}
 }
 
-// cString returns a null-terminated copy of s for passing to C as a char*.
-func cString(s string) []byte {
-	return append([]byte(s), 0)
-}
-
 // vmnetEngine holds the vmnet network reference for a vmnet-direct NIC. The
 // network must outlive the VM, so the reference is held for the VM's lifetime
 // and dropped on stop; the process exit reclaims the underlying network.
 type vmnetEngine struct {
-	network unsafe.Pointer
+	network obj.Object
 }
 
 func (e *vmnetEngine) run(sema *AsyncSemaphore) error { return nil }

@@ -16,6 +16,7 @@ import (
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
 
@@ -47,7 +48,7 @@ func NewFullFledgedVNC(vm *weavevm.VM, password string) *FullFledgedVNC {
 			Send(purego.RegisterName("alloc")).
 			Send(purego.RegisterName("initWithPort:queue:securityConfiguration:"),
 				uint16(0), globalQueue, securityConfiguration)
-		vnc.Send(purego.RegisterName("setVirtualMachine:"), vm.VirtualMachine.ID())
+		vnc.Send(purego.RegisterName("setVirtualMachine:"), obj.ID(vm.VirtualMachine))
 		vnc.Send(purego.RegisterName("start"))
 	})
 

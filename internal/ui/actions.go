@@ -25,6 +25,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/screenviewer"
 
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
@@ -101,7 +102,7 @@ func copyIPAddress() {
 	ip := addr.String()
 	pb := appkit.GeneralPasteboard()
 	pb.ClearContents()
-	pb.SetStringForType(ip, objcutil.NSStr(nsPasteboardTypeString).Unwrap())
+	pb.SetStringForType(ip, objcutil.NSStr(nsPasteboardTypeString))
 	showInfo("Copied", "Guest IP "+ip+" copied to the clipboard.")
 }
 
@@ -183,14 +184,14 @@ func takeScreenshot() {
 		Width:  float64(activeVM.Config.Display.Width),
 		Height: float64(activeVM.Config.Display.Height),
 	}}
-	view := appkit.ViewFromID(activeView.ID())
+	view := appkit.ViewFromID(obj.ID(activeView))
 	rep := view.BitmapImageRepForCachingDisplayInRect(rect)
 	if rep == nil {
 		showError("Screenshot failed", "Could not allocate a bitmap for the view.")
 		return
 	}
-	view.CacheDisplayInRectToBitmapImageRep(rect, rep.Unwrap())
-	png := rep.RepresentationUsingTypeProperties(appkit.NSBitmapImageFileTypePNG, nil)
+	view.CacheDisplayInRectToBitmapImageRep(rect, rep)
+	png := rep.RepresentationUsingTypeProperties(appkit.BitmapImageFileTypePNG, nil)
 	if png == nil {
 		showError("Screenshot failed", "PNG encoding failed.")
 		return
@@ -202,7 +203,7 @@ func takeScreenshot() {
 	}
 	path := filepath.Join(home, "Desktop",
 		fmt.Sprintf("guestweave-%s-%s.png", activeVM.Name, time.Now().Format("20060102-150405")))
-	if err := os.WriteFile(path, objcutil.NSDataToBytes(png.Ptr()), 0o644); err != nil {
+	if err := os.WriteFile(path, obj.Bytes(png), 0o644); err != nil {
 		showError("Screenshot failed", err.Error())
 		return
 	}

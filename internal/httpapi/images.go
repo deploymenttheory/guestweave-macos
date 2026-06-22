@@ -28,7 +28,7 @@ func (s *APIServer) handleIPSW(w http.ResponseWriter, r *http.Request) {
 	writeJSON(
 		w,
 		http.StatusOK,
-		map[string]string{"url": objcutil.GoStr(image.URL().AbsoluteString().Ptr())},
+		map[string]string{"url": objcutil.AbsoluteURLString(image.URL())},
 	)
 }
 
