@@ -314,8 +314,8 @@ func showError(title, message string) { runAlert(title, message) }
 
 func runAlert(title, message string) {
 	alert := appkit.NewAlert()
-	alert.SetMessageText(title)
-	alert.SetInformativeText(message)
+	alert.WithMessageText(title)
+	alert.WithInformativeText(message)
 	alert.RunModal()
 }
 
@@ -323,8 +323,8 @@ func runAlert(title, message string) {
 // (NSAlertFirstButtonReturn == 1000).
 func confirm(title, message string) bool {
 	alert := appkit.NewAlert()
-	alert.SetMessageText(title)
-	alert.SetInformativeText(message)
+	alert.WithMessageText(title)
+	alert.WithInformativeText(message)
 	alert.AddButtonWithTitle("OK")
 	alert.AddButtonWithTitle("Cancel")
 	return alert.RunModal() == 1000

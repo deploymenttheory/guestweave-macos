@@ -68,12 +68,12 @@ func (w *Window) Run() {
 
 	window := appkit.NewWindowWithContentRectStyleMaskBackingDefer(
 		contentRect, styleMask, appkit.BackingStoreBuffered, false)
-	window.SetTitle(w.VM.Name)
+	window.WithTitle(w.VM.Name)
 
 	machineView := virtualization.VirtualMachineViewFromID(
 		purego.Send[purego.ID](objcutil.AllocClass("VZVirtualMachineView"), purego.RegisterName("init")))
 	activeView = machineView
-	machineView.SetCapturesSystemKeys(w.CaptureSystemKeys)
+	machineView.WithCapturesSystemKeys(w.CaptureSystemKeys)
 
 	// If not specified, enable automatic display reconfiguration for guests
 	// that support it. Disabled for Linux because of poor HiDPI support.
@@ -82,11 +82,11 @@ func (w *Window) Run() {
 		displayRefit = *w.VM.Config.DisplayRefit
 	}
 	if weaveplatform.MacOSAtLeast(14) && displayRefit {
-		machineView.SetAutomaticallyReconfiguresDisplay(true)
+		machineView.WithAutomaticallyReconfiguresDisplay(true)
 	}
-	machineView.SetVirtualMachine(w.VM.VirtualMachine)
+	machineView.WithVirtualMachine(w.VM.VirtualMachine)
 
-	window.SetContentView(appkit.ViewFromID(obj.ID(machineView)))
+	window.WithContentView(appkit.ViewFromID(obj.ID(machineView)))
 	// NSWindow's delegate is a runtime class (target/action), set by hand.
 	obj.ID(window).Send(purego.RegisterName("setDelegate:"),
 		purego.ID(windowDelegateClass()).Send(purego.RegisterName("new")))
@@ -163,7 +163,7 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	// Control verbs, Quit).
 	addItem := func(menu *appkit.Menu, title, selector, keyEquivalent string) *appkit.MenuItem {
 		item := addMenuItemWithAction(menu, title, selector, keyEquivalent)
-		item.SetTarget(obj.Wrap(target))
+		item.WithTarget(obj.Wrap(target))
 		return item
 	}
 	// addStd adds a standard AppKit item with a nil target, so the action travels
@@ -189,12 +189,12 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	// Services submenu — macOS populates and manages it once registered.
 	servicesItem := addMenuItemWithAction(appMenu, "Services", "", "")
 	servicesMenu := newMenu("Services")
-	servicesItem.SetSubmenu(servicesMenu)
-	app.SetServicesMenu(servicesMenu)
+	servicesItem.WithSubmenu(servicesMenu)
+	app.WithServicesMenu(servicesMenu)
 	appMenu.AddItem(appkit.SeparatorItem())
 	addStd(appMenu, "Hide Weave", "hide:", "h")
 	hideOthers := addStd(appMenu, "Hide Others", "hideOtherApplications:", "h")
-	hideOthers.SetKeyEquivalentModifierMask(appkit.EventModifierFlagOption | appkit.EventModifierFlagCommand)
+	hideOthers.WithKeyEquivalentModifierMask(appkit.EventModifierFlagOption | appkit.EventModifierFlagCommand)
 	addStd(appMenu, "Show All", "unhideAllApplications:", "")
 	appMenu.AddItem(appkit.SeparatorItem())
 	addItem(appMenu, "VM Info…", "weaveVMInfo:", "")
@@ -219,7 +219,7 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	// ── View menu: full-screen toggle (AppKit auto-swaps Enter/Exit on the title).
 	viewMenu := addTopMenu("View")
 	fullScreen := addStd(viewMenu, "Enter Full Screen", "toggleFullScreen:", "f")
-	fullScreen.SetKeyEquivalentModifierMask(appkit.EventModifierFlagControl | appkit.EventModifierFlagCommand)
+	fullScreen.WithKeyEquivalentModifierMask(appkit.EventModifierFlagControl | appkit.EventModifierFlagCommand)
 	viewMenu.AddItem(appkit.SeparatorItem())
 	addItem(viewMenu, "Take Screenshot", "weaveScreenshot:", "s")
 	addItem(viewMenu, "Toggle Screen Share", "weaveScreenShare:", "")
@@ -244,9 +244,9 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	windowMenu := addTopMenu("Window")
 	addStd(windowMenu, "Minimize", "performMiniaturize:", "m")
 	addStd(windowMenu, "Zoom", "performZoom:", "")
-	app.SetWindowsMenu(windowMenu)
+	app.WithWindowsMenu(windowMenu)
 
-	app.SetMainMenu(mainMenu)
+	app.WithMainMenu(mainMenu)
 }
 
 // menuTargetClass registers the menu action target. Each Control menu item
