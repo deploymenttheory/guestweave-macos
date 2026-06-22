@@ -20,8 +20,8 @@ import (
 	"github.com/deploymenttheory/weave/internal/prune"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // AvailableCapacityBytes returns the volume capacity available for a
@@ -32,21 +32,21 @@ func AvailableCapacityBytes(path string) (uint64, error) {
 	availableKey := foundation.NSURLVolumeAvailableCapacityKey()
 	importantKey := foundation.NSURLVolumeAvailableCapacityForImportantUsageKey()
 
-	values, err := url.ResourceValuesForKeysError(availableKey, importantKey)
+	values, err := url.ResourceValuesForKeysError([]*foundation.String{availableKey, importantKey})
 	if err != nil {
 		return 0, err
 	}
-	if values == nil {
+	dict, ok := obj.As(values, "NSDictionary", foundation.DictionaryFromID)
+	if !ok {
 		return 0, nil
 	}
-	dict := foundation.DictionaryFromID(values.Ptr())
 
 	var capacity uint64
-	if id := dict.ObjectForKey(availableKey.ID()); id != 0 {
-		capacity = uint64(foundation.NumberFromID(purego.Retain(id)).IntegerValue())
+	if num, ok := obj.As(dict.ObjectForKey(availableKey), "NSNumber", foundation.NumberFromID); ok {
+		capacity = uint64(num.IntegerValue())
 	}
-	if id := dict.ObjectForKey(importantKey.ID()); id != 0 {
-		if v := foundation.NumberFromID(purego.Retain(id)).UnsignedLongLongValue(); v > capacity {
+	if num, ok := obj.As(dict.ObjectForKey(importantKey), "NSNumber", foundation.NumberFromID); ok {
+		if v := num.UnsignedLongLongValue(); v > capacity {
 			capacity = v
 		}
 	}

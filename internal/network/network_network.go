@@ -138,7 +138,7 @@ func buildNIC(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, error)
 // macFromString parses a MAC string into a MACAddress.
 func macFromString(s string) (*idvirt.MACAddress, error) {
 	mac := idvirt.NewMACAddressWithString(s)
-	if mac == nil || mac.ID() == 0 {
+	if mac == nil {
 		return nil, weaveerrors.ErrGeneric("invalid MAC address %q", s)
 	}
 	return mac, nil

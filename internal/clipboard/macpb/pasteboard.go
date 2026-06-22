@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/weave/internal/clipboard/wire"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 )
@@ -38,12 +38,12 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 
 	seen := map[wire.Canonical]bool{}
 	for _, nsType := range pb.Types() {
-		uti := objcutil.GoStr(nsType.Ptr())
+		uti := nsType.Description()
 		canon, ok := wire.CanonicalForUTI(uti)
 		if !ok || !allowed[canon] || seen[canon] || canon == wire.CanonFiles {
 			continue
 		}
-		data := objcutil.NSDataToBytes(pb.DataForType(objcutil.NSStr(uti).Unwrap()).Ptr())
+		data := obj.Bytes(pb.DataForType(objcutil.NSStr(uti)))
 		if len(data) == 0 || tooBig(int64(len(data)), maxBytes) {
 			continue
 		}
@@ -53,7 +53,7 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 
 	if allowed[wire.CanonFiles] {
 		for _, item := range pb.PasteboardItems() {
-			path := filePathFromURL(item.StringForType(objcutil.NSStr(FileURLType).Unwrap()))
+			path := filePathFromURL(item.StringForType(objcutil.NSStr(FileURLType)))
 			if path == "" {
 				continue
 			}
@@ -73,7 +73,7 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 // its own item, staged under stageDir and referenced by a file URL.
 func Write(p wire.Payload, stageDir string) error {
 	pb := appkit.GeneralPasteboard()
-	items := make([]purego.IDer, 0, len(p.Files)+1)
+	items := make([]obj.Object, 0, len(p.Files)+1)
 
 	if len(p.Items) > 0 {
 		item := appkit.NewPasteboardItem()
@@ -82,7 +82,7 @@ func Write(p wire.Payload, stageDir string) error {
 			if !ok {
 				continue
 			}
-			item.SetDataForType(objcutil.BytesToNSData(di.Data).Unwrap(), objcutil.NSStr(uti).Unwrap())
+			item.SetDataForType(objcutil.BytesToNSData(di.Data), objcutil.NSStr(uti))
 		}
 		items = append(items, item)
 	}
@@ -93,7 +93,7 @@ func Write(p wire.Payload, stageDir string) error {
 			return err
 		}
 		item := appkit.NewPasteboardItem()
-		item.SetStringForType((&url.URL{Scheme: "file", Path: path}).String(), objcutil.NSStr(FileURLType).Unwrap())
+		item.SetStringForType((&url.URL{Scheme: "file", Path: path}).String(), objcutil.NSStr(FileURLType))
 		items = append(items, item)
 	}
 
@@ -101,7 +101,7 @@ func Write(p wire.Payload, stageDir string) error {
 	if len(items) == 0 {
 		return nil
 	}
-	if !pb.WriteObjects(items...) {
+	if !pb.WriteObjects(items) {
 		return errWriteObjects
 	}
 	return nil

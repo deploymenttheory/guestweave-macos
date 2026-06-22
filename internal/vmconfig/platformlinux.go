@@ -37,7 +37,7 @@ func (p *LinuxPlatform) Platform(nvramPath string, needsNestedVirtualization boo
 func (p *LinuxPlatform) GraphicsDevice(vmConfig *VMConfig) virtualization.GraphicsDeviceConfigurationProvider {
 	scanout := virtualization.NewVirtioGraphicsScanoutConfigurationWithWidthInPixelsHeightInPixels(
 		vmConfig.Display.Width, vmConfig.Display.Height)
-	return virtualization.NewVirtioGraphicsDeviceConfiguration().WithScanouts(scanout.Unwrap())
+	return virtualization.NewVirtioGraphicsDeviceConfiguration().WithScanouts(scanout)
 }
 
 func (p *LinuxPlatform) Keyboards() []virtualization.KeyboardConfigurationProvider {

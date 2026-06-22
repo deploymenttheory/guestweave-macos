@@ -11,20 +11,31 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"unsafe"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/rt"
 )
 
 // nsData builds an idiomatic NSData from a Go byte slice.
 func nsData(b []byte) *foundation.Data {
-	if len(b) == 0 {
-		return foundation.NewDataWithBytesLength(nil, 0)
+	return foundation.DataFromID(rt.BytesToNSData(b))
+}
+
+// dictUint64 reads an unsigned-integer value stored under key in dict.
+func dictUint64(dict *foundation.Dictionary, key string) (uint64, bool) {
+	num, ok := obj.As(dict.ObjectForKey(foundation.NewStringWithUTF8String(key)), "NSNumber", foundation.NumberFromID)
+	if !ok {
+		return 0, false
 	}
-	return foundation.NewDataWithBytesLength(unsafe.Pointer(&b[0]), uint(len(b)))
+	return num.UnsignedLongLongValue(), true
+}
+
+// dictDict reads a nested dictionary stored under key in dict.
+func dictDict(dict *foundation.Dictionary, key string) (*foundation.Dictionary, bool) {
+	return obj.As(dict.ObjectForKey(foundation.NewStringWithUTF8String(key)), "NSDictionary", foundation.DictionaryFromID)
 }
 
 // SizeInfo ports Diskutil.swift's SizeInfo ("Size Info" plist dictionary).
@@ -75,23 +86,25 @@ func DiskutilImageInfo(diskPath string) (*ImageInfo, error) {
 		return nil, err
 	}
 
-	plistID, err := foundation.PropertyListWithDataOptionsFormatError(nsData(stdoutData).Unwrap(), 0, nil)
-	if err != nil || plistID == 0 {
+	// NSPropertyListSerialization writes the detected format to an out-parameter,
+	// which the idiomatic binding surfaces as an extra return value (discarded).
+	plistObj, _, err := foundation.PropertyListWithDataOptionsFormatError(nsData(stdoutData), 0)
+	if err != nil || plistObj == nil {
 		return nil, weaveerrors.ErrGeneric("Failed to parse \"diskutil image info --plist\" output: %v", err)
 	}
-	plist := foundation.DictionaryFromID(plistID)
+	plist, ok := obj.As(plistObj, "NSDictionary", foundation.DictionaryFromID)
+	if !ok {
+		return nil, weaveerrors.ErrGeneric("Unexpected \"diskutil image info --plist\" output shape")
+	}
 
 	info := &ImageInfo{}
-	if sizeID := plist.ObjectForKey(purego.NSString("Size")); sizeID != 0 {
-		size := foundation.NumberFromID(purego.Retain(sizeID)).UnsignedLongLongValue()
+	if size, ok := dictUint64(plist, "Size"); ok {
 		info.Size = &size
 	}
-	if sizeInfoID := plist.ObjectForKey(purego.NSString("Size Info")); sizeInfoID != 0 {
+	if sizeInfo, ok := dictDict(plist, "Size Info"); ok {
 		info.SizeInfo = &SizeInfo{}
-		sizeInfo := foundation.DictionaryFromID(purego.Retain(sizeInfoID))
-		if totalID := sizeInfo.ObjectForKey(purego.NSString("Total Bytes")); totalID != 0 {
-			totalBytes := foundation.NumberFromID(purego.Retain(totalID)).UnsignedLongLongValue()
-			info.SizeInfo.TotalBytes = &totalBytes
+		if total, ok := dictUint64(sizeInfo, "Total Bytes"); ok {
+			info.SizeInfo.TotalBytes = &total
 		}
 	}
 

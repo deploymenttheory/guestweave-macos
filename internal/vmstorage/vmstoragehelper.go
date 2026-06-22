@@ -9,14 +9,13 @@ package vmstorage
 import (
 	"errors"
 	"os"
-	"slices"
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	"github.com/deploymenttheory/weave/internal/oci"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/errkit"
 )
 
 // VMStorageHelperOpen ports VMStorageHelper.open(_:): dispatches to the OCI
@@ -81,25 +80,16 @@ func missingVMWrap(name string, closure func() (*vmdirectory.VMDirectory, error)
 // isFileNotFound ports tart's NSError/Error isFileNotFound() extensions: true
 // when err (or any of its underlying errors) is an NSError with a Cocoa
 // file-not-found code.
-func isFileNotFound(err error) bool {
-	if errors.Is(err, os.ErrNotExist) {
-		return true
-	}
-	var objcErr *objcerrors.ObjCError
-	if !errors.As(err, &objcErr) {
-		return false
-	}
-	return objcErrIsFileNotFound(objcErr) || slices.ContainsFunc(objcErr.Underlying, objcErrIsFileNotFound)
-}
-
-// Cocoa file-not-found error codes (NSFileNoSuchFileError /
-// NSFileReadNoSuchFileError) for NSError-wrapped failures still arriving from
-// the raw network paths.
-const (
-	cocoaFileNoSuchFileError     = 4
-	cocoaFileReadNoSuchFileError = 260
+// Cocoa file-not-found sentinels (NSFileNoSuchFileError / NSFileReadNoSuchFileError).
+// errors.Is matches these on domain+code and walks the NSError underlying-error
+// chain automatically via errkit.Error.Unwrap, so no manual recursion is needed.
+var (
+	errCocoaFileNoSuchFile     = errkit.New("NSCocoaErrorDomain", 4)
+	errCocoaFileReadNoSuchFile = errkit.New("NSCocoaErrorDomain", 260)
 )
 
-func objcErrIsFileNotFound(err *objcerrors.ObjCError) bool {
-	return err.Code == cocoaFileNoSuchFileError || err.Code == cocoaFileReadNoSuchFileError
+func isFileNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, errCocoaFileNoSuchFile) ||
+		errors.Is(err, errCocoaFileReadNoSuchFile)
 }

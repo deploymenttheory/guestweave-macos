@@ -8,6 +8,7 @@ package vm
 import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
@@ -35,7 +36,7 @@ func (vm *VM) sendURLErrorCompletion(selector string, path string) error {
 	// closure.
 	url := objcutil.NSURLFromPath(path)
 	mainthread.Do(func() {
-		vm.VirtualMachine.ID().Send(purego.RegisterName(selector), url.ID(), block)
+		obj.ID(vm.VirtualMachine).Send(purego.RegisterName(selector), obj.ID(url), block)
 	})
 	return <-errCh
 }

@@ -24,7 +24,7 @@ func buildBridged(nicConfig vmconfig.NICConfig, mac *idvirt.MACAddress) (NIC, er
 			nicConfig.BridgedInterface, strings.Join(BridgeInterfaces(), ", "))
 	}
 	return NIC{
-		Attachment: idvirt.NewBridgedNetworkDeviceAttachmentWithInterface(iface.Unwrap()),
+		Attachment: idvirt.NewBridgedNetworkDeviceAttachmentWithInterface(iface),
 		MAC:        mac,
 	}, nil
 }

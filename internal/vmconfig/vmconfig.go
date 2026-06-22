@@ -244,7 +244,7 @@ func (c *VMConfig) UnmarshalJSON(data []byte) error {
 	c.MemorySize = decoded.MemorySize
 
 	macAddress := idvirt.NewMACAddressWithString(decoded.MACAddress)
-	if macAddress == nil || macAddress.Unwrap() == nil {
+	if macAddress == nil {
 		return weaveerrors.ErrGeneric("failed to initialize VZMacAddress using the provided value")
 	}
 	c.MACAddress = macAddress
@@ -256,7 +256,7 @@ func (c *VMConfig) UnmarshalJSON(data []byte) error {
 	c.NICs = decoded.NICs
 	if primary := c.PrimaryNIC(); primary != nil && primary.MACAddress != "" {
 		primaryMAC := idvirt.NewMACAddressWithString(primary.MACAddress)
-		if primaryMAC != nil && primaryMAC.Unwrap() != nil {
+		if primaryMAC != nil {
 			c.MACAddress = primaryMAC
 		}
 	}

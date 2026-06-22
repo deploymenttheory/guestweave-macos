@@ -4,7 +4,8 @@ go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/deploymenttheory/go-bindings-macosplatform v0.9.0
+	github.com/deploymenttheory/go-bindings-macosplatform v0.10.0
+	github.com/ebitengine/purego v0.10.1
 	github.com/getkin/kin-openapi v0.140.0
 	github.com/getsentry/sentry-go v0.47.0
 	github.com/getsentry/sentry-go/otel v0.47.0
@@ -34,7 +35,6 @@ require (
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect

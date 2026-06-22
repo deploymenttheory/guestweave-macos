@@ -177,7 +177,7 @@ func setSocketBuffers(fd int, sizeBytes int) error {
 // attachment builds the VM-side VZFileHandleNetworkDeviceAttachment over the
 // softnet socketpair.
 func (s *Softnet) attachment() idvirt.NetworkDeviceAttachmentProvider {
-	fileHandle := idfoundation.NewFileHandleWithFileDescriptorCloseOnDealloc(s.VMFD, false).Unwrap()
+	fileHandle := idfoundation.NewFileHandleWithFileDescriptorCloseOnDealloc(s.VMFD, false)
 	return idvirt.NewFileHandleNetworkDeviceAttachmentWithFileHandle(fileHandle)
 }
 
