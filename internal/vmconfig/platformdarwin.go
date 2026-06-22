@@ -49,7 +49,7 @@ func newDarwinPlatformFromJSON(config vmConfigJSON) (*DarwinPlatform, error) {
 	if err != nil {
 		return nil, weaveerrors.ErrGeneric("failed to initialize Data using the provided value")
 	}
-	ecid := idiomatic.NewMacMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData))
+	ecid := idiomatic.NewMACMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData))
 	if ecid == nil {
 		return nil, weaveerrors.ErrGeneric("failed to initialize VZMacMachineIdentifier using the provided value")
 	}
@@ -58,7 +58,7 @@ func newDarwinPlatformFromJSON(config vmConfigJSON) (*DarwinPlatform, error) {
 	if err != nil {
 		return nil, weaveerrors.ErrGeneric("failed to initialize Data using the provided value")
 	}
-	hardwareModel := idiomatic.NewMacHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
+	hardwareModel := idiomatic.NewMACHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
 	if hardwareModel == nil {
 		return nil, UnsupportedHostOSError{}
 	}
@@ -92,7 +92,7 @@ func (p *DarwinPlatform) Platform(nvramPath string, needsNestedVirtualization bo
 
 	return idiomatic.NewMacPlatformConfiguration().
 		WithMachineIdentifier(p.ECID).
-		WithAuxiliaryStorage(idiomatic.NewMacAuxiliaryStorageWithURL(nvramPath)).
+		WithAuxiliaryStorage(idiomatic.NewMACAuxiliaryStorageWithURL(nvramPath)).
 		WithHardwareModel(p.HardwareModel), nil
 }
 
@@ -106,13 +106,13 @@ func (p *DarwinPlatform) GraphicsDevice(vmConfig *VMConfig) idiomatic.GraphicsDe
 			Width:  float64(vmConfig.Display.Width),
 			Height: float64(vmConfig.Display.Height),
 		}
-		display := idiomatic.NewMacGraphicsDisplayConfigurationForScreenSizeInPoints(hostMainScreen, vmScreenSize)
+		display := idiomatic.NewMACGraphicsDisplayConfigurationForScreenSizeInPoints(hostMainScreen, vmScreenSize)
 		return idiomatic.NewMacGraphicsDeviceConfiguration().WithDisplays(display)
 	}
 
 	// 72 PPI is a reasonable guess according to Apple's CGDisplayScreenSize
 	// documentation.
-	display := idiomatic.NewMacGraphicsDisplayConfigurationWithWidthInPixelsHeightInPixelsPixelsPerInch(
+	display := idiomatic.NewMACGraphicsDisplayConfigurationWithWidthInPixelsHeightInPixelsPixelsPerInch(
 		vmConfig.Display.Width, vmConfig.Display.Height, 72)
 	return idiomatic.NewMacGraphicsDeviceConfiguration().WithDisplays(display)
 }

@@ -64,7 +64,7 @@ func lumePlatform(description *oci.VMDescription) (vmconfig.Platform, error) {
 		if err != nil || len(ecidData) == 0 {
 			return nil, weaveerrors.ErrPullFailed("lume image has a missing or malformed machine identifier")
 		}
-		ecid := idvirt.NewMacMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData))
+		ecid := idvirt.NewMACMachineIdentifierWithDataRepresentation(objcutil.BytesToNSData(ecidData))
 		if ecid == nil {
 			return nil, weaveerrors.ErrPullFailed("lume image machine identifier is not a valid VZMacMachineIdentifier")
 		}
@@ -73,7 +73,7 @@ func lumePlatform(description *oci.VMDescription) (vmconfig.Platform, error) {
 		if err != nil || len(hardwareModelData) == 0 {
 			return nil, weaveerrors.ErrPullFailed("lume image has a missing or malformed hardware model")
 		}
-		hardwareModel := idvirt.NewMacHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
+		hardwareModel := idvirt.NewMACHardwareModelWithDataRepresentation(objcutil.BytesToNSData(hardwareModelData))
 		if hardwareModel == nil {
 			return nil, vmconfig.UnsupportedHostOSError{}
 		}

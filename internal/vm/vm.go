@@ -418,7 +418,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 	}
 
 	// Create NVRAM.
-	if _, err := idiomatic.NewMacAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
+	if _, err := idiomatic.NewMACAuxiliaryStorageCreatingStorageAtURLHardwareModelOptionsError(
 		vmDir.NvramURL(), requirements.HardwareModel(), 0); err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ func loadMacOSRestoreImage(ctx context.Context, ipswPath string) (*idiomatic.Mac
 func (vm *VM) install(ctx context.Context, ipswPath string) error {
 	var installer *idiomatic.MacOSInstaller
 	mainthread.Do(func() {
-		installer = idiomatic.NewMacOSInstallerWithVirtualMachineRestoreImageURL(
+		installer = idiomatic.NewMACOSInstallerWithVirtualMachineRestoreImageURL(
 			vm.VirtualMachine, ipswPath)
 	})
 
@@ -645,7 +645,7 @@ func (vm *VM) startMachine(recovery bool) error {
 
 	mainthread.Do(func() {
 		startOptions := idiomatic.NewMacOSVirtualMachineStartOptions()
-		startOptions.SetStartUpFromMacOSRecovery(recovery)
+		startOptions.WithStartUpFromMACOSRecovery(recovery)
 		obj.ID(vm.VirtualMachine).Send(
 			purego.RegisterName("startWithOptions:completionHandler:"), obj.ID(startOptions), block)
 	})
@@ -756,7 +756,7 @@ func craftConfiguration(diskPath string, nvramPath string,
 	// engine owns the clipboard, so its policy is the single source of truth.
 	if !options.NoClipboard && !options.ClipboardPolicyEnabled {
 		spiceAgentPortAttachment := idiomatic.NewSpiceAgentPortAttachment()
-		spiceAgentPortAttachment.SetSharesClipboard(true)
+		spiceAgentPortAttachment.WithSharesClipboard(true)
 		spiceAgentPort := idiomatic.NewVirtioConsolePortConfiguration().
 			WithName(idiomatic.SpiceAgentPortName()).
 			WithAttachment(spiceAgentPortAttachment)
@@ -807,7 +807,7 @@ func craftConfiguration(diskPath string, nvramPath string,
 	// guest images discovers the host by this exact prefix, so it must not
 	// be renamed to weave.
 	consolePort := idiomatic.NewVirtioConsolePortConfiguration()
-	consolePort.SetName("tart-version-" + ci.CIVersion())
+	consolePort.WithName("tart-version-" + ci.CIVersion())
 	consoleDevice := idiomatic.NewVirtioConsoleDeviceConfiguration()
 	setConsolePort(consoleDevice, 0, consolePort)
 	consoleDevices = append(consoleDevices, consoleDevice)
