@@ -79,6 +79,25 @@ type VMConfig struct {
 	// ClipboardPolicy optionally overrides the enterprise clipboard policy for
 	// this VM. nil means "use the settings default / CLI flags".
 	ClipboardPolicy *clipboardpolicy.Policy
+	// Windows holds Windows-guest settings; non-nil only when OS == OSWindows.
+	// Windows VMs run on the QEMU backend and leave Platform nil.
+	Windows *WindowsConfig
+}
+
+// WindowsConfig holds the QEMU-backed Windows guest settings persisted in a
+// VM's config.json. Firmware vars, the QMP socket and the system disk live in
+// the VM directory under fixed names; only the install media and its provenance
+// are recorded here.
+type WindowsConfig struct {
+	// Release is the Windows 11 feature release the install media was built
+	// for, e.g. "24H2". Informational/provenance.
+	Release string `json:"release,omitempty"`
+	// Edition is the Windows edition, e.g. "Professional".
+	Edition string `json:"edition,omitempty"`
+	// InstallISO is the path to the bootable install ISO (typically cached
+	// under ~/.weave/cache/windows/iso). Empty once Windows is installed and
+	// the media is detached.
+	InstallISO string `json:"installISO,omitempty"`
 }
 
 // NewVMConfig ports VMConfig.init(platform:cpuCountMin:memorySizeMin:
@@ -169,8 +188,15 @@ func (c *VMConfig) jsonObject() (map[string]any, error) {
 	if c.ClipboardPolicy != nil {
 		object["clipboardPolicy"] = c.ClipboardPolicy
 	}
-	if err := c.Platform.platformEncodeJSON(object); err != nil {
-		return nil, err
+	if c.Windows != nil {
+		object["windows"] = c.Windows
+	}
+	// Windows guests run on the QEMU backend and carry no VZ Platform; their
+	// only platform-specific key is the "windows" object above.
+	if c.Platform != nil {
+		if err := c.Platform.platformEncodeJSON(object); err != nil {
+			return nil, err
+		}
 	}
 	return object, nil
 }
@@ -201,6 +227,9 @@ type vmConfigJSON struct {
 	NICs            []NICConfig                 `json:"nics"`
 	ClipboardPolicy *clipboardpolicy.Policy     `json:"clipboardPolicy"`
 
+	// Windows-guest settings (present only for OS == windows).
+	Windows *WindowsConfig `json:"windows"`
+
 	// macOS-specific keys
 	ECID          string `json:"ecid"`
 	HardwareModel string `json:"hardwareModel"`
@@ -227,6 +256,10 @@ func (c *VMConfig) UnmarshalJSON(data []byte) error {
 	switch c.OS {
 	case weaveplatform.OSLinux:
 		c.Platform = &LinuxPlatform{}
+	case weaveplatform.OSWindows:
+		// Windows guests run on the QEMU backend; they carry no VZ Platform.
+		c.Platform = nil
+		c.Windows = decoded.Windows
 	default:
 		if runtime.GOARCH != "arm64" {
 			return weaveerrors.ErrGeneric("Darwin VMs are only supported on Apple Silicon hosts")

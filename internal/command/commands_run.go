@@ -325,11 +325,18 @@ func (c *RunCommand) RunMainThread() error {
 		return err
 	}
 
-	// Validate disk format support.
 	vmConfig, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return err
 	}
+
+	// Windows guests run on the QEMU backend, which is a self-contained
+	// subprocess path with none of the VZ/AppKit machinery below.
+	if vmConfig.OS == weaveplatform.OSWindows {
+		return c.runWindows(vmDir, vmConfig)
+	}
+
+	// Validate disk format support.
 	if !vmConfig.DiskFormat.IsSupported() {
 		return weaveerrors.ErrGeneric(
 			"Disk format '%s' is not supported on this system.",

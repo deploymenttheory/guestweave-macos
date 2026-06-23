@@ -50,6 +50,8 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		fs := weavecommand.NewFlagSet(name)
 		fs.StringVar(&command.FromIPSW, "from-ipsw", "", "")
 		fs.BoolVar(&command.Linux, "linux", false, "")
+		fs.StringVar(&command.FromWindows, "from-windows", "", "")
+		fs.StringVar(&command.WindowsEdition, "windows-edition", "", "")
 		fs.StringVar(&command.NetProfile, "net-profile", "", "")
 		diskSize := fs.Uint("disk-size", 50, "")
 		diskFormat := fs.String("disk-format", "raw", "")

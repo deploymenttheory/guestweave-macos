@@ -28,8 +28,15 @@ type CreateCommand struct {
 	Name       string
 	FromIPSW   string
 	Linux      bool
-	DiskSize   uint16
-	DiskFormat diskimage.DiskImageFormat
+	// FromWindows creates a Windows 11 ARM64 guest from the named feature
+	// release (e.g. "24H2"); the install media is fetched and built via the
+	// winmediafoundry SDK and the VM runs on the QEMU backend.
+	FromWindows string
+	// WindowsEdition selects the Windows edition (default "Professional");
+	// only meaningful with FromWindows.
+	WindowsEdition string
+	DiskSize       uint16
+	DiskFormat     diskimage.DiskImageFormat
 	// NetProfile optionally persists a default network profile into the new
 	// VM's config (nat|internet-only|isolated|vm-lab|bridged). Empty leaves
 	// the VM on the implicit single NAT NIC, overridable at run time.
@@ -37,11 +44,17 @@ type CreateCommand struct {
 }
 
 func (c *CreateCommand) Validate() error {
-	if c.FromIPSW == "" && !c.Linux {
-		return weaveerrors.ErrGeneric("Please specify either a --from-ipsw or --linux option!")
+	if c.FromIPSW == "" && !c.Linux && c.FromWindows == "" {
+		return weaveerrors.ErrGeneric("Please specify one of --from-ipsw, --linux or --from-windows!")
+	}
+	if c.FromWindows != "" && (c.FromIPSW != "" || c.Linux) {
+		return weaveerrors.ErrGeneric("--from-windows cannot be combined with --from-ipsw or --linux")
 	}
 	if runtime.GOARCH != "arm64" && c.FromIPSW != "" {
 		return weaveerrors.ErrGeneric("Only Linux VMs are supported on Intel!")
+	}
+	if c.FromWindows != "" && runtime.GOARCH != "arm64" {
+		return weaveerrors.ErrGeneric("Windows 11 ARM64 guests require an Apple Silicon host")
 	}
 
 	// Validate disk format support.
@@ -107,6 +120,13 @@ func (c *CreateCommand) Run(ctx context.Context) error {
 
 	if c.Linux {
 		if _, err := weavevm.VMLinux(tmpVMDir, c.DiskSize, c.DiskFormat); err != nil {
+			cleanup()
+			return err
+		}
+	}
+
+	if c.FromWindows != "" {
+		if err := c.createWindows(ctx, tmpVMDir); err != nil {
 			cleanup()
 			return err
 		}
