@@ -5,6 +5,7 @@ package hvmm
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -49,6 +50,9 @@ type VCPU struct {
 	// so a guest CPU loop (which never exits on its own) can be sampled rather
 	// than spinning forever.
 	Watchdog time.Duration
+	// ReadMem, if set, reads guest memory — used to dump the instructions a stuck
+	// guest is spinning on.
+	ReadMem func(gpa uint64, n int) []byte
 }
 
 // SetReg writes a general/PC/PSTATE register (call on the vCPU's owning thread).
@@ -131,6 +135,21 @@ func (m *Machine) NewVCPU(entryPC uint64) (*VCPU, error) {
 	if err := hvErr("hv_vcpu_create", rc); err != nil {
 		return nil, err
 	}
+	// GICv3 uses affinity-based routing: per Apple's hv_gic docs the vCPU's
+	// affinity MUST be set in MPIDR_EL1 before the in-kernel GIC realizes its
+	// redistributor (otherwise hv_gic_get_redistributor_base fails and the
+	// redistributor MMIO never maps). CPU 0 = affinity 0 with the RES1 bit, which
+	// matches the DTB's cpu@0 reg=<0x0>.
+	if err := hvErr("set MPIDR_EL1", hv.HvVcpuSetSysReg(id, hv.HV_SYS_REG_MPIDR_EL1, mpidrCPU0)); err != nil {
+		return nil, err
+	}
+	// Establish the virtual counter: CNTVCT_EL0 = mach_absolute_time() - offset.
+	// Parallels calls hv_vcpu_set_vtimer_offset at vCPU init; without it the guest
+	// counter relationship is undefined and the vtimer never reaches its deadline.
+	// Offset 0 makes the guest see the host monotonic counter directly.
+	if err := hvErr("hv_vcpu_set_vtimer_offset", hv.HvVcpuSetVtimerOffset(id, 0)); err != nil {
+		return nil, err
+	}
 	// Unmask the virtual timer so it fires (Parallels does this at vCPU init);
 	// the run loop then turns a vtimer activation into an injected IRQ.
 	if err := hvErr("hv_vcpu_set_vtimer_mask", hv.HvVcpuSetVtimerMask(id, false)); err != nil {
@@ -175,6 +194,8 @@ func (v *VCPU) Run(h Handler) error {
 	pendingIRQ := false
 	var stuckPC uint64
 	stuckSamples := 0
+	vtimerTicks := 0
+	var lastTickPC uint64
 
 	for {
 		if pendingIRQ {
@@ -231,7 +252,30 @@ func (v *VCPU) Run(h Handler) error {
 				return err
 			}
 
-		default: // CANCELED — typically our watchdog forcing a stuck guest out.
+		default: // CANCELED — our watchdog forced the vCPU out (and may have
+			// coalesced a vtimer activation). HVF masks the vtimer when it fires;
+			// if it is masked, re-arm it so periodic timer interrupts keep flowing
+			// to the guest via the in-kernel GIC, and treat that as progress.
+			if _, masked := hv.HvVcpuGetVtimerMask(v.id); masked {
+				_ = hv.HvVcpuSetVtimerMask(v.id, false)
+				// NOTE: injecting HV_INTERRUPT_TYPE_IRQ here (as Parallels does for
+				// its guest) delivers an IRQ edk2 takes at EL2 as an unhandled "IRQ
+				// Exception" — the vtimer PPI isn't pending in the in-kernel GIC, so
+				// ICC_IAR reads spurious. Routing the VTimer PPI to the guest GIC at
+				// EL2 is the remaining piece; for now we only re-arm the vtimer.
+				vtimerTicks++
+				if vtimerTicks%50 == 0 {
+					pc := v.regOrZero(hv.HV_REG_PC)
+					moving := pc != lastTickPC
+					hcr := v.sysReg(hv.HV_SYS_REG_HCR_EL2)
+					v.tracef("vtimer tick %d: PC=0x%x moving=%v  HCR_EL2=0x%x(IMO=%d FMO=%d TGE=%d)  VBAR_EL2=0x%x VBAR_EL1=0x%x",
+						vtimerTicks, pc, moving, hcr, (hcr>>4)&1, (hcr>>3)&1, (hcr>>27)&1,
+						v.sysReg(hv.HV_SYS_REG_VBAR_EL2), v.sysReg(hv.HV_SYS_REG_VBAR_EL1))
+					lastTickPC = pc
+				}
+				stuckPC, stuckSamples = 0, 0
+				continue
+			}
 			pc := v.regOrZero(hv.HV_REG_PC)
 			if pc == stuckPC {
 				stuckSamples++
@@ -239,11 +283,32 @@ func (v *VCPU) Run(h Handler) error {
 				stuckPC, stuckSamples = pc, 0
 			}
 			ctl := v.sysReg(hv.HV_SYS_REG_CNTV_CTL_EL0)
-			mpidr := v.sysReg(hv.HV_SYS_REG_MPIDR_EL1)
-			v.tracef("watchdog sample: PC=0x%x  MPIDR_EL1=0x%x (aff=0x%x)  CNTV_CTL=0x%x(EN=%d)  X19=0x%x exits=%d",
-				pc, mpidr, mpidr&0xffffff, ctl, ctl&1, v.regOrZero(hv.HV_REG_X19), v.exits)
+			cval := v.sysReg(hv.HV_SYS_REG_CNTV_CVAL_EL0)
+			voff := v.sysReg(hv.HV_SYS_REG_CNTVOFF_EL2)
+			daif := (v.regOrZero(hv.HV_REG_CPSR) >> 6) & 0xf // PSTATE.{D,A,I,F}
+			_, vtMasked := hv.HvVcpuGetVtimerMask(v.id)
+			v.tracef("watchdog: PC=0x%x  CNTV_CTL=0x%x(EN=%d IMASK=%d ISTATUS=%d)  CVAL=0x%x  vtimerMasked=%v  DAIF=0x%x(I=%d)  exits=%d",
+				pc, ctl, ctl&1, (ctl>>1)&1, (ctl>>2)&1, cval, vtMasked, daif, (daif>>1)&1, v.exits)
+			_ = voff
+			v.tracef("  regs: X19=0x%x X20=0x%x X21=0x%x X22=0x%x LR=0x%x",
+				v.regOrZero(hv.HV_REG_X19), v.regOrZero(hv.HV_REG_X20), v.regOrZero(hv.HV_REG_X21), v.regOrZero(hv.HV_REG_X22), v.regOrZero(hv.HV_REG_LR))
+			if stuckSamples == 1 && v.ReadMem != nil {
+				lr := v.regOrZero(hv.HV_REG_LR)
+				for _, blk := range []struct {
+					name string
+					at   uint64
+				}{{"loop@LR", (lr &^ 3) - 0x20}, {"leaf@PC", pc &^ 3}} {
+					if code := v.ReadMem(blk.at, 64); code != nil {
+						var sb strings.Builder
+						for i := 0; i+4 <= len(code); i += 4 {
+							fmt.Fprintf(&sb, "%08x ", uint32(code[i])|uint32(code[i+1])<<8|uint32(code[i+2])<<16|uint32(code[i+3])<<24)
+						}
+						v.tracef("%s @0x%x: %s", blk.name, blk.at, sb.String())
+					}
+				}
+			}
 			if stuckSamples >= 3 {
-				return fmt.Errorf("guest spinning near PC=0x%x with no VM exits — polling for an interrupt-driven update that needs a modelled interrupt controller", pc)
+				return fmt.Errorf("guest spinning near PC=0x%x: virtual timer enabled (CNTV_CTL=0x%x) but ISTATUS never trips — HVF vtimer not advancing in this EL2 VM", pc, ctl)
 			}
 		}
 	}

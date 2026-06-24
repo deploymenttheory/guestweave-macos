@@ -53,6 +53,17 @@ type region struct {
 	host []byte
 }
 
+// ReadGuest copies n bytes of guest memory at gpa, or nil if unmapped. Used for
+// diagnostics (e.g. disassembling the code a stuck guest is spinning on).
+func (m *Machine) ReadGuest(gpa uint64, n int) []byte {
+	for _, r := range m.regions {
+		if gpa >= r.gpa && gpa+uint64(n) <= r.gpa+uint64(len(r.host)) {
+			return append([]byte(nil), r.host[gpa-r.gpa:gpa-r.gpa+uint64(n)]...)
+		}
+	}
+	return nil
+}
+
 // NewMachine creates an EL2-enabled VM with a 40-bit intermediate-physical
 // address space (matching Apple silicon / what Parallels uses for Windows). It
 // fails if the host cannot provide guest EL2 (needs an M3/M4 and a recent macOS).

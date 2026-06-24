@@ -38,7 +38,17 @@ func (c *HvmmCommand) Run(ctx context.Context) error {
 			maxExits = 20000
 		}
 		return hvmm.Boot(os.Stdout, fw, maxExits, c.Step)
+	case "snapshot":
+		fw := c.Firmware
+		if fw == "" {
+			fw = defaultEDK2
+		}
+		maxExits := c.MaxExits
+		if maxExits == 0 {
+			maxExits = 3000
+		}
+		return hvmm.SnapshotRoundTrip(os.Stdout, fw, "/tmp/weave-hvmm.snap", maxExits)
 	default:
-		return fmt.Errorf("usage: weave hvmm [test | boot [firmware.fd]]")
+		return fmt.Errorf("usage: weave hvmm [test | boot [firmware.fd]] | snapshot [firmware.fd]]")
 	}
 }

@@ -51,3 +51,4 @@ coverage.html
 # ...and if built from inside their own package directories:
 /internal/acceptance/acceptance
 /internal/guestweaveagent/cmd/weave-guestd/weave-guestd
+hvmmtest

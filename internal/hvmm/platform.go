@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strconv"
 	"time"
 
 	hv "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/hypervisor"
@@ -22,7 +23,11 @@ const (
 	bootRAMBase    uint64 = 0x4000_0000
 	bootRAMSize    int    = 0x1000_0000 // 256 MiB
 	bootUARTBase   uint64 = 0x0900_0000
-	cpsrEL2hMasked uint64 = 0x3c9 // M=EL2h (0x9) | DAIF (0x3c0) — firmware enters at EL2
+	bootFwCfgBase  uint64 = 0x0902_0000
+	bootEcamBase   uint64 = 0x40_1000_0000 // PCIe ECAM config space (DTB pcie node)
+	bootEcamSize   uint64 = 0x1000_0000
+	cpsrEL2hMasked uint64 = 0x3c9        // M=EL2h (0x9) | DAIF (0x3c0) — firmware enters at EL2
+	mpidrCPU0      uint64 = 0x8000_0000 // MPIDR_EL1 for CPU 0: RES1 bit, affinity 0.0.0.0
 )
 
 // Platform is a minimal, deliberately permissive virt machine used to bring up
@@ -31,6 +36,8 @@ const (
 // touches (fw_cfg, GIC, RTC, …). It is a discovery aid, not a complete machine.
 type Platform struct {
 	uart     *pl011
+	fwcfg    *fwcfg
+	flash    *cfiFlash
 	out      io.Writer
 	exits    int
 	maxExits int
@@ -47,6 +54,26 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 			p.uart.write(off, a.Bytes, a.Value)
 		} else {
 			a.Value = p.uart.read(off, a.Bytes)
+		}
+	case a.Addr >= bootVarsBase && a.Addr < bootVarsBase+uint64(bootVarsSize):
+		if p.flash == nil {
+			p.flash = newCFIFlash(bootVarsSize)
+		}
+		off := a.Addr - bootVarsBase
+		if a.Write {
+			p.flash.write(off, a.Bytes, a.Value)
+		} else {
+			a.Value = p.flash.read(off, a.Bytes)
+		}
+	case a.Addr >= bootFwCfgBase && a.Addr < bootFwCfgBase+0x18:
+		if p.fwcfg == nil {
+			p.fwcfg = &fwcfg{}
+		}
+		off := a.Addr - bootFwCfgBase
+		if a.Write {
+			p.fwcfg.write(off, a.Bytes, a.Value)
+		} else {
+			a.Value = p.fwcfg.read(off, a.Bytes)
 		}
 	case a.Addr >= gicRedistBase && a.Addr < gicRedistBase+0x20000:
 		// Apple's in-kernel GIC maps the (shared) distributor itself but leaves the
@@ -69,6 +96,13 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 					p.unknown[a.Addr]++
 				}
 			}
+		}
+	case a.Addr >= bootEcamBase && a.Addr < bootEcamBase+bootEcamSize:
+		// PCIe ECAM config space with no devices populated: config reads must
+		// return all-ones so enumeration sees absent functions and stops, rather
+		// than discovering a phantom device (vendor 0x0000) at every address.
+		if !a.Write {
+			a.Value = ^uint64(0) >> (64 - 8*uint(a.Bytes))
 		}
 	default:
 		if p.unknown[a.Addr] == 0 {
@@ -96,64 +130,30 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	m, err := NewMachine()
-	if err != nil {
-		return err
-	}
-	defer m.Close()
-	fmt.Fprintln(out, "✓ EL2-enabled VM created")
-
-	// Apple's in-kernel GICv3 — must be created before any vCPU.
-	if err := m.CreateGIC(out); err != nil {
-		return fmt.Errorf("create GIC: %w", err)
-	}
-	fmt.Fprintln(out, "✓ in-kernel GICv3 created (CPU interface system registers active)")
-
-	fw, err := os.ReadFile(fwPath)
-	if err != nil {
-		return fmt.Errorf("read firmware %q: %w", fwPath, err)
-	}
-	flash, err := m.MapRAM(bootFlashBase, roundUp(len(fw), 0x1000))
-	if err != nil {
-		return err
-	}
-	copy(flash, fw)
-	fmt.Fprintf(out, "✓ loaded firmware %s (%d MiB) at guest-physical 0x%08x\n", fwPath, len(fw)>>20, bootFlashBase)
-
-	if _, err := m.MapRAM(bootVarsBase, bootVarsSize); err != nil {
-		return err
-	}
-	ram, err := m.MapRAM(bootRAMBase, bootRAMSize)
-	if err != nil {
-		return err
-	}
-	// edk2 ArmVirtQemu's MemoryInit PEIM reads the device tree from the base of
-	// RAM (PcdDeviceTreeInitialBaseAddress) — without it that PEIM ASSERTs and
-	// dead-loops. Place our QEMU-virt DTB there.
-	copy(ram, virtDTB)
-	fmt.Fprintf(out, "✓ mapped %d MiB RAM at 0x%08x + %d-byte DTB at base (+ %d MiB NV store at 0x%08x)\n",
-		bootRAMSize>>20, bootRAMBase, len(virtDTB), bootVarsSize>>20, bootVarsBase)
-
-	vcpu, err := m.NewVCPU(bootFlashBase)
-	if err != nil {
-		return err
-	}
-	defer vcpu.Destroy()
-	rcRB, rb := hv.HvGicGetRedistributorBase(vcpu.ID())
-	fmt.Fprintf(out, "  GIC: vCPU %d redistributor base = 0x%08x (rc=0x%x; DTB declares 0x%08x)\n", vcpu.ID(), rb, uint32(rcRB), gicRedistBase)
-	vcpu.Trace = out
-	vcpu.MaxExits = maxExits
-	if !step {
-		vcpu.Watchdog = 2 * time.Second // force a stuck guest out so we can sample its PC
-	}
 	// Software-step (MDSCR_EL1.SS) only steps EL0/EL1, so the step-trace enters at
 	// EL1h; the spin is identical at EL1, so the path it reveals is the same.
 	entryCPSR, mode := cpsrEL2hMasked, "EL2h"
 	if step {
 		entryCPSR, mode = cpsrEL1hMasked, "EL1h, single-step trace"
 	}
-	if err := vcpu.SetReg(hv.HV_REG_CPSR, entryCPSR); err != nil {
+	m, vcpu, err := setupGuest(out, fwPath, entryCPSR)
+	if err != nil {
 		return err
+	}
+	defer m.Close()
+	defer vcpu.Destroy()
+	vcpu.Trace = out
+	vcpu.MaxExits = maxExits
+	if !step {
+		// Short interval: when the guest spins waiting on the virtual timer, this
+		// is also how often we re-arm the (HVF-masked) vtimer, so it doubles as the
+		// guest's effective timer-interrupt rate. 100ms ≈ a 10Hz tick.
+		vcpu.Watchdog = 100 * time.Millisecond
+		if s := os.Getenv("WEAVE_WATCHDOG_MS"); s != "" {
+			if ms, err := strconv.Atoi(s); err == nil {
+				vcpu.Watchdog = time.Duration(ms) * time.Millisecond
+			}
+		}
 	}
 	fmt.Fprintf(out, "✓ vCPU %d entering firmware at PC=0x%08x (%s)\n\n--- firmware output ---\n", vcpu.ID(), bootFlashBase, mode)
 
@@ -170,6 +170,59 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	}
 	fmt.Fprintf(out, "\n--- run ended after %d device exits ---\n", p.exits)
 	return runErr
+}
+
+// setupGuest builds the standard guest used for both boot and snapshot: an EL2
+// VM + in-kernel GICv3, the firmware mapped at guest-physical 0, RAM with the DTB
+// at its base, an NV-variable store, and a vCPU entering at entryCPSR. On error
+// it cleans up the partially-built VM. Caller owns Close/Destroy on success.
+func setupGuest(out io.Writer, fwPath string, entryCPSR uint64) (*Machine, *VCPU, error) {
+	m, err := NewMachine()
+	if err != nil {
+		return nil, nil, err
+	}
+	fmt.Fprintln(out, "✓ EL2-enabled VM created")
+	if err := m.CreateGIC(out); err != nil {
+		_ = m.Close()
+		return nil, nil, fmt.Errorf("create GIC: %w", err)
+	}
+	fmt.Fprintln(out, "✓ in-kernel GICv3 created (CPU interface system registers active)")
+
+	fw, err := os.ReadFile(fwPath)
+	if err != nil {
+		_ = m.Close()
+		return nil, nil, fmt.Errorf("read firmware %q: %w", fwPath, err)
+	}
+	flash, err := m.MapRAM(bootFlashBase, roundUp(len(fw), 0x1000))
+	if err != nil {
+		_ = m.Close()
+		return nil, nil, err
+	}
+	copy(flash, fw)
+	// The NV variable store (pflash) is intentionally left unmapped so its accesses
+	// trap and the CFI flash device (Platform.flash) can model the command/status
+	// protocol edk2's NorFlashDxe needs.
+	ram, err := m.MapRAM(bootRAMBase, bootRAMSize)
+	if err != nil {
+		_ = m.Close()
+		return nil, nil, err
+	}
+	copy(ram, virtDTB) // edk2 reads the device tree from RAM base
+	fmt.Fprintf(out, "✓ firmware %s (%d MiB) + %d MiB RAM + %d-byte DTB + %d MiB NV store mapped\n",
+		fwPath, len(fw)>>20, bootRAMSize>>20, len(virtDTB), bootVarsSize>>20)
+
+	vcpu, err := m.NewVCPU(bootFlashBase)
+	if err != nil {
+		_ = m.Close()
+		return nil, nil, err
+	}
+	if err := vcpu.SetReg(hv.HV_REG_CPSR, entryCPSR); err != nil {
+		_ = vcpu.Destroy()
+		_ = m.Close()
+		return nil, nil, err
+	}
+	vcpu.ReadMem = m.ReadGuest
+	return m, vcpu, nil
 }
 
 func roundUp(n, align int) int { return (n + align - 1) &^ (align - 1) }
