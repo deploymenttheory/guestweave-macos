@@ -26,6 +26,8 @@ const (
 	bootFwCfgBase  uint64 = 0x0902_0000
 	bootEcamBase   uint64 = 0x40_1000_0000 // PCIe ECAM config space (DTB pcie node)
 	bootEcamSize   uint64 = 0x1000_0000
+	bootVirtioBase uint64 = 0x0a00_0000 // first virtio-mmio slot (DTB virtio nodes)
+	bootVirtioSize uint64 = 0x200
 	cpsrEL2hMasked uint64 = 0x3c9        // M=EL2h (0x9) | DAIF (0x3c0) — firmware enters at EL2
 	mpidrCPU0      uint64 = 0x8000_0000 // MPIDR_EL1 for CPU 0: RES1 bit, affinity 0.0.0.0
 )
@@ -35,13 +37,14 @@ const (
 // address once and returns zero so the firmware keeps running and reveals what it
 // touches (fw_cfg, GIC, RTC, …). It is a discovery aid, not a complete machine.
 type Platform struct {
-	uart     *pl011
-	fwcfg    *fwcfg
-	flash    *cfiFlash
-	out      io.Writer
-	exits    int
-	maxExits int
-	unknown  map[uint64]int
+	uart      *pl011
+	fwcfg     *fwcfg
+	flash     *cfiFlash
+	virtioblk *virtioBlk // nil unless a disk image is attached
+	out       io.Writer
+	exits     int
+	maxExits  int
+	unknown   map[uint64]int
 }
 
 // HandleMMIO routes a guest device access to the UART or logs it as unknown.
@@ -96,6 +99,13 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 					p.unknown[a.Addr]++
 				}
 			}
+		}
+	case p.virtioblk != nil && a.Addr >= bootVirtioBase && a.Addr < bootVirtioBase+bootVirtioSize:
+		off := a.Addr - bootVirtioBase
+		if a.Write {
+			p.virtioblk.write(off, a.Bytes, a.Value)
+		} else {
+			a.Value = p.virtioblk.read(off, a.Bytes)
 		}
 	case a.Addr >= bootEcamBase && a.Addr < bootEcamBase+bootEcamSize:
 		// PCIe ECAM config space with no devices populated: config reads must
@@ -162,6 +172,14 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	uart := &pl011{out: out, in: make(chan byte, 256)}
 	go uart.pumpInput(os.Stdin) // host stdin drives the guest serial console
 	p := &Platform{uart: uart, out: out, maxExits: maxExits, unknown: map[uint64]int{}}
+	if disk := os.Getenv("WEAVE_HVMM_DISK"); disk != "" {
+		data, derr := os.ReadFile(disk)
+		if derr != nil {
+			return fmt.Errorf("read disk %q: %w", disk, derr)
+		}
+		p.virtioblk = newVirtioBlk(m, data)
+		fmt.Fprintf(out, "[disk] virtio-blk %s (%d MiB) at 0x%08x\n", disk, len(data)>>20, bootVirtioBase)
+	}
 	var runErr error
 	if step {
 		budget := maxExits
