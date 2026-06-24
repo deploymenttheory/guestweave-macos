@@ -87,7 +87,13 @@ jobs:
               grep -n "ArmGenericTimerCounterLib" ArmVirtPkg/ArmVirt.dsc.inc
 
               make -C BaseTools
+              # edksetup.sh references $WORKSPACE before it sets it, which is
+              # fatal under `set -u`; the edk2 build env is not nounset-clean,
+              # so relax it across the source (edksetup exports WORKSPACE /
+              # EDK_TOOLS_PATH itself).
+              set +u
               source ./edksetup.sh
+              set -u
               export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
               build -a AARCH64 -t GCC5 -b "$TARGET" -p ArmVirtPkg/ArmVirtQemu.dsc
 
