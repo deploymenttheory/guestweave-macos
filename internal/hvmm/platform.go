@@ -70,7 +70,7 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 		}
 	case a.Addr >= bootFwCfgBase && a.Addr < bootFwCfgBase+0x18:
 		if p.fwcfg == nil {
-			p.fwcfg = &fwcfg{}
+			p.fwcfg = newFwCfg()
 		}
 		off := a.Addr - bootFwCfgBase
 		if a.Write {
