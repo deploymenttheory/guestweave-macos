@@ -35,9 +35,7 @@ const (
 
 // hvErr turns a non-zero hv_return_t into an error.
 func hvErr(what string, rc int) error {
-	// hv_return_t is a 32-bit value; some purego trampolines leave junk in the
-	// upper bits of the returned Go int, so only the low 32 bits are significant.
-	if uint32(rc) == 0 {
+	if rc == 0 {
 		return nil
 	}
 	return fmt.Errorf("%s: hv_return=0x%08x", what, uint32(rc))
