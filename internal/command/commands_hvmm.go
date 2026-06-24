@@ -18,9 +18,8 @@ type HvmmCommand struct {
 	Action   string // "test" (default) or "boot"
 	Firmware string // boot: path to an ARM64 UEFI firmware .fd (default: homebrew edk2)
 	MaxExits int    // boot: bound the run by device-exit count (0 = unbounded)
+	Step     bool   // boot: single-step trace the firmware's control flow
 }
-
-const defaultEDK2 = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 
 // Run executes the selected hvmm action.
 func (c *HvmmCommand) Run(ctx context.Context) error {
@@ -28,16 +27,18 @@ func (c *HvmmCommand) Run(ctx context.Context) error {
 	case "", "test", "selftest":
 		return hvmm.SelfTest(os.Stdout)
 	case "boot":
-		fw := c.Firmware
-		if fw == "" {
-			fw = defaultEDK2
-		}
 		maxExits := c.MaxExits
-		if maxExits == 0 {
+		if maxExits == 0 && !c.Step {
 			maxExits = 20000
 		}
-		return hvmm.Boot(os.Stdout, fw, maxExits)
+		return hvmm.Boot(os.Stdout, hvmm.ResolveFirmware(c.Firmware), maxExits, c.Step)
+	case "snapshot":
+		maxExits := c.MaxExits
+		if maxExits == 0 {
+			maxExits = 3000
+		}
+		return hvmm.SnapshotRoundTrip(os.Stdout, hvmm.ResolveFirmware(c.Firmware), "/tmp/weave-hvmm.snap", maxExits)
 	default:
-		return fmt.Errorf("usage: weave hvmm [test | boot [firmware.fd]]")
+		return fmt.Errorf("usage: weave hvmm [test | boot [firmware.fd]] | snapshot [firmware.fd]]")
 	}
 }

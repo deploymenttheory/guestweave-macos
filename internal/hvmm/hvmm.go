@@ -35,7 +35,9 @@ const (
 
 // hvErr turns a non-zero hv_return_t into an error.
 func hvErr(what string, rc int) error {
-	if rc == 0 {
+	// hv_return_t is a 32-bit value; some purego trampolines leave junk in the
+	// upper bits of the returned Go int, so only the low 32 bits are significant.
+	if uint32(rc) == 0 {
 		return nil
 	}
 	return fmt.Errorf("%s: hv_return=0x%08x", what, uint32(rc))
@@ -51,6 +53,17 @@ type Machine struct {
 type region struct {
 	gpa  uint64
 	host []byte
+}
+
+// ReadGuest copies n bytes of guest memory at gpa, or nil if unmapped. Used for
+// diagnostics (e.g. disassembling the code a stuck guest is spinning on).
+func (m *Machine) ReadGuest(gpa uint64, n int) []byte {
+	for _, r := range m.regions {
+		if gpa >= r.gpa && gpa+uint64(n) <= r.gpa+uint64(len(r.host)) {
+			return append([]byte(nil), r.host[gpa-r.gpa:gpa-r.gpa+uint64(n)]...)
+		}
+	}
+	return nil
 }
 
 // NewMachine creates an EL2-enabled VM with a 40-bit intermediate-physical
