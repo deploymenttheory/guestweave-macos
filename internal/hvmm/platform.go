@@ -135,6 +135,8 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	entryCPSR, mode := cpsrEL2hMasked, "EL2h"
 	if step {
 		entryCPSR, mode = cpsrEL1hMasked, "EL1h, single-step trace"
+	} else if os.Getenv("WEAVE_ENTRY_EL1") != "" {
+		entryCPSR, mode = cpsrEL1hMasked, "EL1h" // diagnostic: virtual-timer IRQ targets EL1
 	}
 	m, vcpu, err := setupGuest(out, fwPath, entryCPSR)
 	if err != nil {
@@ -145,10 +147,10 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	vcpu.Trace = out
 	vcpu.MaxExits = maxExits
 	if !step {
-		// Short interval: when the guest spins waiting on the virtual timer, this
-		// is also how often we re-arm the (HVF-masked) vtimer, so it doubles as the
-		// guest's effective timer-interrupt rate. 100ms ≈ a 10Hz tick.
-		vcpu.Watchdog = 100 * time.Millisecond
+		// Liveness only: force a spinning guest out periodically so it can be
+		// sampled. The physical-timer firmware's interrupts are delivered by the
+		// Apple vGIC without host involvement, so this no longer paces the timer.
+		vcpu.Watchdog = 2 * time.Second
 		if s := os.Getenv("WEAVE_WATCHDOG_MS"); s != "" {
 			if ms, err := strconv.Atoi(s); err == nil {
 				vcpu.Watchdog = time.Duration(ms) * time.Millisecond
@@ -193,10 +195,17 @@ func setupGuest(out io.Writer, fwPath string, entryCPSR uint64) (*Machine, *VCPU
 		_ = m.Close()
 		return nil, nil, fmt.Errorf("read firmware %q: %w", fwPath, err)
 	}
-	flash, err := m.MapRAM(bootFlashBase, roundUp(len(fw), 0x1000))
+	// Map the whole code-flash region (up to the NV store) and copy the firmware
+	// into its base, so the image size is irrelevant — a compact CI-built FV and a
+	// 64 MiB distro image both work.
+	flash, err := m.MapRAM(bootFlashBase, int(bootVarsBase))
 	if err != nil {
 		_ = m.Close()
 		return nil, nil, err
+	}
+	if len(fw) > len(flash) {
+		_ = m.Close()
+		return nil, nil, fmt.Errorf("firmware %q (%d bytes) exceeds the %d-byte code-flash region", fwPath, len(fw), len(flash))
 	}
 	copy(flash, fw)
 	// The NV variable store (pflash) is intentionally left unmapped so its accesses
@@ -224,8 +233,6 @@ func setupGuest(out io.Writer, fwPath string, entryCPSR uint64) (*Machine, *VCPU
 	vcpu.ReadMem = m.ReadGuest
 	return m, vcpu, nil
 }
-
-func roundUp(n, align int) int { return (n + align - 1) &^ (align - 1) }
 
 func rwVerb(write bool) string {
 	if write {

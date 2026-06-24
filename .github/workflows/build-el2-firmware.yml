@@ -1,0 +1,115 @@
+# Builds a custom EDK2 ArmVirtQemu AARCH64 firmware that uses the ARM **physical**
+# generic timer instead of the virtual one, then opens a PR committing the result.
+#
+# Why: Apple's Hypervisor.framework has a bug (Apple Feedback FB21649319) where a
+# guest running at EL2 with the in-kernel vGIC (hv_gic) NEVER receives the VIRTUAL
+# timer interrupt (CNTV / PPI 27). Stock edk2 ArmVirtQemu uses the virtual timer,
+# so our internal/hvmm EL2 VMM stalls at the UEFI boot manager waiting for a timer
+# tick that never arrives. The QEMU "HVF: platform vGIC and nested virtualisation"
+# series documents the fix: build the firmware against the PHYSICAL timer
+# (ArmGenericTimerPhyCounterLib) — the Apple vGIC *does* deliver the physical-timer
+# PPI at EL2. This workflow performs that one-line library swap and rebuilds.
+#
+# Refs: https://www.mail-archive.com/qemu-devel@nongnu.org/msg1173078.html (FB21649319)
+#       https://www.mail-archive.com/qemu-devel@nongnu.org/msg1131823.html (CNTHCTL_EL2)
+name: Build EL2 firmware (physical-timer edk2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      edk2_tag:
+        description: edk2 git tag to build
+        default: edk2-stable202408
+        required: false
+      build_target:
+        description: edk2 build target (DEBUG keeps the verbose firmware log)
+        default: DEBUG
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout weave (PR target)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v7.0.0
+
+      # The edk2 build itself runs inside a Docker container, as requested, so the
+      # toolchain is fully pinned/reproducible and isolated from the runner.
+      - name: Build physical-timer edk2 in Docker
+        run: |
+          set -euxo pipefail
+          mkdir -p "$PWD/out"
+          docker run --rm \
+            -e EDK2_TAG="${{ github.event.inputs.edk2_tag || 'edk2-stable202408' }}" \
+            -e TARGET="${{ github.event.inputs.build_target || 'DEBUG' }}" \
+            -v "$PWD/out:/out" \
+            ubuntu:22.04 bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                git build-essential uuid-dev iasl nasm python3 python3-venv \
+                gcc-aarch64-linux-gnu ca-certificates
+              git clone --branch "$EDK2_TAG" --depth 1 https://github.com/tianocore/edk2.git
+              cd edk2
+              git submodule update --init --depth 1
+
+              # FB21649319 workaround: swap the virtual generic-timer counter library
+              # for the physical one so ArmVirtQemu uses the physical timer (PPI 30),
+              # which the Apple vGIC delivers at EL2 (the virtual timer / PPI 27 does
+              # not). This is the single line that changes the firmware behaviour.
+              sed -i \
+                "s#ArmGenericTimerVirtCounterLib/ArmGenericTimerVirtCounterLib.inf#ArmGenericTimerPhyCounterLib/ArmGenericTimerPhyCounterLib.inf#" \
+                ArmVirtPkg/ArmVirt.dsc.inc
+              grep -n "ArmGenericTimerCounterLib" ArmVirtPkg/ArmVirt.dsc.inc
+
+              make -C BaseTools
+              source ./edksetup.sh
+              export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
+              build -a AARCH64 -t GCC5 -b "$TARGET" -p ArmVirtPkg/ArmVirtQemu.dsc
+
+              FV="Build/ArmVirtQemu-AARCH64/${TARGET}_GCC5/FV/QEMU_EFI.fd"
+              ls -la "$FV"
+              cp "$FV" /out/edk2-aarch64-code-phytimer.fd
+            '
+          ls -la "$PWD/out"
+          echo "FW_BYTES=$(stat -c%s out/edk2-aarch64-code-phytimer.fd)" >> "$GITHUB_ENV"
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: edk2-aarch64-code-phytimer
+          path: out/edk2-aarch64-code-phytimer.fd
+          if-no-files-found: error
+
+      - name: Stage firmware into the repo
+        run: |
+          set -euxo pipefail
+          mkdir -p internal/hvmm/firmware
+          cp out/edk2-aarch64-code-phytimer.fd internal/hvmm/firmware/edk2-aarch64-code-phytimer.fd
+
+      - name: Open PR with the firmware
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: ci/el2-physical-timer-firmware
+          commit-message: "feat(hvmm): physical-timer edk2 firmware (FB21649319 workaround)"
+          title: "feat(hvmm): physical-timer edk2 firmware (FB21649319 workaround)"
+          body: |
+            Auto-built EDK2 ArmVirtQemu AARCH64 firmware using the **physical**
+            generic timer (`ArmGenericTimerPhyCounterLib`) instead of the virtual
+            timer.
+
+            Rationale: Apple bug **FB21649319** — a guest at EL2 with the in-kernel
+            vGIC never receives the virtual-timer interrupt (CNTV/PPI 27). The
+            physical-timer PPI *is* delivered, so `internal/hvmm` can drive edk2's
+            timer events past the boot manager.
+
+            - edk2 tag: `${{ github.event.inputs.edk2_tag || 'edk2-stable202408' }}`
+            - target: `${{ github.event.inputs.build_target || 'DEBUG' }}`
+            - size: `${{ env.FW_BYTES }}` bytes
+
+            Built by `.github/workflows/build-el2-firmware.yml`.
+          add-paths: internal/hvmm/firmware/edk2-aarch64-code-phytimer.fd

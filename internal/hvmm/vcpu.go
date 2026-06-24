@@ -5,7 +5,6 @@ package hvmm
 import (
 	"fmt"
 	"io"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -191,18 +190,10 @@ func (v *VCPU) Run(h Handler) error {
 		}()
 	}
 
-	pendingIRQ := false
 	var stuckPC uint64
 	stuckSamples := 0
-	vtimerTicks := 0
-	var lastTickPC uint64
 
 	for {
-		if pendingIRQ {
-			if err := hvErr("hv_vcpu_set_pending_interrupt", hv.HvVcpuSetPendingInterrupt(v.id, hv.HV_INTERRUPT_TYPE_IRQ, true)); err != nil {
-				return err
-			}
-		}
 		if err := hvErr("hv_vcpu_run", hv.HvVcpuRun(v.id)); err != nil {
 			return err
 		}
@@ -242,73 +233,30 @@ func (v *VCPU) Run(h Handler) error {
 			}
 
 		case hv.HV_EXIT_REASON_VTIMER_ACTIVATED:
-			// The guest's virtual timer fired (HVF auto-masks it on exit). Assert
-			// the timer IRQ so a WFI-waiting guest wakes, then re-enable the timer.
-			// (Validated against Parallels: VTIMER_ACTIVATED → raise PPI 27 → the
-			// next run injects it via hv_vcpu_set_pending_interrupt.)
-			v.tracef("VTIMER fired → asserting timer IRQ")
-			pendingIRQ = true
-			if err := hvErr("hv_vcpu_set_vtimer_mask", hv.HvVcpuSetVtimerMask(v.id, false)); err != nil {
-				return err
-			}
+			// The physical-timer firmware (FB21649319 workaround) does not arm the
+			// virtual timer, so this should not normally fire. If it does, HVF has
+			// already auto-masked it on exit; leave it masked and carry on. The
+			// physical-timer PPI is delivered to the guest by the Apple vGIC with no
+			// host involvement.
 
-		default: // CANCELED — our watchdog forced the vCPU out (and may have
-			// coalesced a vtimer activation). HVF masks the vtimer when it fires;
-			// if it is masked, re-arm it so periodic timer interrupts keep flowing
-			// to the guest via the in-kernel GIC, and treat that as progress.
-			if _, masked := hv.HvVcpuGetVtimerMask(v.id); masked {
-				_ = hv.HvVcpuSetVtimerMask(v.id, false)
-				// NOTE: injecting HV_INTERRUPT_TYPE_IRQ here (as Parallels does for
-				// its guest) delivers an IRQ edk2 takes at EL2 as an unhandled "IRQ
-				// Exception" — the vtimer PPI isn't pending in the in-kernel GIC, so
-				// ICC_IAR reads spurious. Routing the VTimer PPI to the guest GIC at
-				// EL2 is the remaining piece; for now we only re-arm the vtimer.
-				vtimerTicks++
-				if vtimerTicks%50 == 0 {
-					pc := v.regOrZero(hv.HV_REG_PC)
-					moving := pc != lastTickPC
-					hcr := v.sysReg(hv.HV_SYS_REG_HCR_EL2)
-					v.tracef("vtimer tick %d: PC=0x%x moving=%v  HCR_EL2=0x%x(IMO=%d FMO=%d TGE=%d)  VBAR_EL2=0x%x VBAR_EL1=0x%x",
-						vtimerTicks, pc, moving, hcr, (hcr>>4)&1, (hcr>>3)&1, (hcr>>27)&1,
-						v.sysReg(hv.HV_SYS_REG_VBAR_EL2), v.sysReg(hv.HV_SYS_REG_VBAR_EL1))
-					lastTickPC = pc
-				}
-				stuckPC, stuckSamples = 0, 0
-				continue
-			}
+		default: // CANCELED — the watchdog forced the vCPU out so a momentarily
+			// spinning guest can be sampled for liveness. No vtimer re-arm is needed
+			// any more: with the physical-timer firmware the Apple vGIC delivers the
+			// timer PPI at EL2 (the virtual-timer PPI is not delivered — FB21649319).
 			pc := v.regOrZero(hv.HV_REG_PC)
 			if pc == stuckPC {
 				stuckSamples++
 			} else {
 				stuckPC, stuckSamples = pc, 0
 			}
-			ctl := v.sysReg(hv.HV_SYS_REG_CNTV_CTL_EL0)
-			cval := v.sysReg(hv.HV_SYS_REG_CNTV_CVAL_EL0)
-			voff := v.sysReg(hv.HV_SYS_REG_CNTVOFF_EL2)
-			daif := (v.regOrZero(hv.HV_REG_CPSR) >> 6) & 0xf // PSTATE.{D,A,I,F}
-			_, vtMasked := hv.HvVcpuGetVtimerMask(v.id)
-			v.tracef("watchdog: PC=0x%x  CNTV_CTL=0x%x(EN=%d IMASK=%d ISTATUS=%d)  CVAL=0x%x  vtimerMasked=%v  DAIF=0x%x(I=%d)  exits=%d",
-				pc, ctl, ctl&1, (ctl>>1)&1, (ctl>>2)&1, cval, vtMasked, daif, (daif>>1)&1, v.exits)
-			_ = voff
-			v.tracef("  regs: X19=0x%x X20=0x%x X21=0x%x X22=0x%x LR=0x%x",
-				v.regOrZero(hv.HV_REG_X19), v.regOrZero(hv.HV_REG_X20), v.regOrZero(hv.HV_REG_X21), v.regOrZero(hv.HV_REG_X22), v.regOrZero(hv.HV_REG_LR))
-			if stuckSamples == 1 && v.ReadMem != nil {
-				lr := v.regOrZero(hv.HV_REG_LR)
-				for _, blk := range []struct {
-					name string
-					at   uint64
-				}{{"loop@LR", (lr &^ 3) - 0x20}, {"leaf@PC", pc &^ 3}} {
-					if code := v.ReadMem(blk.at, 64); code != nil {
-						var sb strings.Builder
-						for i := 0; i+4 <= len(code); i += 4 {
-							fmt.Fprintf(&sb, "%08x ", uint32(code[i])|uint32(code[i+1])<<8|uint32(code[i+2])<<16|uint32(code[i+3])<<24)
-						}
-						v.tracef("%s @0x%x: %s", blk.name, blk.at, sb.String())
+			if stuckSamples >= 5 {
+				hint := ""
+				if v.ReadMem != nil {
+					if code := v.ReadMem(pc&^3, 16); code != nil {
+						hint = fmt.Sprintf(" code=%x", code)
 					}
 				}
-			}
-			if stuckSamples >= 3 {
-				return fmt.Errorf("guest spinning near PC=0x%x: virtual timer enabled (CNTV_CTL=0x%x) but ISTATUS never trips — HVF vtimer not advancing in this EL2 VM", pc, ctl)
+				return fmt.Errorf("guest hung near PC=0x%x across %d watchdog samples%s", pc, stuckSamples, hint)
 			}
 		}
 	}
@@ -325,20 +273,69 @@ func (v *VCPU) regOrZero(reg hv.Hv_reg_t) uint64 {
 	return val
 }
 
-// emulateSysReg services a trapped system-register access permissively: reads
-// return 0 into the destination register, writes are dropped. Enough to keep
-// firmware moving during bring-up; specific registers get real emulation later.
+// emulateSysReg services a trapped system-register access. For the EL2 registers
+// HVF traps but the guest must really use, it proxies to the actual register;
+// everything else stays permissive (reads return 0, writes are dropped) to keep
+// firmware moving during bring-up.
 func (v *VCPU) emulateSysReg(esr uint64) error {
 	iss := esr & 0x1ffffff
-	isRead := iss&1 == 1 // Direction bit (1 = read)
+	isRead := iss&1 == 1 // Direction bit (1 = read/MRS)
 	rt := hv.Hv_reg_t((iss >> 5) & 0x1f)
-	v.tracef("MSR/MRS %s (ISS=0x%x)", map[bool]string{true: "read", false: "write"}[isRead], iss)
+	// Decode the encoded register identity (Op0/Op1/CRn/CRm/Op2) from the ISS.
+	op0 := (iss >> 20) & 0x3
+	op2 := (iss >> 17) & 0x7
+	op1 := (iss >> 14) & 0x7
+	crn := (iss >> 10) & 0xf
+	crm := (iss >> 1) & 0xf
+
+	// HVF traps CNTHCTL_EL2 (which the firmware programs to use the EL1 physical
+	// timer — our FB21649319 workaround) and MDCCINT_EL1. Pass those through to the
+	// real register via hv_vcpu_get/set_sys_reg, exactly as QEMU's HVF backend does
+	// (see "target/arm: hvf: pass through CNTHCTL_EL2 and MDCCINT_EL1"); returning 0
+	// would break the firmware's timer setup.
+	if reg, ok := passthroughSysReg(op0, op1, crn, crm, op2); ok {
+		if isRead {
+			rc, val := hv.HvVcpuGetSysReg(v.id, reg)
+			if err := hvErr("hv_vcpu_get_sys_reg", rc); err != nil {
+				return err
+			}
+			if rt != 31 {
+				if err := v.SetReg(hv.HV_REG_X0+rt, val); err != nil {
+					return err
+				}
+			}
+		} else {
+			var val uint64
+			if rt != 31 {
+				val = v.regOrZero(hv.HV_REG_X0 + rt)
+			}
+			if err := hvErr("hv_vcpu_set_sys_reg", hv.HvVcpuSetSysReg(v.id, reg, val)); err != nil {
+				return err
+			}
+		}
+		return v.advancePC(esr)
+	}
+
+	v.tracef("MSR/MRS %s op0=%d op1=%d CRn=%d CRm=%d op2=%d (ISS=0x%x)",
+		map[bool]string{true: "read", false: "write"}[isRead], op0, op1, crn, crm, op2, iss)
 	if isRead && rt != 31 {
 		if err := v.SetReg(hv.HV_REG_X0+rt, 0); err != nil {
 			return err
 		}
 	}
 	return v.advancePC(esr)
+}
+
+// passthroughSysReg maps the EL2 system registers HVF traps (and that the guest
+// must really use) to their Hv_sys_reg_t, mirroring QEMU's HVF passthrough set.
+func passthroughSysReg(op0, op1, crn, crm, op2 uint64) (hv.Hv_sys_reg_t, bool) {
+	switch {
+	case op0 == 3 && op1 == 4 && crn == 14 && crm == 1 && op2 == 0: // CNTHCTL_EL2
+		return hv.HV_SYS_REG_CNTHCTL_EL2, true
+	case op0 == 2 && op1 == 0 && crn == 0 && crm == 2 && op2 == 0: // MDCCINT_EL1
+		return hv.HV_SYS_REG_MDCCINT_EL1, true
+	}
+	return 0, false
 }
 
 // advancePC moves PC past the trapped instruction (2 bytes for a 16-bit, 4 for a
