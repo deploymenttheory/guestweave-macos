@@ -1,0 +1,120 @@
+# Builds a real AARCH64 UEFI application (edk2's canonical MdeModulePkg HelloWorld,
+# a genuine UefiApplicationEntryPoint PE32+) and opens a PR committing the result.
+#
+# Why: internal/hvmm's from-scratch EL2 VMM now boots edk2 to an interactive UEFI
+# shell and serves a virtio-blk disk. To prove the boot-FROM-disk path end to end —
+# that edk2's BdsDxe auto-launches the removable-media default \EFI\BOOT\BOOTAA64.EFI
+# off our disk — we need a real EFI binary on that disk. Rather than hand-assemble a
+# PE, this builds one with edk2's own toolchain so the test fixture is a real,
+# reproducible artifact. (The eventual Windows target boots Microsoft's own
+# bootmgfw.efi; this app only validates the disk/BDS path beforehand.)
+name: Build UEFI test app (AARCH64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      edk2_tag:
+        description: edk2 git tag to build
+        default: edk2-stable202408
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout weave (PR target)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v7.0.0
+
+      - name: Build HelloWorld.efi in Docker
+        run: |
+          set -euxo pipefail
+          mkdir -p "$PWD/out"
+          docker run --rm \
+            -e EDK2_TAG="${{ github.event.inputs.edk2_tag || 'edk2-stable202408' }}" \
+            -v "$PWD/out:/out" \
+            ubuntu:22.04 bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                git build-essential uuid-dev iasl nasm python3 python3-venv \
+                python-is-python3 gcc-aarch64-linux-gnu ca-certificates
+              # Same scoped submodule set the firmware build uses: only what the
+              # .dec metadata validation needs, skipping the flaky UnitTest/Redfish
+              # /RegEx submodules (subhook etc.). See build-el2-firmware.yml.
+              export GIT_TERMINAL_PROMPT=0
+              SUBMODULES="
+                BaseTools/Source/C/BrotliCompress/brotli
+                MdeModulePkg/Library/BrotliCustomDecompressLib/brotli
+                CryptoPkg/Library/OpensslLib/openssl
+                CryptoPkg/Library/MbedTlsLib/mbedtls
+                MdePkg/Library/BaseFdtLib/libfdt
+                MdePkg/Library/MipiSysTLib/mipisyst
+                SecurityPkg/DeviceSecurity/SpdmLib/libspdm
+                ArmPkg/Library/ArmSoftFloatLib/berkeley-softfloat-3
+              "
+              n=0
+              until
+                rm -rf edk2 &&
+                git clone --branch "$EDK2_TAG" --depth 1 https://github.com/tianocore/edk2.git &&
+                git -C edk2 submodule update --init --depth 1 -- $SUBMODULES
+              do
+                n=$((n+1))
+                [ "$n" -ge 5 ] && { echo "clone/submodule init failed after $n attempts"; exit 1; }
+                echo "clone/submodule init failed; retry $n in ${n}0s"; sleep "${n}0"
+              done
+              cd edk2
+
+              make -C BaseTools
+              set +u
+              source ./edksetup.sh
+              set -u
+              export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
+              # Build just the HelloWorld application against MdeModulePkg.dsc.
+              build -a AARCH64 -t GCC5 -b RELEASE \
+                -p MdeModulePkg/MdeModulePkg.dsc \
+                -m MdeModulePkg/Application/HelloWorld/HelloWorld.inf
+
+              APP="$(find Build -name HelloWorld.efi | head -1)"
+              ls -la "$APP"
+              cp "$APP" /out/uefi-helloworld-aarch64.efi
+            '
+          ls -la "$PWD/out"
+          echo "APP_BYTES=$(stat -c%s out/uefi-helloworld-aarch64.efi)" >> "$GITHUB_ENV"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: uefi-helloworld-aarch64
+          path: out/uefi-helloworld-aarch64.efi
+          if-no-files-found: error
+
+      - name: Stage the app into the repo
+        run: |
+          set -euxo pipefail
+          mkdir -p internal/hvmm/testdata
+          cp out/uefi-helloworld-aarch64.efi internal/hvmm/testdata/uefi-helloworld-aarch64.efi
+
+      - name: Open PR with the test app
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: ci/uefi-testapp
+          commit-message: "test(hvmm): real AARCH64 UEFI app fixture (boot-from-disk)"
+          title: "test(hvmm): real AARCH64 UEFI app fixture (boot-from-disk)"
+          body: |
+            Auto-built edk2 `MdeModulePkg/Application/HelloWorld` for AARCH64 — a
+            real `UefiApplicationEntryPoint` PE32+ — as a test fixture for the
+            internal/hvmm boot-from-disk path.
+
+            Placed on a FAT disk as `\EFI\BOOT\BOOTAA64.EFI`, edk2's BdsDxe should
+            auto-launch it off the virtio-blk device, proving the full removable
+            media boot chain a Windows boot manager later uses.
+
+            - edk2 tag: `${{ github.event.inputs.edk2_tag || 'edk2-stable202408' }}`
+            - size: `${{ env.APP_BYTES }}` bytes
+
+            Built by `.github/workflows/build-uefi-testapp.yml`.
+          add-paths: internal/hvmm/testdata/uefi-helloworld-aarch64.efi
