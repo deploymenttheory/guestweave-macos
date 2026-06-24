@@ -4,7 +4,9 @@ go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/deploymenttheory/go-bindings-macosplatform v0.10.1
+	github.com/deploymenttheory/go-bindings-macosplatform v0.11.0
+	github.com/deploymenttheory/go-sdk-vtpm2 v0.0.0-00010101000000-000000000000
+	github.com/deploymenttheory/go-sdk-winmediafoundry v0.0.0-00010101000000-000000000000
 	github.com/ebitengine/purego v0.10.1
 	github.com/getkin/kin-openapi v0.140.0
 	github.com/getsentry/sentry-go v0.47.0
@@ -32,9 +34,25 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+// winmediafoundry provides Windows 11 ARM64 install-media acquisition and the
+// pure-Go ESD→ISO builder. Pinned to the local clone during development; switch
+// to a tagged version once the SDK is released.
+replace github.com/deploymenttheory/go-sdk-winmediafoundry => ../../sdk/go-sdk-winmediafoundry
+
+// go-sdk-vtpm2 is the Go-native, swtpm-compatible TPM 2.0 emulator weave's QEMU
+// backend attaches as the Windows 11 vTPM (replaces the swtpm Homebrew binary).
+// GPLv3 — linking it makes guestweave GPLv3. Pinned to the local clone during
+// development; switch to a tagged version once the SDK is released.
+replace github.com/deploymenttheory/go-sdk-vtpm2 => ../../sdk/go-sdk-vtpm2
+
 require (
+	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/anchore/go-lzo v0.1.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/diskfs/go-diskfs v1.9.3 // indirect
+	github.com/djherbis/times v1.6.0 // indirect
+	github.com/elliotwutingfeng/asciiset v0.0.0-20260129054604-cfde2086bc57 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect
@@ -43,18 +61,26 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/oasdiff/yaml v0.1.0 // indirect
 	github.com/oasdiff/yaml3 v0.0.13 // indirect
+	github.com/pierrec/lz4/v4 v4.1.26 // indirect
+	github.com/pkg/xattr v0.4.12 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
+	go.uber.org/zap v1.28.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260618152121-87f3d3e198d3 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
+	resty.dev/v3 v3.0.0-rc.2 // indirect
 )

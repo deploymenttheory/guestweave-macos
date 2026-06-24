@@ -49,6 +49,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	"github.com/deploymenttheory/weave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	"github.com/deploymenttheory/weave/internal/winimage"
 )
 
 // vm ports tart's global `var vm: VM?` from Run.swift.
@@ -302,11 +303,14 @@ func (c *RunCommand) Validate() error {
 		}
 	}
 
+	// Inspect any attached ISO's real architecture (ISO9660 volume id) rather
+	// than trusting its filename: weave guests are ARM64 only.
 	for _, disk := range c.Disk {
-		if strings.HasSuffix(disk, "-amd64.iso") {
-			return weaveerrors.ErrGeneric(
-				"Seems you have a disk targeting x86 architecture (hence amd64 in the name). Please use an 'arm64' version of the disk.",
-			)
+		if !strings.EqualFold(filepath.Ext(disk), ".iso") {
+			continue
+		}
+		if err := winimage.RequireARM64ISO(disk); err != nil {
+			return weaveerrors.ErrGeneric("%s", err.Error())
 		}
 	}
 
@@ -325,11 +329,18 @@ func (c *RunCommand) RunMainThread() error {
 		return err
 	}
 
-	// Validate disk format support.
 	vmConfig, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return err
 	}
+
+	// Windows guests run on the QEMU backend, which is a self-contained
+	// subprocess path with none of the VZ/AppKit machinery below.
+	if vmConfig.OS == weaveplatform.OSWindows {
+		return c.runWindows(vmDir, vmConfig)
+	}
+
+	// Validate disk format support.
 	if !vmConfig.DiskFormat.IsSupported() {
 		return weaveerrors.ErrGeneric(
 			"Disk format '%s' is not supported on this system.",

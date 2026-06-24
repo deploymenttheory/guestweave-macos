@@ -8,6 +8,7 @@ package vmdirectory
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -69,6 +70,25 @@ func (d *VMDirectory) ExplicitlyPulledMark() string {
 func (d *VMDirectory) VNCEndpointPath() string {
 	return filepath.Join(d.BaseURL, ".vnc-endpoint")
 }
+
+// EFIVarsURL is the per-VM writable UEFI variable store for QEMU-backed
+// (Windows) guests — a private copy of the edk2 ARM vars template, passed as
+// the second pflash unit. VZ guests use NvramURL instead.
+func (d *VMDirectory) EFIVarsURL() string { return filepath.Join(d.BaseURL, "efi_vars.fd") }
+
+// QMPSocketURL is the QEMU Machine Protocol control socket for QEMU-backed
+// guests, used to query state and request a graceful power-down.
+func (d *VMDirectory) QMPSocketURL() string { return filepath.Join(d.BaseURL, "qmp.sock") }
+
+// SerialLogURL captures the QEMU-backed guest's serial console (PL011), which
+// gives boot-time visibility when the graphical framebuffer stops updating.
+func (d *VMDirectory) SerialLogURL() string { return filepath.Join(d.BaseURL, "serial.log") }
+
+// SWTPMSocketURL is the swtpm control socket QEMU's TPM emulator connects to.
+func (d *VMDirectory) SWTPMSocketURL() string { return filepath.Join(d.BaseURL, "swtpm.sock") }
+
+// TPMStateDir holds the persistent vTPM 2.0 state (required by Windows 11).
+func (d *VMDirectory) TPMStateDir() string { return filepath.Join(d.BaseURL, "tpm") }
 
 func (d *VMDirectory) Name() string { return filepath.Base(d.BaseURL) }
 
@@ -141,9 +161,31 @@ func VMDirectoryTemporaryDeterministic(key string) (*VMDirectory, error) {
 
 // Initialized ports VMDirectory.initialized.
 func (d *VMDirectory) Initialized() bool {
-	return fsutil.Exists(d.ConfigURL()) &&
-		fsutil.Exists(d.DiskURL()) &&
-		fsutil.Exists(d.NvramURL())
+	if !fsutil.Exists(d.ConfigURL()) || !fsutil.Exists(d.DiskURL()) {
+		return false
+	}
+	// Windows (QEMU) guests have no VZ nvram.bin; their UEFI variable store
+	// (efi_vars.fd) is seeded on first run. VZ guests require nvram.bin.
+	if d.osField() == "windows" {
+		return true
+	}
+	return fsutil.Exists(d.NvramURL())
+}
+
+// osField reads just the "os" field from config.json, without the full
+// (VZ-aware) config parse, so Initialized works for QEMU-backed Windows VMs.
+func (d *VMDirectory) osField() string {
+	data, err := os.ReadFile(d.ConfigURL())
+	if err != nil {
+		return ""
+	}
+	var probe struct {
+		OS string `json:"os"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return ""
+	}
+	return probe.OS
 }
 
 // Initialize ports VMDirectory.initialize(overwrite:).
@@ -415,7 +457,12 @@ func (d *VMDirectory) IsExplicitlyPulled() bool {
 
 func (d *VMDirectory) sumComponents(size func(*prune.PrunableURL) (int, error)) (int, error) {
 	total := 0
-	for _, path := range []string{d.ConfigURL(), d.DiskURL(), d.NvramURL()} {
+	for _, path := range d.components() {
+		// Some components are seeded lazily (a Windows VM's efi_vars.fd is
+		// created on first run), so skip any that don't exist yet.
+		if !fsutil.Exists(path) {
+			continue
+		}
 		n, err := size(prune.NewPrunableURL(path))
 		if err != nil {
 			return 0, err
@@ -423,6 +470,15 @@ func (d *VMDirectory) sumComponents(size func(*prune.PrunableURL) (int, error)) 
 		total += n
 	}
 	return total, nil
+}
+
+// components lists the firmware/state files that make up the VM on disk. VZ
+// guests carry an nvram.bin; QEMU-backed Windows guests instead use efi_vars.fd.
+func (d *VMDirectory) components() []string {
+	if d.osField() == "windows" {
+		return []string{d.ConfigURL(), d.DiskURL(), d.EFIVarsURL()}
+	}
+	return []string{d.ConfigURL(), d.DiskURL(), d.NvramURL()}
 }
 
 // ByteCountString mirrors ByteCountFormatter().string(fromByteCount:).
