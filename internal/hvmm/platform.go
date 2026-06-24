@@ -21,7 +21,7 @@ const (
 	bootVarsBase   uint64 = 0x0400_0000 // edk2 NV-variable store (pflash unit 1)
 	bootVarsSize   int    = 0x0400_0000 // 64 MiB
 	bootRAMBase    uint64 = 0x4000_0000
-	bootRAMSize    int    = 0x1000_0000 // 256 MiB
+	bootRAMSize    int    = 0x1_0000_0000 // 4 GiB (matches virt.dtb memory@40000000; Windows 11 ARM64 minimum)
 	bootUARTBase   uint64 = 0x0900_0000
 	bootFwCfgBase  uint64 = 0x0902_0000
 	bootEcamBase   uint64 = 0x40_1000_0000 // PCIe ECAM config space (DTB pcie node)
