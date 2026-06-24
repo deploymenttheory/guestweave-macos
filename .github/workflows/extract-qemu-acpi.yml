@@ -48,8 +48,8 @@ jobs:
             for(u32 i=0;i<n;i++){ putc(h[b[i]>>4]); putc(h[b[i]&15]); } }
           static void putu(u32 v){ char t[12]; int n=0; if(!v)t[n++]='0';
             while(v){t[n++]='0'+v%10; v/=10;} while(n)putc(t[--n]); }
-          static u32 be32(const u8*p){return (p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3];}
-          static u16 be16(const u8*p){return (p[0]<<8)|p[1];}
+          static u32 be32(const u8*p){return ((u32)p[0]<<24)|((u32)p[1]<<16)|((u32)p[2]<<8)|p[3];}
+          static u16 be16(const u8*p){return (u16)(((u16)p[0]<<8)|p[1]);}
           static int streq(const char*a,const char*b){ while(*a&&*a==*b){a++;b++;} return *a==0&&*b==0; }
           static void fw_read(u16 key,void*buf,u32 len){
             D.control=__builtin_bswap32(((u32)key<<16)|8u/*SELECT*/|2u/*READ*/);
@@ -60,15 +60,16 @@ jobs:
             __sync_synchronize();
             while(D.control!=0){}
           }
-          void _start(void){
+          void cmain(void){
             fw_read(0x19,dir,4);              // FW_CFG_FILE_DIR count
             u32 count=be32(dir); if(count>512)count=512;
             fw_read(0x19,dir,4+count*64);     // whole directory
             const char* targets[3]={"etc/acpi/rsdp","etc/acpi/tables","etc/table-loader"};
             for(u32 i=0;i<count;i++){
-              const u8* e=dir+4+i*64;
+              const u8* e=dir+4+i*64;        // FWCfgFile: size@0, select@4, reserved@6, name@8
               u32 size=be32(e); u16 sel=be16(e+4);
-              const char* name=(const char*)(e+16);
+              const char* name=(const char*)(e+8);
+              puts("DIR "); puts(name); putc('\n');   // diagnostic: list every entry
               for(int t=0;t<3;t++) if(streq(name,targets[t])){
                 if(size>sizeof(blob))size=sizeof(blob);
                 fw_read(sel,blob,size);
@@ -78,6 +79,10 @@ jobs:
             }
             puts("=== DONE ===\n");
             for(;;){}
+          }
+          // QEMU jumps here with no stack set up; establish SP in RAM, then run.
+          __attribute__((naked,used)) void _start(void){
+            __asm__ volatile("movz x0, #0x5000, lsl #16\n mov sp, x0\n bl cmain\n 1: b 1b\n");
           }
           CEOF
 
@@ -90,7 +95,8 @@ jobs:
           timeout 60 qemu-system-aarch64 -M virt,gic-version=3 -cpu cortex-a72 \
             -m 4G -smp 1 -nic none -display none -serial stdio -kernel dumper.elf \
             > serial.txt 2>&1 || true
-          echo "----- serial (truncated) -----"; head -c 400 serial.txt; echo
+          echo "----- fw_cfg directory + ACPI markers -----"
+          grep -aE "DIR |=== |romfile|[Ee]rror" serial.txt | head -80 || true
 
           mkdir -p internal/hvmm/acpi
           python3 - <<'PYEOF'
