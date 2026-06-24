@@ -56,18 +56,22 @@ jobs:
               git clone --branch "$EDK2_TAG" --depth 1 https://github.com/tianocore/edk2.git
               cd edk2
 
-              # Init ONLY the submodules the ArmVirtQemu AARCH64 build consumes. This
-              # skips the UnitTest/Redfish/Security/RegEx/MipiSysT/MbedTls submodules
-              # entirely — including subhook, the flaky third-party repo that broke CI
-              # — and cuts GitHub rate-limit exposure. GIT_TERMINAL_PROMPT=0 turns an
-              # auth-fallback into an immediate (retryable) failure instead of a hang;
-              # the loop rides out transient GitHub errors.
+              # Init ONLY the submodules the ArmVirtQemu AARCH64 build needs — either
+              # compiled (brotli, openssl, soft-float) or required for .dec meta-data
+              # validation (MdePkg.dec unconditionally lists the BaseFdtLib/libfdt and
+              # MipiSysTLib/mipisyst include dirs, so they must exist on disk). This
+              # skips the UnitTest/Redfish/Security/RegEx/MbedTls submodules entirely —
+              # including subhook, the flaky third-party repo that broke CI — and cuts
+              # GitHub rate-limit exposure. GIT_TERMINAL_PROMPT=0 turns an auth-fallback
+              # into an immediate (retryable) failure instead of a hang; the loop rides
+              # out transient GitHub errors.
               export GIT_TERMINAL_PROMPT=0
               SUBMODULES="
                 BaseTools/Source/C/BrotliCompress/brotli
                 MdeModulePkg/Library/BrotliCustomDecompressLib/brotli
                 CryptoPkg/Library/OpensslLib/openssl
                 MdePkg/Library/BaseFdtLib/libfdt
+                MdePkg/Library/MipiSysTLib/mipisyst
                 ArmPkg/Library/ArmSoftFloatLib/berkeley-softfloat-3
               "
               n=0
