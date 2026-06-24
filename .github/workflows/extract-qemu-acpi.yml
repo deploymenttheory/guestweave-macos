@@ -85,8 +85,10 @@ jobs:
             -Wl,-Ttext=0x40080000 -Wl,-e,_start dumper.c -o dumper.elf
 
           # virt machine matching weave: GICv3, 1 CPU cortex-a72, 4 GiB RAM.
+          # -nic none drops the default virtio-net NIC (whose iPXE ROM isn't
+          # installed, and which weave doesn't model anyway).
           timeout 60 qemu-system-aarch64 -M virt,gic-version=3 -cpu cortex-a72 \
-            -m 4G -smp 1 -display none -serial stdio -kernel dumper.elf \
+            -m 4G -smp 1 -nic none -display none -serial stdio -kernel dumper.elf \
             > serial.txt 2>&1 || true
           echo "----- serial (truncated) -----"; head -c 400 serial.txt; echo
 
