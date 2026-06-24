@@ -55,7 +55,27 @@ jobs:
                 gcc-aarch64-linux-gnu ca-certificates
               git clone --branch "$EDK2_TAG" --depth 1 https://github.com/tianocore/edk2.git
               cd edk2
-              git submodule update --init --depth 1
+
+              # Init ONLY the submodules the ArmVirtQemu AARCH64 build consumes. This
+              # skips the UnitTest/Redfish/Security/RegEx/MipiSysT/MbedTls submodules
+              # entirely — including subhook, the flaky third-party repo that broke CI
+              # — and cuts GitHub rate-limit exposure. GIT_TERMINAL_PROMPT=0 turns an
+              # auth-fallback into an immediate (retryable) failure instead of a hang;
+              # the loop rides out transient GitHub errors.
+              export GIT_TERMINAL_PROMPT=0
+              SUBMODULES="
+                BaseTools/Source/C/BrotliCompress/brotli
+                MdeModulePkg/Library/BrotliCustomDecompressLib/brotli
+                CryptoPkg/Library/OpensslLib/openssl
+                MdePkg/Library/BaseFdtLib/libfdt
+                ArmPkg/Library/ArmSoftFloatLib/berkeley-softfloat-3
+              "
+              n=0
+              until git submodule update --init --depth 1 -- $SUBMODULES; do
+                n=$((n+1))
+                [ "$n" -ge 5 ] && { echo "submodule init failed after $n attempts"; exit 1; }
+                echo "submodule init failed; retry $n in ${n}0s"; sleep "${n}0"
+              done
 
               # FB21649319 workaround: swap the virtual generic-timer counter library
               # for the physical one so ArmVirtQemu uses the physical timer (PPI 30),
