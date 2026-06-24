@@ -159,7 +159,9 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	}
 	fmt.Fprintf(out, "✓ vCPU %d entering firmware at PC=0x%08x (%s)\n\n--- firmware output ---\n", vcpu.ID(), bootFlashBase, mode)
 
-	p := &Platform{uart: &pl011{out: out}, out: out, maxExits: maxExits, unknown: map[uint64]int{}}
+	uart := &pl011{out: out, in: make(chan byte, 256)}
+	go uart.pumpInput(os.Stdin) // host stdin drives the guest serial console
+	p := &Platform{uart: uart, out: out, maxExits: maxExits, unknown: map[uint64]int{}}
 	var runErr error
 	if step {
 		budget := maxExits

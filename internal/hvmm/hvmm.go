@@ -54,11 +54,31 @@ type region struct {
 }
 
 // ReadGuest copies n bytes of guest memory at gpa, or nil if unmapped. Used for
-// diagnostics (e.g. disassembling the code a stuck guest is spinning on).
+// diagnostics and for device DMA (virtio).
 func (m *Machine) ReadGuest(gpa uint64, n int) []byte {
+	if h := m.guestSlice(gpa, n); h != nil {
+		return append([]byte(nil), h...)
+	}
+	return nil
+}
+
+// WriteGuest copies data into guest memory at gpa, reporting whether the whole
+// range was mapped. Used for device DMA (virtio writes results into guest RAM).
+func (m *Machine) WriteGuest(gpa uint64, data []byte) bool {
+	if h := m.guestSlice(gpa, len(data)); h != nil {
+		copy(h, data)
+		return true
+	}
+	return false
+}
+
+// guestSlice returns the host-backing slice for n bytes of guest memory at gpa,
+// or nil if the range is not fully within one mapped region.
+func (m *Machine) guestSlice(gpa uint64, n int) []byte {
 	for _, r := range m.regions {
 		if gpa >= r.gpa && gpa+uint64(n) <= r.gpa+uint64(len(r.host)) {
-			return append([]byte(nil), r.host[gpa-r.gpa:gpa-r.gpa+uint64(n)]...)
+			off := gpa - r.gpa
+			return r.host[off : off+uint64(n)]
 		}
 	}
 	return nil
