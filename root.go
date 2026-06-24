@@ -519,6 +519,7 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		command := &weavecommand.HvmmCommand{}
 		fs := weavecommand.NewFlagSet(name)
 		maxExits := fs.Int("max-exits", 0, "")
+		fs.BoolVar(&command.Step, "step", false, "")
 		positionals, err := weavecommand.ParseInterleaved(fs, rest)
 		if err != nil {
 			return name, nil, err

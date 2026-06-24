@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+	"unsafe"
 
-	hvraw "github.com/deploymenttheory/go-bindings-macosplatform/bindings/frameworks/hypervisor"
 	hv "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/hypervisor"
 )
 
@@ -60,6 +60,69 @@ func (v *VCPU) sysReg(reg hv.Hv_sys_reg_t) uint64 {
 	return val
 }
 
+// StepTrace single-steps the guest (ARM software-step: MDSCR_EL1.SS + PSTATE.SS,
+// with debug exceptions trapped to the host) and writes the guest's control-flow
+// trail to Trace — one PC per non-sequential step (i.e. each taken branch/call),
+// so the firmware's path is visible without millions of lines. It dispatches MMIO
+// and system-register traps along the way, and stops when it detects a tight loop
+// (a PC revisited stallThreshold times) or after maxSteps. It is a diagnostic for
+// firmware bring-up; call on the vCPU's owning thread.
+func (v *VCPU) StepTrace(h Handler, maxSteps int) error {
+	const stallThreshold = 2000
+	if err := hvErr("hv_vcpu_set_trap_debug_exceptions", hv.HvVcpuSetTrapDebugExceptions(v.id, true)); err != nil {
+		return err
+	}
+	if err := hvErr("set MDSCR_EL1.SS", hv.HvVcpuSetSysReg(v.id, hv.HV_SYS_REG_MDSCR_EL1, v.sysReg(hv.HV_SYS_REG_MDSCR_EL1)|1)); err != nil {
+		return err
+	}
+	var lastPC uint64
+	seen := map[uint64]int{}
+	for step := 0; step < maxSteps; step++ {
+		// Re-arm the single-step state machine before each instruction.
+		if err := v.SetReg(hv.HV_REG_CPSR, v.regOrZero(hv.HV_REG_CPSR)|(1<<21)); err != nil {
+			return err
+		}
+		if err := hvErr("hv_vcpu_run", hv.HvVcpuRun(v.id)); err != nil {
+			return err
+		}
+		if v.exit.Reason != hv.HV_EXIT_REASON_EXCEPTION {
+			continue
+		}
+		esr := v.exit.Exception.Syndrome
+		pc := v.regOrZero(hv.HV_REG_PC)
+		switch ec := esr >> 26; ec {
+		case 0x32, 0x33: // software step — one instruction retired
+			if pc != lastPC+4 {
+				fmt.Fprintf(v.Trace, "0x%06x\n", pc)
+			}
+			seen[pc]++
+			if seen[pc] == stallThreshold {
+				fmt.Fprintf(v.Trace, "[loop] PC 0x%x revisited %dx after %d steps — stopping\n", pc, stallThreshold, step)
+				return nil
+			}
+			lastPC = pc
+		case 0x24, 0x25: // MMIO data abort
+			if _, err := v.handleDataAbort(esr, h); err != nil {
+				return err
+			}
+			lastPC = 0
+		case 0x18: // system-register trap
+			if err := v.emulateSysReg(esr); err != nil {
+				return err
+			}
+			lastPC = 0
+		default:
+			fmt.Fprintf(v.Trace, "[trap] EC=0x%02x at 0x%x while stepping\n", ec, pc)
+			if err := v.advancePC(esr); err != nil {
+				return err
+			}
+			lastPC = 0
+		}
+	}
+	fmt.Fprintf(v.Trace, "[done] reached step budget %d\n", maxSteps)
+	return nil
+}
+
 // NewVCPU creates a vCPU and sets its entry state (PC = entryPC, EL1h). It must
 // be called on a thread that has called runtime.LockOSThread.
 func (m *Machine) NewVCPU(entryPC uint64) (*VCPU, error) {
@@ -102,7 +165,7 @@ func (v *VCPU) Run(h Handler) error {
 					return
 				case <-t.C:
 					ids := []uint64{v.id} // force this vCPU out of hv_vcpu_run
-					hvraw.HvVcpusExit(&ids[0], 1)
+					hv.HvVcpusExit(unsafe.Pointer(&ids[0]), 1)
 				}
 			}
 		}()

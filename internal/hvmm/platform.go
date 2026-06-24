@@ -70,7 +70,7 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 // maxExits bounds the run (0 = unbounded). It is the next step beyond SelfTest
 // toward a real boot; it does not yet provide fw_cfg/GIC/DTB, so firmware will
 // not complete — the trace shows exactly which devices to model next.
-func Boot(out io.Writer, fwPath string, maxExits int) error {
+func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -80,6 +80,12 @@ func Boot(out io.Writer, fwPath string, maxExits int) error {
 	}
 	defer m.Close()
 	fmt.Fprintln(out, "✓ EL2-enabled VM created")
+
+	// Apple's in-kernel GICv3 — must be created before any vCPU.
+	if err := m.CreateGIC(out); err != nil {
+		return fmt.Errorf("create GIC: %w", err)
+	}
+	fmt.Fprintln(out, "✓ in-kernel GICv3 created (CPU interface system registers active)")
 
 	fw, err := os.ReadFile(fwPath)
 	if err != nil {
@@ -95,27 +101,52 @@ func Boot(out io.Writer, fwPath string, maxExits int) error {
 	if _, err := m.MapRAM(bootVarsBase, bootVarsSize); err != nil {
 		return err
 	}
-	if _, err := m.MapRAM(bootRAMBase, bootRAMSize); err != nil {
+	ram, err := m.MapRAM(bootRAMBase, bootRAMSize)
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "✓ mapped %d MiB RAM at 0x%08x (+ %d MiB NV store at 0x%08x)\n",
-		bootRAMSize>>20, bootRAMBase, bootVarsSize>>20, bootVarsBase)
+	// edk2 ArmVirtQemu's MemoryInit PEIM reads the device tree from the base of
+	// RAM (PcdDeviceTreeInitialBaseAddress) — without it that PEIM ASSERTs and
+	// dead-loops. Place our QEMU-virt DTB there.
+	copy(ram, virtDTB)
+	fmt.Fprintf(out, "✓ mapped %d MiB RAM at 0x%08x + %d-byte DTB at base (+ %d MiB NV store at 0x%08x)\n",
+		bootRAMSize>>20, bootRAMBase, len(virtDTB), bootVarsSize>>20, bootVarsBase)
 
 	vcpu, err := m.NewVCPU(bootFlashBase)
 	if err != nil {
 		return err
 	}
 	defer vcpu.Destroy()
+	if _, rb := hv.HvGicGetRedistributorBase(vcpu.ID()); true {
+		fmt.Fprintf(out, "  GIC: vCPU %d redistributor base = 0x%08x (DTB declares 0x%08x)\n", vcpu.ID(), rb, gicRedistBase)
+	}
 	vcpu.Trace = out
 	vcpu.MaxExits = maxExits
-	vcpu.Watchdog = 2 * time.Second // force a stuck guest out so we can sample its PC
-	if err := vcpu.SetReg(hv.HV_REG_CPSR, cpsrEL2hMasked); err != nil {
+	if !step {
+		vcpu.Watchdog = 2 * time.Second // force a stuck guest out so we can sample its PC
+	}
+	// Software-step (MDSCR_EL1.SS) only steps EL0/EL1, so the step-trace enters at
+	// EL1h; the spin is identical at EL1, so the path it reveals is the same.
+	entryCPSR, mode := cpsrEL2hMasked, "EL2h"
+	if step {
+		entryCPSR, mode = cpsrEL1hMasked, "EL1h, single-step trace"
+	}
+	if err := vcpu.SetReg(hv.HV_REG_CPSR, entryCPSR); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "✓ vCPU %d entering firmware at PC=0x%08x (EL2h)\n\n--- firmware output ---\n", vcpu.ID(), bootFlashBase)
+	fmt.Fprintf(out, "✓ vCPU %d entering firmware at PC=0x%08x (%s)\n\n--- firmware output ---\n", vcpu.ID(), bootFlashBase, mode)
 
 	p := &Platform{uart: &pl011{out: out}, out: out, maxExits: maxExits, unknown: map[uint64]int{}}
-	runErr := vcpu.Run(p)
+	var runErr error
+	if step {
+		budget := maxExits
+		if budget == 0 {
+			budget = 500000
+		}
+		runErr = vcpu.StepTrace(p, budget)
+	} else {
+		runErr = vcpu.Run(p)
+	}
 	fmt.Fprintf(out, "\n--- run ended after %d device exits ---\n", p.exits)
 	return runErr
 }
