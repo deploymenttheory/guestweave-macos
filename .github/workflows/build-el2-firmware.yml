@@ -53,9 +53,6 @@ jobs:
               apt-get install -y --no-install-recommends \
                 git build-essential uuid-dev iasl nasm python3 python3-venv \
                 python-is-python3 gcc-aarch64-linux-gnu ca-certificates
-              git clone --branch "$EDK2_TAG" --depth 1 https://github.com/tianocore/edk2.git
-              cd edk2
-
               # Init ONLY the submodules the ArmVirtQemu AARCH64 build needs. Most are
               # not compiled but are required for .dec meta-data validation: edk2 errors
               # (000E) if any include dir listed in a parsed package's .dec is missing on
@@ -67,8 +64,6 @@ jobs:
               # RedfishPkg (jansson) / RegEx (oniguruma) submodules, whose .dec files are
               # not parsed by a platform firmware build — so subhook, the flaky repo that
               # broke CI, is never cloned, and GitHub rate-limit exposure is cut.
-              # GIT_TERMINAL_PROMPT=0 turns an auth-fallback into an immediate (retryable)
-              # failure instead of a hang; the loop rides out transient GitHub errors.
               export GIT_TERMINAL_PROMPT=0
               SUBMODULES="
                 BaseTools/Source/C/BrotliCompress/brotli
@@ -80,12 +75,24 @@ jobs:
                 SecurityPkg/DeviceSecurity/SpdmLib/libspdm
                 ArmPkg/Library/ArmSoftFloatLib/berkeley-softfloat-3
               "
+              # Retry the clone AND scoped submodule init together as one unit. A
+              # transient GitHub error can leave an incomplete clone that still exits 0
+              # but whose index has no submodule gitlinks — then every
+              # `submodule update -- <path>` reports "did not match any file(s) known to
+              # git", which retrying only the submodule step cannot fix. So re-clone from
+              # scratch each attempt. GIT_TERMINAL_PROMPT=0 turns an auth fallback into an
+              # immediate (retryable) failure instead of a hang.
               n=0
-              until git submodule update --init --depth 1 -- $SUBMODULES; do
+              until
+                rm -rf edk2 &&
+                git clone --branch "$EDK2_TAG" --depth 1 https://github.com/tianocore/edk2.git &&
+                git -C edk2 submodule update --init --depth 1 -- $SUBMODULES
+              do
                 n=$((n+1))
-                [ "$n" -ge 5 ] && { echo "submodule init failed after $n attempts"; exit 1; }
-                echo "submodule init failed; retry $n in ${n}0s"; sleep "${n}0"
+                [ "$n" -ge 5 ] && { echo "clone/submodule init failed after $n attempts"; exit 1; }
+                echo "clone/submodule init failed; retry $n in ${n}0s"; sleep "${n}0"
               done
+              cd edk2
 
               # FB21649319 workaround: swap the virtual generic-timer counter library
               # for the physical one so ArmVirtQemu uses the physical timer (PPI 30),
