@@ -80,14 +80,21 @@ jobs:
             puts("=== DONE ===\n");
             for(;;){}
           }
-          // QEMU jumps here with no stack set up; establish SP in RAM, then run.
-          __attribute__((naked,used)) void _start(void){
-            __asm__ volatile("movz x0, #0x5000, lsl #16\n mov sp, x0\n bl cmain\n 1: b 1b\n");
-          }
           CEOF
 
+          # Real asm entry: QEMU enters with no stack, so set SP in RAM then call
+          # cmain. (GCC silently ignores __attribute__((naked)) on AArch64.)
+          cat > start.S <<'SEOF'
+          .global _start
+          _start:
+              movz x0, #0x5000, lsl #16
+              mov  sp, x0
+              bl   cmain
+          0:  b    0b
+          SEOF
+
           aarch64-linux-gnu-gcc -O2 -ffreestanding -nostdlib -static \
-            -Wl,-Ttext=0x40080000 -Wl,-e,_start dumper.c -o dumper.elf
+            -Wl,-Ttext=0x40080000 -Wl,-e,_start start.S dumper.c -o dumper.elf
 
           # virt machine matching weave: GICv3, 1 CPU cortex-a72, 4 GiB RAM.
           # -nic none drops the default virtio-net NIC (whose iPXE ROM isn't
