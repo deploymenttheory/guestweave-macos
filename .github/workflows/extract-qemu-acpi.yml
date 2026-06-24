@@ -1,0 +1,128 @@
+# Extracts QEMU's fw_cfg ACPI blobs (etc/acpi/rsdp, etc/acpi/tables,
+# etc/table-loader) for the virt machine weave models, and PRs them as the source
+# tables weave's fw_cfg will serve to edk2 — so Windows ARM64 (which refuses to
+# boot without ACPI) gets ACPI. edk2 ArmVirtQemu builds ACPI ONLY from these
+# fw_cfg files; weave's fw_cfg is a stub, so today there is no ACPI.
+#
+# A tiny bare-metal AArch64 dumper reads fw_cfg over MMIO (the DMA interface) and
+# writes each blob as hex over the PL011 UART; QEMU's virt machine supplies the
+# real tables. This is a stepping stone — once Windows boots with these, we
+# replace them with a ground-up Go ACPI generator (as we did for the DTB).
+name: Extract QEMU ACPI (fw_cfg blobs)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout weave (PR target)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v7.0.0
+
+      - name: Build dumper + run under QEMU + decode blobs
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu qemu-system-arm
+
+          cat > dumper.c <<'CEOF'
+          // Bare-metal AArch64 fw_cfg ACPI dumper for QEMU virt. Reads the fw_cfg
+          // file directory via the DMA interface, then dumps the three ACPI files
+          // as "=== FILE <name> <size> ===\n<hex>\n" over the PL011 UART.
+          typedef unsigned char u8; typedef unsigned short u16;
+          typedef unsigned int u32; typedef unsigned long long u64;
+          #define UART      0x09000000UL
+          #define FWCFG_DMA 0x09020010UL
+          struct dma { volatile u32 control; volatile u32 length; volatile u64 address; };
+          static struct dma D;
+          static u8 dir[0x8000];
+          static u8 blob[0x20000];
+          static void putc(char c){ *(volatile u32*)UART = (u8)c; }
+          static void puts(const char*s){ while(*s) putc(*s++); }
+          static void puthex(const u8*b,u32 n){ const char*h="0123456789abcdef";
+            for(u32 i=0;i<n;i++){ putc(h[b[i]>>4]); putc(h[b[i]&15]); } }
+          static void putu(u32 v){ char t[12]; int n=0; if(!v)t[n++]='0';
+            while(v){t[n++]='0'+v%10; v/=10;} while(n)putc(t[--n]); }
+          static u32 be32(const u8*p){return (p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3];}
+          static u16 be16(const u8*p){return (p[0]<<8)|p[1];}
+          static int streq(const char*a,const char*b){ while(*a&&*a==*b){a++;b++;} return *a==0&&*b==0; }
+          static void fw_read(u16 key,void*buf,u32 len){
+            D.control=__builtin_bswap32(((u32)key<<16)|8u/*SELECT*/|2u/*READ*/);
+            D.length=__builtin_bswap32(len);
+            D.address=__builtin_bswap64((u64)(unsigned long)buf);
+            __sync_synchronize();
+            *(volatile u64*)FWCFG_DMA=__builtin_bswap64((u64)(unsigned long)&D);
+            __sync_synchronize();
+            while(D.control!=0){}
+          }
+          void _start(void){
+            fw_read(0x19,dir,4);              // FW_CFG_FILE_DIR count
+            u32 count=be32(dir); if(count>512)count=512;
+            fw_read(0x19,dir,4+count*64);     // whole directory
+            const char* targets[3]={"etc/acpi/rsdp","etc/acpi/tables","etc/table-loader"};
+            for(u32 i=0;i<count;i++){
+              const u8* e=dir+4+i*64;
+              u32 size=be32(e); u16 sel=be16(e+4);
+              const char* name=(const char*)(e+16);
+              for(int t=0;t<3;t++) if(streq(name,targets[t])){
+                if(size>sizeof(blob))size=sizeof(blob);
+                fw_read(sel,blob,size);
+                puts("=== FILE "); puts(name); putc(' '); putu(size); puts(" ===\n");
+                puthex(blob,size); puts("\n");
+              }
+            }
+            puts("=== DONE ===\n");
+            for(;;){}
+          }
+          CEOF
+
+          aarch64-linux-gnu-gcc -O2 -ffreestanding -nostdlib -static \
+            -Wl,-Ttext=0x40080000 -Wl,-e,_start dumper.c -o dumper.elf
+
+          # virt machine matching weave: GICv3, 1 CPU cortex-a72, 4 GiB RAM.
+          timeout 60 qemu-system-aarch64 -M virt,gic-version=3 -cpu cortex-a72 \
+            -m 4G -smp 1 -display none -serial stdio -kernel dumper.elf \
+            > serial.txt 2>&1 || true
+          echo "----- serial (truncated) -----"; head -c 400 serial.txt; echo
+
+          mkdir -p internal/hvmm/acpi
+          python3 - <<'PYEOF'
+          import re, pathlib
+          txt = pathlib.Path("serial.txt").read_text(errors="ignore")
+          out = {"etc/acpi/rsdp":"etc-acpi-rsdp.bin",
+                 "etc/acpi/tables":"etc-acpi-tables.bin",
+                 "etc/table-loader":"etc-table-loader.bin"}
+          blocks = re.findall(r"=== FILE (\S+) (\d+) ===\s*([0-9a-f]*)", txt)
+          got = {}
+          for name, size, hexs in blocks:
+              data = bytes.fromhex(hexs)
+              assert len(data) == int(size), f"{name}: {len(data)} != {size}"
+              if name in out:
+                  pathlib.Path("internal/hvmm/acpi", out[name]).write_bytes(data)
+                  got[name] = len(data)
+          print("extracted:", got)
+          assert set(got) == set(out), f"missing: {set(out)-set(got)}"
+          PYEOF
+          ls -la internal/hvmm/acpi
+
+      - name: Open PR with the ACPI blobs
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: ci/qemu-acpi-blobs
+          commit-message: "feat(hvmm): QEMU ACPI fw_cfg blobs (Windows ACPI bring-up)"
+          title: "feat(hvmm): QEMU ACPI fw_cfg blobs (Windows ACPI bring-up)"
+          body: |
+            QEMU's fw_cfg ACPI blobs for the `virt,gic-version=3` machine weave
+            models (1x cortex-a72, 4 GiB): `etc/acpi/rsdp`, `etc/acpi/tables`,
+            `etc/table-loader`. weave's fw_cfg will serve these so edk2 installs
+            ACPI and Windows ARM64 can boot. Stepping stone before a ground-up Go
+            ACPI generator (same path we took for the device tree).
+
+            Extracted by a bare-metal fw_cfg dumper under QEMU
+            (`.github/workflows/extract-qemu-acpi.yml`).
+          add-paths: internal/hvmm/acpi/*.bin
