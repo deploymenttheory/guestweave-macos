@@ -29,6 +29,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	"github.com/deploymenttheory/weave/internal/winimage"
 )
 
 // windowsStopTimeout bounds the graceful ACPI shutdown before QEMU is killed.
@@ -39,6 +40,15 @@ const windowsStopTimeout = 30 * time.Second
 func (c *RunCommand) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) error {
 	if vmConfig.Windows == nil {
 		return weaveerrors.ErrGeneric("VM %q is missing its Windows configuration", c.Name)
+	}
+
+	// Re-validate the install ISO's architecture at boot: the create flow only
+	// produces ARM64 media, but config.json can be hand-edited and the cached
+	// ISO can be swapped, so never boot non-ARM64 install media.
+	if vmConfig.Windows.InstallISO != "" {
+		if err := winimage.RequireARM64ISO(vmConfig.Windows.InstallISO); err != nil {
+			return weaveerrors.ErrGeneric("%s", err.Error())
+		}
 	}
 
 	conf, err := weaveconfig.NewConfig()

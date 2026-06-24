@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	vtpm2 "github.com/deploymenttheory/go-sdk-vtpm2/emulator"
 	"github.com/deploymenttheory/weave/internal/backend"
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
@@ -51,6 +52,20 @@ func (b *Backend) Start(ctx context.Context, vmDir *vmdirectory.VMDirectory, cfg
 		return nil, err
 	}
 
+	// Start the Go-native vTPM 2.0 (go-sdk-vtpm2) before QEMU; Windows 11
+	// requires a TPM. QEMU's tpm-emulator backend connects to its control
+	// socket, and its state persists under the per-VM TPM state directory.
+	if err := os.MkdirAll(vmDir.TPMStateDir(), 0o700); err != nil {
+		return nil, fmt.Errorf("qemu: create TPM state dir: %w", err)
+	}
+	tpmEmu, err := vtpm2.New(vmDir.SWTPMSocketURL(), vmDir.TPMStateDir())
+	if err != nil {
+		return nil, fmt.Errorf("qemu: vtpm: %w", err)
+	}
+	if err := tpmEmu.Start(); err != nil {
+		return nil, fmt.Errorf("qemu: start vtpm: %w", err)
+	}
+
 	spec := Spec{
 		Toolchain:      tc,
 		Config:         cfg,
@@ -58,12 +73,14 @@ func (b *Backend) Start(ctx context.Context, vmDir *vmdirectory.VMDirectory, cfg
 		InstallISO:     opts.InstallISO,
 		VNCDisplay:     display,
 		VNCPasswordSet: opts.VNCPassword != "",
+		TPMSocket:      vmDir.SWTPMSocketURL(),
 	}
 	args := BuildArgs(spec)
 
 	logPath := filepath.Join(vmDir.BaseURL, "qemu.log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
+		_ = tpmEmu.Close()
 		return nil, fmt.Errorf("qemu: open log: %w", err)
 	}
 
@@ -75,6 +92,7 @@ func (b *Backend) Start(ctx context.Context, vmDir *vmdirectory.VMDirectory, cfg
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
+		_ = tpmEmu.Close()
 		return nil, fmt.Errorf("qemu: start %s: %w (see %s)", tc.SystemAARCH64, err, logPath)
 	}
 
@@ -84,6 +102,7 @@ func (b *Backend) Start(ctx context.Context, vmDir *vmdirectory.VMDirectory, cfg
 		logPath:     logPath,
 		qmpPath:     vmDir.QMPSocketURL(),
 		vncHostPort: fmt.Sprintf("127.0.0.1:%d", vncBasePort+display),
+		tpm:         tpmEmu,
 		exited:      make(chan struct{}),
 	}
 	go inst.reap()
@@ -114,6 +133,7 @@ type instance struct {
 	logPath     string
 	qmpPath     string
 	vncHostPort string
+	tpm         *vtpm2.Emulator // the vTPM 2.0 serving this guest
 
 	exited  chan struct{}
 	waitErr error
@@ -121,10 +141,15 @@ type instance struct {
 
 var _ backend.Instance = (*instance)(nil)
 
-// reap waits for the process to exit and closes exited.
+// reap waits for the process to exit and closes exited. It also tears down the
+// vTPM emulator (persisting its state) so it dies with QEMU regardless of how
+// the guest stopped.
 func (i *instance) reap() {
 	i.waitErr = i.cmd.Wait()
 	i.logFile.Close()
+	if i.tpm != nil {
+		_ = i.tpm.Close()
+	}
 	close(i.exited)
 }
 

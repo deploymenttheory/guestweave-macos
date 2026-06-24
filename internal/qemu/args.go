@@ -34,6 +34,10 @@ type Spec struct {
 	// enabled (the secret is applied over QMP after launch).
 	VNCDisplay     int
 	VNCPasswordSet bool
+
+	// TPMSocket, when non-empty, is the swtpm control socket; a TPM 2.0 device
+	// is attached (Windows 11 requires it).
+	TPMSocket string
 }
 
 // BuildArgs assembles the qemu-system-aarch64 argument list. Device choices
@@ -92,11 +96,25 @@ func BuildArgs(s Spec) []string {
 		"-device", "usb-tablet",
 	)
 
-	// Install media as a USB CD-ROM (inbox driver; bootable via UEFI).
+	// Install media on NVMe (inbox Windows ARM64 driver; far faster than an
+	// emulated USB CD-ROM, which stalls WinPE loading). UEFI boots
+	// \efi\boot\bootaa64.efi from it via the default removable-media path.
 	if s.InstallISO != "" {
 		args = append(args,
-			"-drive", fmt.Sprintf("if=none,id=cd0,media=cdrom,readonly=on,file=%s", s.InstallISO),
-			"-device", fmt.Sprintf("usb-storage,drive=cd0,bootindex=%d", cdBoot),
+			"-drive", fmt.Sprintf("if=none,id=cd0,file=%s,format=raw,readonly=on", s.InstallISO),
+			"-device", fmt.Sprintf("nvme,drive=cd0,serial=weavecd,bootindex=%d", cdBoot),
+		)
+	}
+
+	// TPM 2.0 via the in-process, swtpm-compatible Go emulator (go-sdk-vtpm2),
+	// which Windows 11 requires. QEMU's tpm-emulator backend connects to the
+	// emulator's control socket; the ARM virt machine exposes it through the
+	// MMIO tpm-tis-device.
+	if s.TPMSocket != "" {
+		args = append(args,
+			"-chardev", fmt.Sprintf("socket,id=chrtpm,path=%s", s.TPMSocket),
+			"-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+			"-device", "tpm-tis-device,tpmdev=tpm0",
 		)
 	}
 
@@ -114,6 +132,10 @@ func BuildArgs(s Spec) []string {
 	args = append(args,
 		"-qmp", fmt.Sprintf("unix:%s,server=on,wait=off", s.VMDir.QMPSocketURL()),
 	)
+
+	// Serial console (PL011) captured to a log — gives boot visibility when the
+	// graphical framebuffer stops updating after the firmware hands off.
+	args = append(args, "-serial", "file:"+s.VMDir.SerialLogURL())
 
 	return args
 }

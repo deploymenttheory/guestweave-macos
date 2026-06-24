@@ -115,6 +115,12 @@ func Acquire(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	// Prove the artifact we hand to QEMU is ARM64 (the volume id must be the
+	// ARM64 marker), guarding against a cached or mis-built ISO.
+	if err := RequireARM64ISO(isoPath); err != nil {
+		return nil, err
+	}
+
 	return &Result{
 		ISOPath:  isoPath,
 		ESDPath:  esdPath,
@@ -136,7 +142,9 @@ func resolve(ctx context.Context, build int, opts Options) (esdapi.ESDImage, err
 		return esdapi.ESDImage{}, fmt.Errorf("winimage: fetch catalog: %w", err)
 	}
 
-	matches := cat.FilterBuildMajor(build, opts.Edition, catalogArch, opts.Language)
+	// FilterARM64BuildMajor cannot be asked for the wrong architecture and drops
+	// rows whose filename token contradicts their Architecture field.
+	matches := cat.FilterARM64BuildMajor(build, opts.Edition, opts.Language)
 	if len(matches) == 0 {
 		// Distinguish "release not in catalog" (the common case: MCT carries
 		// only the current GA release) from a bad edition/language.
@@ -146,7 +154,16 @@ func resolve(ctx context.Context, build int, opts Options) (esdapi.ESDImage, err
 				"(catalog currently carries ARM64 builds %v); the MCT catalog only lists the current GA release",
 			catalogArch, opts.Edition, opts.Language, build, present)
 	}
-	return matches[0], nil
+
+	// Belt-and-suspenders: never hand a non-ARM64 ESD downstream, even if the
+	// SDK selection were to regress.
+	img := matches[0]
+	if !img.IsARM64() {
+		return esdapi.ESDImage{}, fmt.Errorf(
+			"winimage: selected ESD %q is not ARM64 (architecture %q); refusing non-ARM64 Windows media",
+			img.FileName, img.Architecture)
+	}
+	return img, nil
 }
 
 // ensureESD downloads img to esdPath unless a valid copy already exists.

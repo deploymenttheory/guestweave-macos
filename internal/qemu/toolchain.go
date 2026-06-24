@@ -73,6 +73,9 @@ func ResolveToolchain(cacheDir string) (*Toolchain, error) {
 		firmwareCandidates(firmwareVarsNames)...,
 	)...)
 
+	// Windows 11's required TPM 2.0 is provided by the in-process Go-native vTPM
+	// (go-sdk-vtpm2), so no external swtpm binary is discovered here.
+
 	if tc.SystemAARCH64 == "" || tc.Img == "" {
 		if err := ensureDownloaded(cacheDir, tc); err != nil {
 			return nil, err

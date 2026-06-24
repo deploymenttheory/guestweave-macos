@@ -68,10 +68,11 @@ func TestBuildArgsCoreShape(t *testing.T) {
 	for _, want := range []string{
 		"if=pflash,format=raw,unit=0,file=/fw/code.fd,readonly=on",
 		"if=pflash,format=raw,unit=1,file=/vms/win11/efi_vars.fd",
-		"nvme,drive=disk0,serial=weave0,bootindex=1", // disk after CD when installing
-		"usb-storage,drive=cd0,bootindex=0",          // CD boots first during install
+		"nvme,drive=disk0,serial=weave0,bootindex=1", // system disk after CD when installing
+		"nvme,drive=cd0,serial=weavecd,bootindex=0",  // install media (NVMe) boots first
 		"ramfb",
 		"unix:/vms/win11/qmp.sock,server=on,wait=off",
+		"file:/vms/win11/serial.log",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("args missing %q\n got: %s", want, joined)
@@ -85,8 +86,8 @@ func TestBuildArgsNoISOBootsDisk(t *testing.T) {
 	if !strings.Contains(joined, "nvme,drive=disk0,serial=weave0,bootindex=0") {
 		t.Errorf("without ISO the system disk should be bootindex=0\n got: %s", joined)
 	}
-	if strings.Contains(joined, "usb-storage") {
-		t.Errorf("no install ISO should mean no CD device\n got: %s", joined)
+	if strings.Contains(joined, "drive=cd0") {
+		t.Errorf("no install ISO should mean no install-media device\n got: %s", joined)
 	}
 }
 
@@ -108,5 +109,26 @@ func TestBuildArgsVNCPassword(t *testing.T) {
 	args := BuildArgs(s)
 	if v, _ := argValue(args, "-vnc"); v != "127.0.0.1:2,password=on" {
 		t.Errorf("-vnc = %q, want password=on suffix", v)
+	}
+}
+
+func TestBuildArgsTPMDevice(t *testing.T) {
+	// With a TPM socket, the swtpm-emulator chardev/tpmdev/device trio appears.
+	s := testSpec("")
+	s.TPMSocket = "/vms/win11/swtpm.sock"
+	joined := strings.Join(BuildArgs(s), " ")
+	for _, want := range []string{
+		"socket,id=chrtpm,path=/vms/win11/swtpm.sock",
+		"emulator,id=tpm0,chardev=chrtpm",
+		"tpm-tis-device,tpmdev=tpm0",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("args missing %q\n got: %s", want, joined)
+		}
+	}
+
+	// Without a TPM socket, no TPM device is emitted.
+	if joined := strings.Join(BuildArgs(testSpec("")), " "); strings.Contains(joined, "tpmdev") {
+		t.Errorf("no TPM socket should mean no tpmdev args\n got: %s", joined)
 	}
 }

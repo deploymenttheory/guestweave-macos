@@ -4,7 +4,8 @@ go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/deploymenttheory/go-bindings-macosplatform v0.10.1
+	github.com/deploymenttheory/go-bindings-macosplatform v0.11.0
+	github.com/deploymenttheory/go-sdk-vtpm2 v0.0.0-00010101000000-000000000000
 	github.com/deploymenttheory/go-sdk-winmediafoundry v0.0.0-00010101000000-000000000000
 	github.com/ebitengine/purego v0.10.1
 	github.com/getkin/kin-openapi v0.140.0
@@ -37,6 +38,12 @@ require (
 // pure-Go ESD→ISO builder. Pinned to the local clone during development; switch
 // to a tagged version once the SDK is released.
 replace github.com/deploymenttheory/go-sdk-winmediafoundry => ../../sdk/go-sdk-winmediafoundry
+
+// go-sdk-vtpm2 is the Go-native, swtpm-compatible TPM 2.0 emulator weave's QEMU
+// backend attaches as the Windows 11 vTPM (replaces the swtpm Homebrew binary).
+// GPLv3 — linking it makes guestweave GPLv3. Pinned to the local clone during
+// development; switch to a tagged version once the SDK is released.
+replace github.com/deploymenttheory/go-sdk-vtpm2 => ../../sdk/go-sdk-vtpm2
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect

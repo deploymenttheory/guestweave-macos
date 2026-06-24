@@ -28,7 +28,7 @@ var rootSubcommands = []string{
 	"create", "clone", "run", "set", "get", "list", "login", "logout", "ip",
 	"exec", "ssh", "pull", "push", "import", "export", "prune", "rename", "stop",
 	"delete", "fqn", "suspend", "ipsw", "images", "logs", "config", "serve",
-	"setup",
+	"setup", "hvmm",
 }
 
 // parseRootCommand parses os.Args[1:] into a runnable command. The returned
@@ -513,6 +513,24 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		}
 		command.Name = positionals[0]
 		return name, command, command.Validate()
+
+	case "hvmm":
+		// Experimental Hypervisor.framework EL2 VMM backend (internal/hvmm).
+		command := &weavecommand.HvmmCommand{}
+		fs := weavecommand.NewFlagSet(name)
+		maxExits := fs.Int("max-exits", 0, "")
+		positionals, err := weavecommand.ParseInterleaved(fs, rest)
+		if err != nil {
+			return name, nil, err
+		}
+		command.MaxExits = *maxExits
+		if len(positionals) > 0 {
+			command.Action = positionals[0]
+		}
+		if len(positionals) > 1 {
+			command.Firmware = positionals[1]
+		}
+		return name, command, nil
 
 	case "serve":
 		command := &serve.ServeCommand{}

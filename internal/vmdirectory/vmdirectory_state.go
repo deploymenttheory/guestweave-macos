@@ -80,6 +80,16 @@ func (d *VMDirectory) EFIVarsURL() string { return filepath.Join(d.BaseURL, "efi
 // guests, used to query state and request a graceful power-down.
 func (d *VMDirectory) QMPSocketURL() string { return filepath.Join(d.BaseURL, "qmp.sock") }
 
+// SerialLogURL captures the QEMU-backed guest's serial console (PL011), which
+// gives boot-time visibility when the graphical framebuffer stops updating.
+func (d *VMDirectory) SerialLogURL() string { return filepath.Join(d.BaseURL, "serial.log") }
+
+// SWTPMSocketURL is the swtpm control socket QEMU's TPM emulator connects to.
+func (d *VMDirectory) SWTPMSocketURL() string { return filepath.Join(d.BaseURL, "swtpm.sock") }
+
+// TPMStateDir holds the persistent vTPM 2.0 state (required by Windows 11).
+func (d *VMDirectory) TPMStateDir() string { return filepath.Join(d.BaseURL, "tpm") }
+
 func (d *VMDirectory) Name() string { return filepath.Base(d.BaseURL) }
 
 func (d *VMDirectory) Path() string { return d.BaseURL }
