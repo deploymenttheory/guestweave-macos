@@ -55,7 +55,7 @@ jobs:
                 python-is-python3 gcc-aarch64-linux-gnu ca-certificates
               # Init ONLY the submodules the ArmVirtQemu AARCH64 build needs. Most are
               # not compiled but are required for .dec meta-data validation: edk2 errors
-              # (000E) if any include dir listed in a parsed package's .dec is missing on
+              # (000E) if any include dir listed in a parsed .dec file is missing on
               # disk. The packages parsed here unconditionally reference these submodule
               # include dirs — MdePkg.dec (libfdt, mipisyst), CryptoPkg.dec (openssl,
               # mbedtls), MdeModulePkg.dec (brotli), SecurityPkg.dec (libspdm), plus
