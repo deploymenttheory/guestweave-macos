@@ -48,6 +48,28 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 		} else {
 			a.Value = p.uart.read(off, a.Bytes)
 		}
+	case a.Addr >= gicRedistBase && a.Addr < gicRedistBase+0x20000:
+		// Apple's in-kernel GIC maps the (shared) distributor itself but leaves the
+		// per-vCPU redistributor to the VMM: we trap its MMIO and proxy each
+		// register to Apple's GIC via hv_gic_get/set_redistributor_reg, whose reg
+		// enum value is exactly the byte offset (validated against Parallels).
+		reg := hv.Hv_gic_redistributor_reg_t(a.Addr - gicRedistBase)
+		if a.Write {
+			if rc := hv.HvGicSetRedistributorReg(a.VcpuID, reg, a.Value); rc != 0 && p.unknown[a.Addr] == 0 {
+				fmt.Fprintf(p.out, "\n[gicr] set reg off=0x%x rc=0x%x (unproxied)\n", a.Addr-gicRedistBase, uint32(rc))
+				p.unknown[a.Addr]++
+			}
+		} else {
+			if rc, val := hv.HvGicGetRedistributorReg(a.VcpuID, reg); rc == 0 {
+				a.Value = val
+			} else {
+				a.Value = 0
+				if p.unknown[a.Addr] == 0 {
+					fmt.Fprintf(p.out, "\n[gicr] get reg off=0x%x rc=0x%x (unproxied)\n", a.Addr-gicRedistBase, uint32(rc))
+					p.unknown[a.Addr]++
+				}
+			}
+		}
 	default:
 		if p.unknown[a.Addr] == 0 {
 			fmt.Fprintf(p.out, "\n[mmio] unhandled %s @ 0x%08x (%d-byte)\n", rwVerb(a.Write), a.Addr, a.Bytes)
@@ -117,9 +139,8 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 		return err
 	}
 	defer vcpu.Destroy()
-	if _, rb := hv.HvGicGetRedistributorBase(vcpu.ID()); true {
-		fmt.Fprintf(out, "  GIC: vCPU %d redistributor base = 0x%08x (DTB declares 0x%08x)\n", vcpu.ID(), rb, gicRedistBase)
-	}
+	rcRB, rb := hv.HvGicGetRedistributorBase(vcpu.ID())
+	fmt.Fprintf(out, "  GIC: vCPU %d redistributor base = 0x%08x (rc=0x%x; DTB declares 0x%08x)\n", vcpu.ID(), rb, uint32(rcRB), gicRedistBase)
 	vcpu.Trace = out
 	vcpu.MaxExits = maxExits
 	if !step {

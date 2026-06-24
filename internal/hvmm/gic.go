@@ -13,7 +13,7 @@ import (
 // They are the QEMU "virt" GICv3 addresses that our embedded DTB declares.
 const (
 	gicDistBase      uint64 = 0x0800_0000 // distributor
-	gicRedistBase    uint64 = 0x080A_0000 // redistributor region
+	gicRedistBase    uint64 = 0x0E00_0000 // redistributor region (32 MiB; in the free virt hole 0x0E000000-0x10000000, matching our patched DTB)
 	gicMsiBase       uint64 = 0x0808_0000 // MSI/ITS region
 	gicMsiIntidBase  uint32 = 53          // MSI intid base (SPI range; Parallels-validated)
 	gicMsiIntidCount uint32 = 64

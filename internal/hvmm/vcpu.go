@@ -18,12 +18,13 @@ const cpsrEL1hMasked uint64 = 0x3c5 // M=0b0101 (EL1h) | DAIF (0x3c0)
 // MMIOAccess describes a guest memory access that faulted to the host because no
 // RAM is mapped there — i.e. an access to an (emulated) device register.
 type MMIOAccess struct {
-	Addr  uint64 // guest-physical address
-	Write bool   // true: guest store; false: guest load
-	Bytes int    // access width in bytes (1,2,4,8)
-	Value uint64 // store: data written by guest; load: handler sets the result
-	reg   hv.Hv_reg_t
-	isZR  bool
+	Addr   uint64 // guest-physical address
+	Write  bool   // true: guest store; false: guest load
+	Bytes  int    // access width in bytes (1,2,4,8)
+	Value  uint64 // store: data written by guest; load: handler sets the result
+	VcpuID uint64 // the faulting vCPU (needed to proxy per-CPU GIC redistributor regs)
+	reg    hv.Hv_reg_t
+	isZR   bool
 }
 
 // Handler emulates the devices behind guest exits. Returning stop=true ends Run.
@@ -296,11 +297,12 @@ func (v *VCPU) handleDataAbort(esr uint64, h Handler) (stop bool, err error) {
 	sas := (esr >> 22) & 0x3      // access size: 0=byte..3=doubleword
 	srt := hv.Hv_reg_t((esr >> 16) & 0x1f) // transfer register
 	a := MMIOAccess{
-		Addr:  v.exit.Exception.Physical_address,
-		Write: (esr>>6)&1 == 1,
-		Bytes: 1 << sas,
-		reg:   hv.HV_REG_X0 + srt,
-		isZR:  srt == 31,
+		Addr:   v.exit.Exception.Physical_address,
+		Write:  (esr>>6)&1 == 1,
+		Bytes:  1 << sas,
+		VcpuID: v.id,
+		reg:    hv.HV_REG_X0 + srt,
+		isZR:   srt == 31,
 	}
 	if a.Write && !a.isZR {
 		rc, val := hv.HvVcpuGetReg(v.id, a.reg)
