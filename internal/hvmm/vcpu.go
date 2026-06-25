@@ -142,6 +142,24 @@ func (m *Machine) NewVCPU(entryPC uint64) (*VCPU, error) {
 	if err := hvErr("set MPIDR_EL1", hv.HvVcpuSetSysReg(id, hv.HV_SYS_REG_MPIDR_EL1, mpidrCPU0)); err != nil {
 		return nil, err
 	}
+	// Expose an emulated PMU. Apple leaves an EL2 guest's ID_AA64DFR0_EL1.PMUVer at
+	// 0, so guest PMU register reads raise an Undefined exception that crashes the
+	// guest (Windows' bootmgfw reads PMCCNTR_EL0 immediately at entry). Per
+	// hv_vm_config.h, a non-zero VALID PMUVer makes the framework EMULATE the PMU.
+	// Use the host's PMUVer (the vCPU config's feature register) so the value is one
+	// the framework supports, falling back to PMUv3 (ARMv8.5).
+	pmuVer := uint64(0x6)
+	if rc, hostDFR0 := hv.HvVcpuConfigGetFeatureReg(hv.HvVcpuConfigCreate(), hv.HV_FEATURE_REG_ID_AA64DFR0_EL1); rc == 0 {
+		if v := (hostDFR0 >> 8) & 0xf; v != 0 {
+			pmuVer = v
+		}
+	}
+	if rc, dfr0 := hv.HvVcpuGetSysReg(id, hv.HV_SYS_REG_ID_AA64DFR0_EL1); rc == 0 {
+		dfr0 = (dfr0 &^ (0xf << 8)) | (pmuVer << 8) // ID_AA64DFR0_EL1.PMUVer[11:8]
+		if err := hvErr("set ID_AA64DFR0_EL1.PMUVer", hv.HvVcpuSetSysReg(id, hv.HV_SYS_REG_ID_AA64DFR0_EL1, dfr0)); err != nil {
+			return nil, err
+		}
+	}
 	// Establish the virtual counter: CNTVCT_EL0 = mach_absolute_time() - offset.
 	// Parallels calls hv_vcpu_set_vtimer_offset at vCPU init; without it the guest
 	// counter relationship is undefined and the vtimer never reaches its deadline.
