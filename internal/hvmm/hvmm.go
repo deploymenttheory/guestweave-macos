@@ -107,6 +107,23 @@ func NewMachine() (*Machine, error) {
 	return &Machine{}, nil
 }
 
+// MapROM maps size bytes of host-backed memory at gpa as read-only + executable
+// for the guest (real flash semantics: the guest may execute but not write). The
+// returned host slice is writable so the caller can load firmware into it.
+func (m *Machine) MapROM(gpa uint64, size int) ([]byte, error) {
+	host, err := syscall.Mmap(-1, 0, size,
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
+	if err != nil {
+		return nil, fmt.Errorf("mmap %d bytes: %w", size, err)
+	}
+	if err := hvErr("hv_vm_map", hv.HvVmMap(unsafe.Pointer(&host[0]), gpa, size, memRead|memExec)); err != nil {
+		_ = syscall.Munmap(host)
+		return nil, err
+	}
+	m.regions = append(m.regions, region{gpa: gpa, host: host})
+	return host, nil
+}
+
 // MapRAM allocates size bytes of host-backed, page-aligned RAM and maps it
 // read/write/execute into the guest at guest-physical address gpa. It returns the
 // host-side slice so the caller can load code/firmware into the guest.

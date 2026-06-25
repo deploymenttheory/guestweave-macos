@@ -112,7 +112,15 @@ jobs:
               source ./edksetup.sh
               set -u
               export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
-              build -a AARCH64 -t GCC5 -b "$TARGET" -p ArmVirtPkg/ArmVirtQemu.dsc
+              # Relax edk2's DXE memory-protection policies. Windows' bootmgfw fails
+              # to start ("ConvertPages: failed to find range ..." -> EFI_NO_MAPPING)
+              # because edk2 applies strict W^X/NX permissions (the DXE NX policy +
+              # image protection) to regions like the PCIe MMIO window and the
+              # firmware FV, which Windows' image-start path chokes on. Disabling
+              # these is the standard workaround for booting Windows on edk2.
+              build -a AARCH64 -t GCC5 -b "$TARGET" -p ArmVirtPkg/ArmVirtQemu.dsc \
+                --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdDxeNxMemoryProtectionPolicy=0 \
+                --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdImageProtectionPolicy=0
 
               FV="Build/ArmVirtQemu-AARCH64/${TARGET}_GCC5/FV/QEMU_EFI.fd"
               ls -la "$FV"

@@ -244,7 +244,7 @@ func setupGuest(out io.Writer, fwPath string, entryCPSR uint64) (*Machine, *VCPU
 	// Map the whole code-flash region (up to the NV store) and copy the firmware
 	// into its base, so the image size is irrelevant — a compact CI-built FV and a
 	// 64 MiB distro image both work.
-	flash, err := m.MapRAM(bootFlashBase, int(bootVarsBase))
+	flash, err := m.MapROM(bootFlashBase, int(bootVarsBase))
 	if err != nil {
 		_ = m.Close()
 		return nil, nil, err
