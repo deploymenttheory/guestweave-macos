@@ -98,6 +98,29 @@ type WindowsConfig struct {
 	// under ~/.weave/cache/windows/iso). Empty once Windows is installed and
 	// the media is detached.
 	InstallISO string `json:"installISO,omitempty"`
+	// SetupMode controls first-boot automation. "interactive" (default) automates
+	// only the UEFI boot steps (via OCR) then hands Windows Setup to the user over
+	// VNC; "unattend" drives a fully automated install from an autounattend.xml.
+	SetupMode string `json:"setupMode,omitempty"`
+	// UnattendFile is the path to a user-supplied autounattend.xml, used when
+	// SetupMode is "unattend". It is embedded at the install ISO root (and/or
+	// attached as removable media) so Windows Setup runs unattended.
+	UnattendFile string `json:"unattendFile,omitempty"`
+}
+
+// Windows setup modes for WindowsConfig.SetupMode.
+const (
+	SetupModeInteractive = "interactive"
+	SetupModeUnattend    = "unattend"
+)
+
+// EffectiveSetupMode returns the configured setup mode, defaulting to
+// "interactive" for an unset/unknown value or a nil receiver.
+func (w *WindowsConfig) EffectiveSetupMode() string {
+	if w != nil && w.SetupMode == SetupModeUnattend {
+		return SetupModeUnattend
+	}
+	return SetupModeInteractive
 }
 
 // NewVMConfig ports VMConfig.init(platform:cpuCountMin:memorySizeMin:

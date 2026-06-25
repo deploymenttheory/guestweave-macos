@@ -28,13 +28,21 @@ type CreateCommand struct {
 	Name       string
 	FromIPSW   string
 	Linux      bool
-	// FromWindows creates a Windows 11 ARM64 guest from the named feature
-	// release (e.g. "24H2"); the install media is fetched and built via the
-	// winmediafoundry SDK and the VM runs on the QEMU backend.
+	// FromWindows creates a Windows 11 ARM64 guest. The install media is
+	// downloaded from Microsoft's software-download site (latest official
+	// ARM64 ISO) and the VM runs on the QEMU backend. The value is used as a
+	// label only; pass any non-empty string (e.g. "--from-windows").
 	FromWindows string
-	// WindowsEdition selects the Windows edition (default "Professional");
-	// only meaningful with FromWindows.
+	// WindowsEdition selects the edition label for display (default
+	// "Professional"); only meaningful with FromWindows.
 	WindowsEdition string
+	// WindowsConfig is an optional path to a JSON or YAML MediaConfig file
+	// that specifies edition, language, and/or an unattend_file.
+	// CLI flags (--windows-edition, --unattend-file) override config-file values.
+	WindowsConfig string
+	// UnattendFile is an optional path to an autounattend.xml to embed at the
+	// ISO root so Windows Setup runs unattended.
+	UnattendFile string
 	DiskSize       uint16
 	DiskFormat     diskimage.DiskImageFormat
 	// NetProfile optionally persists a default network profile into the new

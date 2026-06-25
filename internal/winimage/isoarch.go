@@ -55,7 +55,10 @@ func InspectISOArch(path string) (string, error) {
 
 	volID := strings.ToUpper(strings.TrimSpace(string(buf[isoVolIDOffset : isoVolIDOffset+isoVolIDLen])))
 	switch {
-	case strings.Contains(volID, "ARM64"):
+	// Microsoft's official software-download ISOs use CCCOMA_A64FRE_<LANG>_DV9;
+	// MCT/ESD-built media uses CCCOMA_ARM64FRE. Both tokens unambiguously
+	// identify ARM64 media (the SDK's ArchFromToken uses the same set).
+	case strings.Contains(volID, "ARM64"), strings.Contains(volID, "A64"):
 		return archARM64, nil
 	case strings.Contains(volID, "X64"), strings.Contains(volID, "AMD64"):
 		return archX64, nil

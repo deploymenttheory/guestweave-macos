@@ -1,5 +1,3 @@
-github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
-github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/anchore/go-lzo v0.1.0 h1:NgAacnzqPeGH49Ky19QKLBZEuFRqtTG9cdaucc3Vncs=
 github.com/anchore/go-lzo v0.1.0/go.mod h1:3kLx0bve2oN1iDwgM1U5zGku1Tfbdb0No5qp1eL1fIk=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
@@ -10,14 +8,10 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/deploymenttheory/go-bindings-macosplatform v0.10.1 h1:V1pn5rSTQDWqBHnL+czFZwOSvN2sToYnc0KG4n30QuU=
-github.com/deploymenttheory/go-bindings-macosplatform v0.10.1/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
-github.com/deploymenttheory/go-bindings-macosplatform v0.11.0 h1:CnKIiG+QU3ym4Ch8G2O8sI9wSRhlwA4GYgCSEL4Kwpc=
-github.com/deploymenttheory/go-bindings-macosplatform v0.11.0/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
-github.com/deploymenttheory/go-bindings-macosplatform v0.11.1 h1:9CWtqmo1iGJ/MCJhdmeOnudd7oqrvde1fiu8+3etdHE=
-github.com/deploymenttheory/go-bindings-macosplatform v0.11.1/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
-github.com/deploymenttheory/go-bindings-macosplatform v0.11.2 h1:kq4BzHBeacukP0vermJCkXL/IWp2fuwj5VxlhOV6eX0=
-github.com/deploymenttheory/go-bindings-macosplatform v0.11.2/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
+github.com/deploymenttheory/go-bindings-macosplatform v0.12.1 h1:TATVZVuJggJi/svA2swt2VQLVaUQ9VydwvDarAMg+2k=
+github.com/deploymenttheory/go-bindings-macosplatform v0.12.1/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
+github.com/deploymenttheory/go-sdk-winmediafoundry v0.6.1 h1:8CAMr2HnzUpft0gXkuy/23GfWarMe4CKaDfsWWv9pN4=
+github.com/deploymenttheory/go-sdk-winmediafoundry v0.6.1/go.mod h1:nHIMDpyDstio7x/Oe1xLuusqUF2PenpzLwuYaVE6jgQ=
 github.com/diskfs/go-diskfs v1.9.3 h1:cLciNCeZ4QAXVxyPJDr1ZJ9N9CCG3rQlQ/z/Cs/cNDM=
 github.com/diskfs/go-diskfs v1.9.3/go.mod h1:TePJORO83Adh5pb2SqsxAwaP0fofFxKLkxctiS/9OQc=
 github.com/djherbis/times v1.6.0 h1:w2ctJ92J8fBvWPxugmXIv7Nz7Q3iDMKNx9v5ocVH20c=

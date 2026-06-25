@@ -11,6 +11,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -108,6 +109,14 @@ func (c *RunCommand) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconf
 	if endpoint, ok := inst.VNCEndpoint(); ok {
 		c.presentWindowsVNC(runCtx, vmDir, endpoint)
 		defer os.Remove(vmDir.VNCEndpointPath())
+		// While installing, automate the UEFI boot steps over OCR/VNC so Windows
+		// Setup starts without a human dismissing bootmgr's "Press any key" prompt
+		// (which renders only on the display). Both setup modes share this; for
+		// "unattend" the embedded autounattend.xml then drives Setup, for
+		// "interactive" the user takes over the live Setup UI afterwards.
+		if vmConfig.Windows.InstallISO != "" {
+			go c.driveWindowsUEFISetup(runCtx, endpoint)
+		}
 	}
 
 	// Wait for the guest to stop, or for an interrupt to request shutdown.
@@ -119,6 +128,73 @@ func (c *RunCommand) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconf
 		}
 	}
 	return nil
+}
+
+// driveWindowsUEFISetup connects to the running VM's VNC server and runs the
+// "windows-uefi" OCR preset, which presses past bootmgr's optical-boot prompt so
+// Windows Setup / WinPE starts without a human at the console. Errors are
+// non-fatal and only logged — the operator can always drive the prompt over VNC.
+func (c *RunCommand) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
+	cfg, err := unattended.LoadUnattendedConfig("windows-uefi")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "windows uefi automation: load preset: %v\n", err)
+		return
+	}
+	commands, err := unattended.ParseBootCommands(cfg.BootCommands)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "windows uefi automation: parse preset: %v\n", err)
+		return
+	}
+	host, portStr, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "windows uefi automation: bad VNC endpoint %q: %v\n", endpoint, err)
+		return
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "windows uefi automation: bad VNC port %q: %v\n", portStr, err)
+		return
+	}
+
+	// VNC (and its password, set best-effort over QMP) come up shortly after the
+	// process starts; retry the dial briefly.
+	var vnc *weavevnc.VNCClient
+	for attempt := 0; attempt < 30; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+		if vnc, err = weavevnc.DialVNC(ctx, host, port, c.VNCPassword); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+	if vnc == nil {
+		fmt.Fprintf(os.Stderr, "windows uefi automation: connect VNC %s: %v\n", endpoint, err)
+		return
+	}
+	defer vnc.Close()
+
+	if cfg.BootWait > 0 {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(cfg.BootWait) * time.Second):
+		}
+	}
+
+	fmt.Println("Automating Windows UEFI boot (press-any-key) over OCR...")
+	automation := unattended.NewAutomation(vnc, false, "")
+	if err := automation.ExecuteAll(ctx, commands); err != nil {
+		if ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "windows uefi automation: %v\n", err)
+		}
+		return
+	}
+	fmt.Println("Windows Setup reached.")
 }
 
 // presentWindowsVNC reuses weave's VNC viewer plumbing for the QEMU VNC server:

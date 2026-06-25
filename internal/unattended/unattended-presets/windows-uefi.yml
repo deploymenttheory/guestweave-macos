@@ -1,0 +1,41 @@
+# Windows 11 ARM64 — UEFI boot automation.
+#
+# Used with: weave run <vm>  (driven automatically for Windows guests whose
+# config sets a setup mode). This preset automates ONLY the UEFI/firmware steps so
+# Windows Setup / WinPE starts without a human at the console. It is shared by both
+# setup modes:
+#   - "unattend":   the embedded autounattend.xml then drives Setup unattended.
+#   - "interactive": weave hands the live Setup UI to the user over VNC afterwards.
+#
+# The single UEFI-level interaction is bootmgr's optical-boot prompt — "Press any
+# key to boot from CD or DVD" — which edk2/bootmgr render ONLY on the display, never
+# on the serial console. So it must be handled by OCR + a keypress, and the live
+# accept-input window is short, so we burst the key across it.
+
+# QEMU + edk2 reach bootmgr's prompt fairly quickly; the <wait> below tolerates the
+# variance, so keep the initial settle small.
+boot_wait: 5
+
+boot_commands:
+  # Wait for bootmgr's optical-boot prompt to appear on the framebuffer. Apple
+  # Vision OCRs "Press any key to boot from CD or DVD" as separate observations
+  # ("Press", "any key to boot", ...), so match the contiguous middle token
+  # rather than the full phrase.
+  - "<wait 'any key to boot', timeout=240>"
+  # Press SPACE repeatedly across the prompt's short live window. A single press
+  # frequently misses (OCR latency vs. the ~5s window), so spread several over ~3s.
+  - "<space>"
+  - "<delay 0.5>"
+  - "<space>"
+  - "<delay 0.5>"
+  - "<space>"
+  - "<delay 0.5>"
+  - "<space>"
+  - "<delay 0.5>"
+  - "<space>"
+  - "<delay 0.5>"
+  - "<space>"
+  # Confirm WinPE / Windows Setup actually started (so a missed keypress fails loudly
+  # here instead of silently dropping to the UEFI shell). "Setup" appears in the
+  # Windows Setup window title once the graphical phase is up.
+  - "<wait 'Setup', timeout=300>"

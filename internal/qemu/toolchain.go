@@ -40,7 +40,9 @@ var homebrewPrefixes = []string{"/opt/homebrew", "/usr/local"}
 var firmwareCodeNames = []string{"edk2-aarch64-code.fd", "AAVMF_CODE.fd", "QEMU_EFI.fd"}
 
 // firmwareVarsNames are candidate filenames for the edk2 ARM UEFI vars template.
-var firmwareVarsNames = []string{"edk2-arm-vars.fd", "AAVMF_VARS.fd"}
+// Homebrew QEMU ships it as edk2-arm-vars.fd; upstream and other builds use
+// edk2-aarch64-vars.fd.  Both are a blank NVRAM suitable for AArch64 guests.
+var firmwareVarsNames = []string{"edk2-aarch64-vars.fd", "edk2-arm-vars.fd", "AAVMF_VARS.fd"}
 
 // ResolveToolchain locates the QEMU toolchain. Resolution order:
 //

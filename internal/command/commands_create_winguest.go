@@ -1,7 +1,7 @@
 //go:build darwin
 
-// Windows-guest creation for `weave create --from-windows <release>`. Unlike
-// the VZ-backed macOS/Linux paths, this acquires Windows 11 ARM64 install media
+// Windows-guest creation for `weave create --from-windows`. Unlike the
+// VZ-backed macOS/Linux paths, this acquires Windows 11 ARM64 install media
 // via the winmediafoundry SDK (internal/winimage), provisions a qcow2 system
 // disk with qemu-img, and writes a Windows VMConfig that the run command boots
 // on the QEMU backend.
@@ -40,14 +40,39 @@ func (c *CreateCommand) createWindows(ctx context.Context, vmDir *vmdirectory.VM
 		return err
 	}
 
-	// Acquire (download + build) the bootable ARM64 install ISO, cached under
-	// <cache>/windows.
-	media, err := winimage.Acquire(ctx, winimage.Options{
-		Release:  c.FromWindows,
-		Edition:  c.WindowsEdition,
+	// Build the acquire options, starting from the config file if given.
+	opts := winimage.Options{
 		CacheDir: filepath.Join(cfg.WeaveCacheDir, "windows"),
 		Progress: os.Stdout,
-	})
+	}
+
+	if c.WindowsConfig != "" {
+		mc, err := winimage.LoadMediaConfig(c.WindowsConfig)
+		if err != nil {
+			return err
+		}
+		opts.Edition = mc.Edition
+		opts.Language = mc.Language
+		if mc.UnattendFile != "" {
+			opts.Unattend, err = os.ReadFile(mc.UnattendFile)
+			if err != nil {
+				return fmt.Errorf("read unattend_file from config: %w", err)
+			}
+		}
+	}
+
+	// CLI flags override config-file values.
+	if c.WindowsEdition != "" {
+		opts.Edition = c.WindowsEdition
+	}
+	if c.UnattendFile != "" {
+		opts.Unattend, err = os.ReadFile(c.UnattendFile)
+		if err != nil {
+			return fmt.Errorf("read unattend file: %w", err)
+		}
+	}
+
+	media, err := winimage.Acquire(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -88,8 +113,8 @@ func (c *CreateCommand) createWindows(ctx context.Context, vmDir *vmdirectory.VM
 		return err
 	}
 
-	fmt.Printf("Created Windows %s (%s, build %d). Run it with: weave run %s\n",
-		media.Release, media.Edition, media.Build, c.Name)
+	fmt.Printf("Created Windows %s (%s). Run it with: weave run %s\n",
+		media.Release, media.Edition, c.Name)
 	return nil
 }
 
