@@ -41,6 +41,7 @@ type Platform struct {
 	fwcfg     *fwcfg
 	flash     *cfiFlash
 	virtioblk *virtioBlk // nil unless a disk image is attached
+	nvme      *nvmeController // nil unless an NVMe disk image is attached
 	out       io.Writer
 	exits     int
 	maxExits  int
@@ -107,11 +108,26 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 		} else {
 			a.Value = p.virtioblk.read(off, a.Bytes)
 		}
+	case p.nvme != nil && p.nvme.inBAR(a.Addr):
+		off := a.Addr - p.nvme.barBase()
+		if a.Write {
+			p.nvme.regWrite(off, a.Bytes, a.Value)
+		} else {
+			a.Value = p.nvme.regRead(off, a.Bytes)
+		}
 	case a.Addr >= bootEcamBase && a.Addr < bootEcamBase+bootEcamSize:
-		// PCIe ECAM config space with no devices populated: config reads must
-		// return all-ones so enumeration sees absent functions and stops, rather
-		// than discovering a phantom device (vendor 0x0000) at every address.
-		if !a.Write {
+		// PCIe ECAM config space: bus0/dev0/fn0 is the NVMe controller (when
+		// attached); every other function reads back all-ones so enumeration sees
+		// it absent and stops, rather than finding a phantom device everywhere.
+		off := a.Addr - bootEcamBase
+		switch {
+		case p.nvme != nil && off < 0x1000:
+			if a.Write {
+				p.nvme.configWrite(off, a.Bytes, a.Value)
+			} else {
+				a.Value = p.nvme.configRead(off, a.Bytes)
+			}
+		case !a.Write:
 			a.Value = ^uint64(0) >> (64 - 8*uint(a.Bytes))
 		}
 	default:
@@ -179,6 +195,14 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 		}
 		p.virtioblk = newVirtioBlk(m, data)
 		fmt.Fprintf(out, "[disk] virtio-blk %s (%d MiB) at 0x%08x\n", disk, len(data)>>20, bootVirtioBase)
+	}
+	if disk := os.Getenv("WEAVE_HVMM_NVME"); disk != "" {
+		data, derr := os.ReadFile(disk)
+		if derr != nil {
+			return fmt.Errorf("read nvme disk %q: %w", disk, derr)
+		}
+		p.nvme = newNvmeController(m, data)
+		fmt.Fprintf(out, "[disk] nvme %s (%d MiB) on PCIe bus0/dev0\n", disk, len(data)>>20)
 	}
 	var runErr error
 	if step {
