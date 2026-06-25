@@ -24,9 +24,10 @@ type Spec struct {
 	Config    *vmconfig.VMConfig
 	VMDir     *vmdirectory.VMDirectory
 
-	// InstallISO, when set, is attached as a bootable USB CD-ROM (first boot /
-	// install). USB mass storage and xHCI have inbox Windows drivers, so WinPE
-	// can boot and read the install source without out-of-box drivers.
+	// InstallISO, when set, is attached as a second NVMe drive with bootindex 0
+	// so UEFI boots \efi\boot\bootaa64.efi from it before the system disk.
+	// NVMe is used instead of USB CD-ROM because emulated USB CD-ROM stalls
+	// WinPE during loading; NVMe has an inbox ARM64 Windows driver.
 	InstallISO string
 
 	// VNCDisplay is the VNC display number; the server listens on
