@@ -2,7 +2,11 @@
 
 package hvmm
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+
+	hv "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/hypervisor"
+)
 
 // nvmeController is a minimal NVMe controller: a PCIe function (config space +
 // one 64-bit memory BAR) exposing the NVMe register block, an admin queue, and
@@ -32,6 +36,18 @@ type nvmeController struct {
 
 	sq [maxNvmeQueues]nvmeSQ
 	cq [maxNvmeQueues]nvmeCQ
+
+	// MSI-X: interrupt-driven completions (Windows' NVMe driver requires this;
+	// edk2 polls and never enables it). The table lives in BAR0 at nvmeMSIXTable;
+	// on a completion we deliver the CQ's vector via Apple's GIC (HvGicSendMsi).
+	msixEnabled bool
+	msixTable   [nvmeMSIXVectors]msixEntry
+}
+
+type msixEntry struct {
+	addr uint64 // message address
+	data uint32 // message data (Apple's GIC takes this as the interrupt id)
+	ctrl uint32 // vector control (bit0 = masked)
 }
 
 type nvmeSQ struct {
@@ -42,10 +58,11 @@ type nvmeSQ struct {
 }
 
 type nvmeCQ struct {
-	base  uint64
-	size  uint32 // entries
-	tail  uint32
-	phase uint8 // expected phase tag (toggles each wrap)
+	base   uint64
+	size   uint32 // entries
+	tail   uint32
+	phase  uint8  // expected phase tag (toggles each wrap)
+	vector uint16 // MSI-X vector (from Create I/O CQ); admin CQ uses 0
 }
 
 const (
@@ -54,10 +71,17 @@ const (
 	nvmeSQES      = 64
 	nvmeCQES      = 16
 
+	// MSI-X table and pending-bit array, in BAR0 above the doorbells.
+	nvmeMSIXVectors = 8
+	nvmeMSIXTable   = 0x3000
+	nvmeMSIXPBA     = 0x3800
+
 	// PCI config offsets.
-	pciCommand = 0x04
-	pciBAR0    = 0x10
-	pciBAR1    = 0x14
+	pciCommand  = 0x04
+	pciBAR0     = 0x10
+	pciBAR1     = 0x14
+	pciCapPtr   = 0x40   // our capabilities list starts here (MSI-X)
+	msixCapCtrl = 0x42   // MSI-X message control (within the capability)
 
 	// NVMe register offsets (BAR-relative).
 	nvmeCAP    = 0x00 // capabilities (8 bytes)
@@ -93,17 +117,25 @@ func (n *nvmeController) inBAR(addr uint64) bool {
 
 // nvmeStaticConfig is the fixed part of the PCI type-0 header; the command
 // register and BARs are overlaid dynamically by configByte.
-var nvmeStaticConfig = func() [64]byte {
-	var c [64]byte
+var nvmeStaticConfig = func() [80]byte {
+	var c [80]byte
 	binary.LittleEndian.PutUint16(c[0x00:], 0x1b36) // VID: Red Hat
 	binary.LittleEndian.PutUint16(c[0x02:], 0x0010) // DID: NVMe
+	c[0x06] = 0x10                                  // status: capabilities list present
 	c[0x08] = 0x01                                  // revision
 	c[0x09] = 0x02                                  // prog IF: NVM Express
 	c[0x0a] = 0x08                                  // subclass: NVM
 	c[0x0b] = 0x01                                  // class: mass storage
 	binary.LittleEndian.PutUint16(c[0x2c:], 0x1b36) // subsystem VID
 	binary.LittleEndian.PutUint16(c[0x2e:], 0x0010) // subsystem DID
+	c[0x34] = pciCapPtr                             // capabilities pointer -> MSI-X
 	c[0x3d] = 0x01                                  // interrupt pin A
+	// MSI-X capability at 0x40: table & PBA both in BAR0 (BIR 0).
+	c[pciCapPtr] = 0x11 // cap ID: MSI-X
+	c[pciCapPtr+1] = 0  // next capability: end of list
+	binary.LittleEndian.PutUint16(c[msixCapCtrl:], uint16(nvmeMSIXVectors-1)) // table size N-1
+	binary.LittleEndian.PutUint32(c[pciCapPtr+4:], uint32(nvmeMSIXTable))
+	binary.LittleEndian.PutUint32(c[pciCapPtr+8:], uint32(nvmeMSIXPBA))
 	return c
 }()
 
@@ -119,6 +151,12 @@ func (n *nvmeController) configByte(i int) byte {
 		return byte(v >> (8 * (i - pciBAR0)))
 	case i >= pciBAR1 && i < pciBAR1+4: // BAR0 high
 		return byte(n.barHigh >> (8 * (i - pciBAR1)))
+	case i >= msixCapCtrl && i < msixCapCtrl+2: // MSI-X message control (enable bit is dynamic)
+		v := uint16(nvmeMSIXVectors - 1)
+		if n.msixEnabled {
+			v |= 0x8000
+		}
+		return byte(v >> (8 * (i - msixCapCtrl)))
 	case i >= 0 && i < len(nvmeStaticConfig):
 		return nvmeStaticConfig[i]
 	}
@@ -141,6 +179,10 @@ func (n *nvmeController) configWrite(off uint64, bytes int, val uint64) {
 		n.barLow = uint32(val)
 	case pciBAR1:
 		n.barHigh = uint32(val)
+	case msixCapCtrl: // MSI-X message control (16-bit): bit 15 = enable
+		n.msixEnabled = val&0x8000 != 0
+	case pciCapPtr: // 32-bit write covering the cap header; control is the high half
+		n.msixEnabled = val&0x8000_0000 != 0
 	}
 }
 
@@ -163,6 +205,10 @@ func (n *nvmeController) regRead(off uint64, bytes int) uint64 {
 		return uint64(n.csts) & mask(bytes)
 	case off == nvmeAQA:
 		return uint64(n.aqa) & mask(bytes)
+	case off >= nvmeMSIXTable && off < nvmeMSIXTable+nvmeMSIXVectors*16:
+		return uint64(n.msixTableRead(int(off - nvmeMSIXTable)))
+	case off >= nvmeMSIXPBA && off < nvmeMSIXPBA+8:
+		return 0 // no pending bits: completions are delivered synchronously
 	}
 	return 0
 }
@@ -192,9 +238,42 @@ func (n *nvmeController) regWrite(off uint64, bytes int, val uint64) {
 	case nvmeACQ + 4:
 		n.acq = (n.acq & 0xffff_ffff) | (val << 32)
 	default:
-		if off >= nvmeDBBase {
+		switch {
+		case off >= nvmeMSIXTable && off < nvmeMSIXTable+nvmeMSIXVectors*16:
+			n.msixTableWrite(int(off-nvmeMSIXTable), uint32(val))
+		case off >= nvmeDBBase && off < nvmeMSIXTable:
 			n.doorbell(int(off-nvmeDBBase)/4, uint32(val))
 		}
+	}
+}
+
+// MSI-X table: each 16-byte entry is { addr_lo, addr_hi, data, vector_control }.
+func (n *nvmeController) msixTableRead(off int) uint32 {
+	e := &n.msixTable[off/16]
+	switch off % 16 {
+	case 0:
+		return uint32(e.addr)
+	case 4:
+		return uint32(e.addr >> 32)
+	case 8:
+		return e.data
+	case 12:
+		return e.ctrl
+	}
+	return 0
+}
+
+func (n *nvmeController) msixTableWrite(off int, val uint32) {
+	e := &n.msixTable[off/16]
+	switch off % 16 {
+	case 0:
+		e.addr = (e.addr &^ 0xffff_ffff) | uint64(val)
+	case 4:
+		e.addr = (e.addr & 0xffff_ffff) | (uint64(val) << 32)
+	case 8:
+		e.data = val
+	case 12:
+		e.ctrl = val
 	}
 }
 
@@ -241,10 +320,10 @@ func (n *nvmeController) execute(q int, cmd []byte) (uint32, uint16) {
 		switch op {
 		case 0x06: // Identify
 			n.identify(cdw10&0xff, prp1)
-		case 0x05: // Create I/O Completion Queue
+		case 0x05: // Create I/O Completion Queue (CDW11 high half = MSI-X vector)
 			qid := cdw10 & 0xffff
 			if qid < maxNvmeQueues {
-				n.cq[qid] = nvmeCQ{base: prp1, size: ((cdw10 >> 16) & 0xffff) + 1, phase: 1}
+				n.cq[qid] = nvmeCQ{base: prp1, size: ((cdw10 >> 16) & 0xffff) + 1, phase: 1, vector: uint16(cdw11 >> 16)}
 			}
 		case 0x01: // Create I/O Submission Queue
 			qid := cdw10 & 0xffff
@@ -352,6 +431,14 @@ func (n *nvmeController) complete(cqid uint16, sqid int, sqhead uint32, cid uint
 	if cq.tail >= cq.size {
 		cq.tail = 0
 		cq.phase ^= 1
+	}
+	// MSI-X: deliver this CQ's vector via Apple's GIC. The guest programmed the
+	// message address/data; Apple's GIC takes the data as the interrupt id and
+	// raises it. edk2 polls (MSI-X disabled), so this only fires under Windows.
+	if n.msixEnabled && int(cq.vector) < nvmeMSIXVectors {
+		if v := n.msixTable[cq.vector]; v.ctrl&1 == 0 { // vector not masked
+			hv.HvGicSendMsi(v.addr, v.data)
+		}
 	}
 }
 
