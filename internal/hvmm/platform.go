@@ -71,7 +71,7 @@ func (p *Platform) HandleMMIO(a *MMIOAccess) (bool, error) {
 		}
 	case a.Addr >= bootFwCfgBase && a.Addr < bootFwCfgBase+0x18:
 		if p.fwcfg == nil {
-			p.fwcfg = newFwCfg()
+			p.fwcfg = newFwCfg(nil, nil) // fallback: legacy interface only, no ramfb
 		}
 		off := a.Addr - bootFwCfgBase
 		if a.Write {
@@ -188,6 +188,8 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	uart := &pl011{out: out, in: make(chan byte, 256)}
 	go uart.pumpInput(os.Stdin) // host stdin drives the guest serial console
 	p := &Platform{uart: uart, out: out, maxExits: maxExits, unknown: map[uint64]int{}}
+	// fw_cfg with DMA (needed for ramfb's config write) + a ramfb framebuffer.
+	p.fwcfg = newFwCfg(m, newRamfb(m, out))
 	if disk := os.Getenv("WEAVE_HVMM_DISK"); disk != "" {
 		data, derr := os.ReadFile(disk)
 		if derr != nil {
