@@ -84,6 +84,15 @@ func handleSnapshotConn(vmDir *vmdirectory.VMDirectory, conn net.Conn) {
 			return
 		}
 		writeSnapshotResponse(conn, snapshotSocketResponse{Snapshot: &snap})
+	case "revert":
+		// req.Name carries the snapshot ref. Trigger an in-process revert; the
+		// run loop rebuilds the VM and re-points the window in place.
+		if !triggerInProcessRevert(req.Name) {
+			writeSnapshotResponse(conn, snapshotSocketResponse{
+				Error: "in-process revert is unavailable for this run (e.g. VNC); stop the VM and revert instead"})
+			return
+		}
+		writeSnapshotResponse(conn, snapshotSocketResponse{})
 	default:
 		writeSnapshotResponse(conn, snapshotSocketResponse{Error: "unknown command: " + req.Command})
 	}
@@ -124,6 +133,29 @@ func requestSnapshotOverSocket(vmDir *vmdirectory.VMDirectory, name, description
 		return vmdirectory.Snapshot{}, weaveerrors.ErrGeneric("the run process returned an empty snapshot result")
 	}
 	return *resp.Snapshot, nil
+}
+
+// requestRevertOverSocket asks the run process to revert a running VM in place.
+// Returns errSnapshotSocketUnavailable when no run process is listening.
+func requestRevertOverSocket(vmDir *vmdirectory.VMDirectory, ref string) error {
+	conn, err := net.DialTimeout("unix", snapshotSocketPath(vmDir), 5*time.Second)
+	if err != nil {
+		return errSnapshotSocketUnavailable
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	if err := json.NewEncoder(conn).Encode(snapshotSocketRequest{Command: "revert", Name: ref}); err != nil {
+		return err
+	}
+	var resp snapshotSocketResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return weaveerrors.ErrGeneric("the run process did not return a revert result: %v", err)
+	}
+	if resp.Error != "" {
+		return weaveerrors.ErrGeneric("%s", resp.Error)
+	}
+	return nil
 }
 
 // errSnapshotSocketUnavailable means no run process is listening on the VM's

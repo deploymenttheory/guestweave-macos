@@ -221,12 +221,21 @@ var vmDelegateClass = sync.OnceValue(func() purego.Class {
 
 // NewVM ports VM.init(vmDir:…) for an existing VM directory.
 func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
-	options.normalize()
-
 	config, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return nil, err
 	}
+	return NewVMWithConfig(vmDir, config, options)
+}
+
+// NewVMWithConfig builds a VM from an already-loaded config, avoiding a re-read
+// of config.json. The run process holds an fcntl PID lock on config.json, and
+// reopening that file from the same process drops the lock (POSIX: closing any
+// descriptor to the file releases the process's locks on it). The in-process
+// snapshot-revert rebuild therefore passes the config it already has rather than
+// going through NewVM.
+func NewVMWithConfig(vmDir *vmdirectory.VMDirectory, config *vmconfig.VMConfig, options VMOptions) (*VM, error) {
+	options.normalize()
 
 	if config.Arch != weaveplatform.CurrentArchitecture() {
 		return nil, UnsupportedArchitectureError{}

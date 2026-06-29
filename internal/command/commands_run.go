@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -389,86 +390,7 @@ func (c *RunCommand) RunMainThread() error {
 		}
 	}
 
-	var serialPorts []idvirt.SerialPortConfigurationProvider
-	if c.Serial {
-		ttyFD := weavevm.CreatePTY()
-		if ttyFD < 0 {
-			return weaveerrors.ErrVMConfigurationError("Failed to create PTY")
-		}
-		ttyRead := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(ttyFD, false)
-		ttyWrite := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(ttyFD, false)
-		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
-	} else if c.SerialPath != "" {
-		ttyRead := foundation.FileHandleForReadingAtPath(c.SerialPath)
-		ttyWrite := foundation.FileHandleForWritingAtPath(c.SerialPath)
-		if ttyRead == nil || ttyWrite == nil {
-			return weaveerrors.ErrVMConfigurationError("Failed to open PTY")
-		}
-		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
-	}
-
-	// Parse root disk options.
-	diskOptions := parseDiskOptions(c.RootDiskOpts)
-	syncMode, err := parseDiskImageSynchronizationMode(diskOptions.syncModeRaw)
-	if err != nil {
-		return err
-	}
-	var caching *idvirt.DiskImageCachingMode
-	if cachingMode, ok, err := parseDiskImageCachingMode(diskOptions.cachingModeRaw); err != nil {
-		return err
-	} else if ok {
-		caching = &cachingMode
-	}
-
-	nics, err := c.resolveNICs(vmDir)
-	if err != nil {
-		return err
-	}
-	c.primaryBridged = primaryNICIsBridged(nics)
-
-	// Softnet needs the SUID bit (or passwordless sudo) before the helper can
-	// be spawned; prompt for it interactively when any resolved NIC is softnet.
-	if topologyNeedsSoftnet(nics) && isInteractiveSession() {
-		if err := weavenetwork.SoftnetConfigureSUIDBitIfNeeded(); err != nil {
-			return err
-		}
-	}
-
-	additionalStorageDevices, err := c.additionalDiskAttachments()
-	if err != nil {
-		return err
-	}
-	usbStorageDevices, err := c.usbMassStorageDevices()
-	if err != nil {
-		return err
-	}
-	additionalStorageDevices = append(additionalStorageDevices, usbStorageDevices...)
-	directorySharingDevices, err := c.directoryShares()
-	if err != nil {
-		return err
-	}
-	rosettaShares, err := c.rosettaDirectoryShare()
-	if err != nil {
-		return err
-	}
-	directorySharingDevices = append(directorySharingDevices, rosettaShares...)
-
-	vm, err = weavevm.NewVM(vmDir, weavevm.VMOptions{
-		NICs:                     nics,
-		AdditionalStorageDevices: additionalStorageDevices,
-		DirectorySharingDevices:  directorySharingDevices,
-		SerialPorts:              serialPorts,
-		Suspendable:              c.Suspendable,
-		Nested:                   c.Nested,
-		NoAudio:                  c.NoAudio,
-		NoClipboard:              c.NoClipboard,
-		ClipboardPolicyEnabled:   c.clipboardRun,
-		Sync:                     syncMode,
-		Caching:                  caching,
-		NoTrackpad:               c.NoTrackpad,
-		NoPointer:                c.NoPointer,
-		NoKeyboard:               c.NoKeyboard,
-	})
+	vm, err = c.buildVMInstance(vmDir, vmConfig)
 	if err != nil {
 		return err
 	}
@@ -507,12 +429,18 @@ func (c *RunCommand) RunMainThread() error {
 
 	runCtx, cancelRun := context.WithCancel(context.Background())
 
-	go c.driveVM(runCtx, localStorage, vmDir, vncImpl)
+	go c.driveVM(runCtx, localStorage, vmDir, vncImpl, vmConfig)
 
 	// Serve disk-snapshot requests for this running VM (`weave snapshot create`,
 	// the REST API): the run process owns the VZ handle, so it performs the
 	// pause/clone/resume.
 	go serveSnapshotSocket(runCtx, vmDir)
+
+	// Enable in-process snapshot revert (rebuild the VM and re-point the window
+	// in place, no relaunch). Disabled for VNC runs, whose server is bound to the
+	// original VM instance; those fall back to the relaunch path.
+	inProcessRevertReady = !(c.VNC || c.VNCExperimental)
+	ui.RevertFunc = triggerInProcessRevert
 
 	// "weave stop" support.
 	sigint := make(chan os.Signal, 1)
@@ -561,14 +489,128 @@ func (c *RunCommand) RunMainThread() error {
 	return nil
 }
 
+// buildVMInstance resolves a fresh set of run-time devices (serial PTYs, NIC
+// attachments, extra/USB storage, directory shares) and constructs a new VM. It
+// is used both for the initial run and to rebuild the VM for an in-process
+// snapshot revert — the attachments are single-use, so each instance gets its
+// own freshly-resolved set.
+func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) (*weavevm.VM, error) {
+	var serialPorts []idvirt.SerialPortConfigurationProvider
+	if c.Serial {
+		ttyFD := weavevm.CreatePTY()
+		if ttyFD < 0 {
+			return nil, weaveerrors.ErrVMConfigurationError("Failed to create PTY")
+		}
+		ttyRead := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(ttyFD, false)
+		ttyWrite := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(ttyFD, false)
+		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
+	} else if c.SerialPath != "" {
+		ttyRead := foundation.FileHandleForReadingAtPath(c.SerialPath)
+		ttyWrite := foundation.FileHandleForWritingAtPath(c.SerialPath)
+		if ttyRead == nil || ttyWrite == nil {
+			return nil, weaveerrors.ErrVMConfigurationError("Failed to open PTY")
+		}
+		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
+	}
+
+	// Parse root disk options.
+	diskOptions := parseDiskOptions(c.RootDiskOpts)
+	syncMode, err := parseDiskImageSynchronizationMode(diskOptions.syncModeRaw)
+	if err != nil {
+		return nil, err
+	}
+	var caching *idvirt.DiskImageCachingMode
+	if cachingMode, ok, err := parseDiskImageCachingMode(diskOptions.cachingModeRaw); err != nil {
+		return nil, err
+	} else if ok {
+		caching = &cachingMode
+	}
+
+	nics, err := c.resolveNICs(vmConfig)
+	if err != nil {
+		return nil, err
+	}
+	c.primaryBridged = primaryNICIsBridged(nics)
+
+	// Softnet needs the SUID bit (or passwordless sudo) before the helper can
+	// be spawned; prompt for it interactively when any resolved NIC is softnet.
+	if topologyNeedsSoftnet(nics) && isInteractiveSession() {
+		if err := weavenetwork.SoftnetConfigureSUIDBitIfNeeded(); err != nil {
+			return nil, err
+		}
+	}
+
+	additionalStorageDevices, err := c.additionalDiskAttachments()
+	if err != nil {
+		return nil, err
+	}
+	usbStorageDevices, err := c.usbMassStorageDevices()
+	if err != nil {
+		return nil, err
+	}
+	additionalStorageDevices = append(additionalStorageDevices, usbStorageDevices...)
+	directorySharingDevices, err := c.directoryShares()
+	if err != nil {
+		return nil, err
+	}
+	rosettaShares, err := c.rosettaDirectoryShare()
+	if err != nil {
+		return nil, err
+	}
+	directorySharingDevices = append(directorySharingDevices, rosettaShares...)
+
+	return weavevm.NewVMWithConfig(vmDir, vmConfig, weavevm.VMOptions{
+		NICs:                     nics,
+		AdditionalStorageDevices: additionalStorageDevices,
+		DirectorySharingDevices:  directorySharingDevices,
+		SerialPorts:              serialPorts,
+		Suspendable:              c.Suspendable,
+		Nested:                   c.Nested,
+		NoAudio:                  c.NoAudio,
+		NoClipboard:              c.NoClipboard,
+		ClipboardPolicyEnabled:   c.clipboardRun,
+		Sync:                     syncMode,
+		Caching:                  caching,
+		NoTrackpad:               c.NoTrackpad,
+		NoPointer:                c.NoPointer,
+		NoKeyboard:               c.NoKeyboard,
+	})
+}
+
+// In-process snapshot revert coordination. triggerInProcessRevert records the
+// target snapshot and cancels the current VM's context so driveVM's run loop
+// rebuilds the VM in place (same process and window) instead of exiting.
+var (
+	revertMu             sync.Mutex
+	currentVMCancel      context.CancelFunc
+	pendingRevertRef     string
+	inProcessRevertReady bool
+)
+
+// triggerInProcessRevert requests an in-process revert to ref. It returns false
+// when in-process revert isn't available (e.g. a VNC run, or no live VM yet), so
+// the caller can fall back to the relaunch path.
+func triggerInProcessRevert(ref string) bool {
+	revertMu.Lock()
+	defer revertMu.Unlock()
+	if !inProcessRevertReady || currentVMCancel == nil {
+		return false
+	}
+	pendingRevertRef = ref
+	currentVMCancel() // unblocks vm.Run; driveVM sees the pending ref and rebuilds
+	return true
+}
+
 // driveVM ports the inner Task of Run.runOnMainThread(): restores a
 // snapshot if present, starts the VM, brings up VNC and the control socket,
-// then waits for the VM to finish.
+// then waits for the VM to finish. It loops to support in-process snapshot
+// revert, rebuilding the VM and re-pointing the window's view without exiting.
 func (c *RunCommand) driveVM(
 	ctx context.Context,
 	localStorage *vmstorage.VMStorageLocal,
 	vmDir *vmdirectory.VMDirectory,
 	vncImpl weavevnc.VNC,
+	vmConfig *vmconfig.VMConfig,
 ) {
 	fail := func(err error) {
 		fmt.Fprintln(os.Stderr, err)
@@ -576,119 +618,177 @@ func (c *RunCommand) driveVM(
 		os.Exit(1)
 	}
 
-	resume := false
-	if weaveplatform.MacOSAtLeast(14) &&
-		fsutil.Exists(vmDir.StateURL()) {
-		fmt.Println("restoring VM state from a snapshot...")
-		if err := vm.RestoreMachineStateFrom(vmDir.StateURL()); err != nil {
-			fail(err)
-			return
-		}
-		if err := os.RemoveAll(vmDir.StateURL()); err != nil {
-			fail(err)
-			return
-		}
-		resume = true
-		fmt.Println("resuming VM...")
-	}
+	// servicesStarted gates the one-time, process-lifetime services (clipboard,
+	// VNC, control socket) so they aren't restarted when the VM is rebuilt for an
+	// in-process snapshot revert.
+	servicesStarted := false
 
-	if err := vm.Start(c.Recovery, resume); err != nil {
-		var objcErr *objcerrors.ObjCError
-		if errors.As(err, &objcErr) && objcErr.Domain == "VZErrorDomain" &&
-			objcErr.Code == int64(idvirt.ErrorVirtualMachineLimitExceeded) {
-			hint := ""
-			if entries, listErr := localStorage.List(); listErr == nil {
-				var runningVMs []string
-				for _, entry := range entries {
-					if running, err := entry.VMDir.Running(); err == nil && running {
-						runningVMs = append(runningVMs, entry.Name)
+	for {
+		// Per-iteration cancellation: an in-process revert cancels vmCtx to
+		// unblock vm.Run and rebuild the VM, without tearing down the process.
+		vmCtx, cancelVM := context.WithCancel(ctx)
+		revertMu.Lock()
+		currentVMCancel = cancelVM
+		revertMu.Unlock()
+
+		// Restore from a staged state file: the initial resume of a suspended VM,
+		// or the RAM state staged by a full-state snapshot revert.
+		resume := false
+		if weaveplatform.MacOSAtLeast(14) && fsutil.Exists(vmDir.StateURL()) {
+			fmt.Println("restoring VM state from a snapshot...")
+			if err := vm.RestoreMachineStateFrom(vmDir.StateURL()); err != nil {
+				cancelVM()
+				fail(err)
+				return
+			}
+			if err := os.RemoveAll(vmDir.StateURL()); err != nil {
+				cancelVM()
+				fail(err)
+				return
+			}
+			resume = true
+			fmt.Println("resuming VM...")
+		}
+
+		if err := vm.Start(c.Recovery, resume); err != nil {
+			cancelVM()
+			var objcErr *objcerrors.ObjCError
+			if errors.As(err, &objcErr) && objcErr.Domain == "VZErrorDomain" &&
+				objcErr.Code == int64(idvirt.ErrorVirtualMachineLimitExceeded) {
+				hint := ""
+				if entries, listErr := localStorage.List(); listErr == nil {
+					var runningVMs []string
+					for _, entry := range entries {
+						if running, err := entry.VMDir.Running(); err == nil && running {
+							runningVMs = append(runningVMs, entry.Name)
+						}
+					}
+					if len(runningVMs) > 0 {
+						hint = " (other running VMs: " + strings.Join(runningVMs, ", ") + ")"
 					}
 				}
-				if len(runningVMs) > 0 {
-					hint = " (other running VMs: " + strings.Join(runningVMs, ", ") + ")"
-				}
+				fail(weaveerrors.ErrVirtualMachineLimitExceeded(hint))
+				return
 			}
-			fail(weaveerrors.ErrVirtualMachineLimitExceeded(hint))
+			fail(err)
 			return
 		}
-		fail(err)
-		return
-	}
 
-	// Enterprise clipboard engine (policy-driven, via the guest agent). Resolved
-	// in RunMainThread; when active it owns the clipboard and the SPICE agent
-	// clipboard is disabled (see VMOptions.ClipboardPolicyEnabled).
-	if c.clipboardRun {
-		if mac, err := vmDir.MACAddress(); err == nil {
-			if vmMAC, ok := macaddress.NewMACAddress(mac); ok {
-				engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
-					c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
-				go engine.Run(ctx)
-				ui.SetClipboardStatus(string(c.clipboardPolicy.Direction))
+		if !servicesStarted {
+			servicesStarted = true
+
+			// Enterprise clipboard engine (policy-driven, via the guest agent).
+			// Resolved in RunMainThread; when active it owns the clipboard and the
+			// SPICE agent clipboard is disabled (see VMOptions.ClipboardPolicyEnabled).
+			if c.clipboardRun {
+				if mac, err := vmDir.MACAddress(); err == nil {
+					if vmMAC, ok := macaddress.NewMACAddress(mac); ok {
+						engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
+							c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
+						go engine.Run(ctx)
+						ui.SetClipboardStatus(string(c.clipboardPolicy.Direction))
+					}
+				}
+			}
+
+			if vncImpl != nil {
+				vncURL, err := vncImpl.WaitForURL(ctx, c.primaryBridged)
+				if err != nil {
+					cancelVM()
+					fail(err)
+					return
+				}
+
+				// Surface the URL to the run window's Connect ▸ Open VNC Viewer and
+				// View ▸ Toggle Screen Share menu items.
+				ui.SetVNCURL(vncURL)
+
+				// Record the VNC endpoint so other processes (the MCP screen tools)
+				// can connect to drive or view this VM by name; clear it on exit.
+				endpointPath := vmDir.VNCEndpointPath()
+				_ = os.WriteFile(endpointPath, []byte(vncURL), 0o600)
+				defer os.Remove(endpointPath)
+
+				_, onCI := objcutil.EnvironmentValue("CI")
+				if c.NoGraphics || onCI || c.ShowScreen {
+					fmt.Printf("VNC server is running at %s\n", vncURL)
+				} else {
+					fmt.Printf("Opening %s...\n", vncURL)
+					ui.OpenURL(vncURL)
+				}
+
+				// View-only screen viewer: a dedicated VNC client continuously
+				// captures the screen and serves it as MJPEG to a browser, with no
+				// path for the operator to send input into the guest.
+				if c.ShowScreen {
+					if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
+						if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
+							if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
+								go screenviewer.StreamVNCToViewer(
+									ctx,
+									match[2],
+									viewerPort,
+									match[1],
+									server,
+								)
+								fmt.Printf(
+									"View-only screen: open %s in a browser to watch (no input reaches the VM).\n",
+									server.URL(),
+								)
+								screenviewer.OpenInBrowser(server.URL())
+							}
+						}
+					}
+				}
+			}
+
+			if weaveplatform.MacOSAtLeast(14) {
+				go func() {
+					controlSocket := controlsocket.NewControlSocket(vmDir.ControlSocketURL())
+					_ = controlSocket.Run(ctx)
+				}()
 			}
 		}
-	}
 
-	if vncImpl != nil {
-		vncURL, err := vncImpl.WaitForURL(ctx, c.primaryBridged)
+		if err := vm.Run(vmCtx); err != nil {
+			cancelVM()
+			fail(err)
+			return
+		}
+
+		// vm.Run returned: the guest stopped, the process is shutting down, or an
+		// in-process revert was requested. Claim any pending revert atomically.
+		revertMu.Lock()
+		ref := pendingRevertRef
+		pendingRevertRef = ""
+		currentVMCancel = nil
+		revertMu.Unlock()
+		cancelVM()
+
+		if ref == "" {
+			break // genuine stop / process shutdown
+		}
+
+		// In-process revert: the VM is stopped. Restore the snapshot's disk and
+		// firmware (staging its RAM state, if any), rebuild the VM, and re-point
+		// the window's view — all without exiting the process.
+		fmt.Printf("reverting to snapshot %q...\n", ref)
+		if _, err := vmDir.RevertSnapshot(ref); err != nil {
+			fmt.Fprintln(os.Stderr, weaveerrors.ErrGeneric("revert failed: %v", err))
+			break
+		}
+		// Rebuild from the already-loaded vmConfig so config.json is never
+		// reopened in this process — reopening it would drop the fcntl PID lock
+		// (POSIX semantics), making the VM report as stopped and letting a second
+		// run start on it.
+		newVM, err := c.buildVMInstance(vmDir, vmConfig)
 		if err != nil {
 			fail(err)
 			return
 		}
-
-		// Surface the URL to the run window's Connect ▸ Open VNC Viewer and
-		// View ▸ Toggle Screen Share menu items.
-		ui.SetVNCURL(vncURL)
-
-		// Record the VNC endpoint so other processes (the MCP screen tools)
-		// can connect to drive or view this VM by name; clear it on exit.
-		endpointPath := vmDir.VNCEndpointPath()
-		_ = os.WriteFile(endpointPath, []byte(vncURL), 0o600)
-		defer os.Remove(endpointPath)
-
-		_, onCI := objcutil.EnvironmentValue("CI")
-		if c.NoGraphics || onCI || c.ShowScreen {
-			fmt.Printf("VNC server is running at %s\n", vncURL)
-		} else {
-			fmt.Printf("Opening %s...\n", vncURL)
-			ui.OpenURL(vncURL)
-		}
-
-		// View-only screen viewer: a dedicated VNC client continuously
-		// captures the screen and serves it as MJPEG to a browser, with no
-		// path for the operator to send input into the guest.
-		if c.ShowScreen {
-			if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
-				if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
-					if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
-						go screenviewer.StreamVNCToViewer(
-							ctx,
-							match[2],
-							viewerPort,
-							match[1],
-							server,
-						)
-						fmt.Printf(
-							"View-only screen: open %s in a browser to watch (no input reaches the VM).\n",
-							server.URL(),
-						)
-						screenviewer.OpenInBrowser(server.URL())
-					}
-				}
-			}
-		}
-	}
-
-	if weaveplatform.MacOSAtLeast(14) {
-		go func() {
-			controlSocket := controlsocket.NewControlSocket(vmDir.ControlSocketURL())
-			_ = controlSocket.Run(ctx)
-		}()
-	}
-
-	if err := vm.Run(ctx); err != nil {
-		fail(err)
-		return
+		vm = newVM
+		controlsocket.SetConnector(vm)
+		ui.SwapVM(vm)
 	}
 
 	if vncImpl != nil {
@@ -829,7 +929,7 @@ func isInteractiveSession() bool {
 // resolveNICs resolves the run's network topology into a concrete NIC list.
 // Precedence: --net-profile, then --net-device, then the legacy --net-* flags,
 // then the VM config's persisted NICs (a single NAT NIC for legacy configs).
-func (c *RunCommand) resolveNICs(vmDir *vmdirectory.VMDirectory) ([]vmconfig.NICConfig, error) {
+func (c *RunCommand) resolveNICs(vmConfig *vmconfig.VMConfig) ([]vmconfig.NICConfig, error) {
 	switch {
 	case c.NetProfile != "":
 		return weavenetwork.ExpandProfile(c.NetProfile, weavenetwork.ProfileOptions{
@@ -869,11 +969,10 @@ func (c *RunCommand) resolveNICs(vmDir *vmdirectory.VMDirectory) ([]vmconfig.NIC
 		}}, nil
 
 	default:
-		config, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
-		if err != nil {
-			return nil, err
-		}
-		return config.EnsureNICs(), nil
+		// Use the already-loaded config rather than reopening config.json: in the
+		// run process that file holds the fcntl PID lock, and reopening it would
+		// drop the lock.
+		return vmConfig.EnsureNICs(), nil
 	}
 }
 

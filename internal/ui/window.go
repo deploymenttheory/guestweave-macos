@@ -45,6 +45,22 @@ var (
 	suspendableFlag atomic.Bool
 )
 
+// RevertFunc, when set by the run command, performs an in-process snapshot
+// revert and reports whether it was handled in place (false ⇒ the caller should
+// fall back to the relaunch path). It lets the UI trigger a revert without the
+// ui package importing internal/command (which would be an import cycle).
+var RevertFunc func(ref string) bool
+
+// SwapVM re-points the run window at a rebuilt VM after an in-process snapshot
+// revert. VZVirtualMachineView.WithVirtualMachine auto-dispatches onto the main
+// thread in the SDK, so this is safe to call from the run loop's goroutine.
+func SwapVM(newVM *weavevm.VM) {
+	activeVM = newVM
+	if activeView != nil {
+		activeView.WithVirtualMachine(newVM.VirtualMachine)
+	}
+}
+
 // Run ports Run.runUI/MainApp: it installs the menu bar, builds the window, and
 // enters the AppKit run loop. It blocks until the application terminates.
 func (w *Window) Run() {

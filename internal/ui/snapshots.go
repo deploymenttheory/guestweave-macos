@@ -85,7 +85,12 @@ func revertSnapshotFromMenu() {
 		return
 	}
 	if !confirm("Revert VM?",
-		fmt.Sprintf("Revert to snapshot %q? The VM restarts from that point and any changes since are lost.", names[idx])) {
+		fmt.Sprintf("Revert to snapshot %q? The VM is restored to that point and any changes since are lost.", names[idx])) {
+		return
+	}
+	// Prefer an in-process revert (same window, no relaunch); fall back to a
+	// relaunch when it isn't available (e.g. a VNC run).
+	if RevertFunc != nil && RevertFunc(names[idx]) {
 		return
 	}
 	relaunchWithRevert(names[idx])
