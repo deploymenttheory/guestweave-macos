@@ -221,12 +221,21 @@ var vmDelegateClass = sync.OnceValue(func() purego.Class {
 
 // NewVM ports VM.init(vmDir:…) for an existing VM directory.
 func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
-	options.normalize()
-
 	config, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return nil, err
 	}
+	return NewVMWithConfig(vmDir, config, options)
+}
+
+// NewVMWithConfig builds a VM from an already-loaded config, avoiding a re-read
+// of config.json. The run process holds an fcntl PID lock on config.json, and
+// reopening that file from the same process drops the lock (POSIX: closing any
+// descriptor to the file releases the process's locks on it). The in-process
+// snapshot-revert rebuild therefore passes the config it already has rather than
+// going through NewVM.
+func NewVMWithConfig(vmDir *vmdirectory.VMDirectory, config *vmconfig.VMConfig, options VMOptions) (*VM, error) {
+	options.normalize()
 
 	if config.Arch != weaveplatform.CurrentArchitecture() {
 		return nil, UnsupportedArchitectureError{}
@@ -704,9 +713,18 @@ func craftConfiguration(diskPath string, nvramPath string,
 		WithPlatform(platform).
 		WithGraphicsDevices(vmConfig.Platform.GraphicsDevice(vmConfig))
 
+	// On macOS 14 the framework's save/restore (VZ suspend) accepted only a
+	// limited device set — no host audio, no entropy device, and the Mac
+	// keyboard/trackpad in place of USB input. As of macOS 15 save/restore
+	// supports the full device set, so "suspendable" no longer drops anything
+	// there. This also matters for correctness: a state saved with the full set
+	// fails to restore against the limited set (VZErrorDomain:12 invalid
+	// argument), so the save-time and restore-time configs must agree.
+	limitForSuspend := options.Suspendable && !weaveplatform.MacOSAtLeast(15)
+
 	// Audio.
 	soundDeviceConfiguration := idiomatic.NewVirtioSoundDeviceConfiguration()
-	if !options.NoAudio && !options.Suspendable {
+	if !options.NoAudio && !limitForSuspend {
 		inputStream := idiomatic.NewVirtioSoundDeviceInputStreamConfiguration().
 			WithSource(idiomatic.NewHostAudioInputStreamSource())
 		outputStream := idiomatic.NewVirtioSoundDeviceOutputStreamConfiguration().
@@ -720,9 +738,18 @@ func craftConfiguration(diskPath string, nvramPath string,
 
 	// Keyboard and mouse.
 	suspendablePlatform, isSuspendable := vmConfig.Platform.(vmconfig.PlatformSuspendable)
-	if options.Suspendable && isSuspendable {
-		configuration.WithKeyboards(suspendablePlatform.KeyboardsSuspendable()...)
-		configuration.WithPointingDevices(suspendablePlatform.PointingDevicesSuspendable()...)
+	if limitForSuspend && isSuspendable {
+		// Some guests (Linux) have no save/restore-compatible input devices, so
+		// their suspendable device sets are empty. Skip the setters in that case:
+		// the idiomatic With* collection setters dereference a nil array for the
+		// empty slice (SIGSEGV), and a fresh configuration already defaults these
+		// device lists to empty.
+		if keyboards := suspendablePlatform.KeyboardsSuspendable(); len(keyboards) > 0 {
+			configuration.WithKeyboards(keyboards...)
+		}
+		if pointingDevices := suspendablePlatform.PointingDevicesSuspendable(); len(pointingDevices) > 0 {
+			configuration.WithPointingDevices(pointingDevices...)
+		}
 	} else {
 		if options.NoKeyboard {
 			configuration.WithKeyboards()
@@ -791,7 +818,7 @@ func craftConfiguration(diskPath string, nvramPath string,
 	configuration.WithStorageDevices(storageDevices...)
 
 	// Entropy.
-	if !options.Suspendable {
+	if !limitForSuspend {
 		configuration.WithEntropyDevices(idiomatic.NewVirtioEntropyDeviceConfiguration())
 	}
 

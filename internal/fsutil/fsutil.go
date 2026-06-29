@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // Exists reports whether a file or directory exists at path. It mirrors
@@ -136,6 +138,41 @@ func xattr(trap uintptr, path, name string, value *byte, size uintptr) (int, err
 
 // CopyItem recursively copies src to dst (file or directory), mirroring
 // NSFileManager.copyItem(at:to:).
+// AvailableBytes returns the free space (bytes available to an unprivileged
+// user) on the filesystem that contains path.
+func AvailableBytes(path string) (int64, error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(path, &st); err != nil {
+		return 0, err
+	}
+	return int64(st.Bavail) * int64(st.Bsize), nil
+}
+
+// CloneFile creates dst as an APFS copy-on-write clone of src when the
+// filesystem supports it, falling back to a full byte copy otherwise (a
+// non-APFS volume or a cross-volume copy). Cloning is near-instant and claims
+// no extra space until either side is written, which is what makes keeping many
+// VM disk snapshots practical. clonefile(2) requires dst to not exist, so any
+// existing file is removed first.
+func CloneFile(src, dst string) error {
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	switch err := unix.Clonefile(src, dst, 0); {
+	case err == nil:
+		return nil
+	case errors.Is(err, unix.ENOTSUP), errors.Is(err, unix.EXDEV), errors.Is(err, unix.EINVAL):
+		// Cloning unsupported here (e.g. not APFS, or across volumes) — fall back.
+		info, statErr := os.Lstat(src)
+		if statErr != nil {
+			return statErr
+		}
+		return copyFile(src, dst, info)
+	default:
+		return err
+	}
+}
+
 func CopyItem(src, dst string) error {
 	info, err := os.Lstat(src)
 	if err != nil {

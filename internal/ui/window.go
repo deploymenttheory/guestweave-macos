@@ -45,6 +45,22 @@ var (
 	suspendableFlag atomic.Bool
 )
 
+// RevertFunc, when set by the run command, performs an in-process snapshot
+// revert and reports whether it was handled in place (false ⇒ the caller should
+// fall back to the relaunch path). It lets the UI trigger a revert without the
+// ui package importing internal/command (which would be an import cycle).
+var RevertFunc func(ref string) bool
+
+// SwapVM re-points the run window at a rebuilt VM after an in-process snapshot
+// revert. VZVirtualMachineView.WithVirtualMachine auto-dispatches onto the main
+// thread in the SDK, so this is safe to call from the run loop's goroutine.
+func SwapVM(newVM *weavevm.VM) {
+	activeVM = newVM
+	if activeView != nil {
+		activeView.WithVirtualMachine(newVM.VirtualMachine)
+	}
+}
+
 // Run ports Run.runUI/MainApp: it installs the menu bar, builds the window, and
 // enters the AppKit run loop. It blocks until the application terminates.
 func (w *Window) Run() {
@@ -54,7 +70,7 @@ func (w *Window) Run() {
 
 	app := appkit.SharedApplication()
 	app.SetActivationPolicy(appkit.ApplicationActivationPolicyRegular)
-	installMainMenu(app, w.Suspendable)
+	installMainMenu(app)
 
 	contentRect := corefoundation.CGRect{
 		Origin: corefoundation.CGPoint{X: 0, Y: 0},
@@ -152,7 +168,7 @@ func addMenuItemWithAction(menu *appkit.Menu, title, selector, keyEquivalent str
 	return appkit.MenuItemFromID(itemID)
 }
 
-func installMainMenu(app *appkit.Application, suspendable bool) {
+func installMainMenu(app *appkit.Application) {
 	target := purego.ID(menuTargetClass()).Send(purego.RegisterName("new"))
 
 	newMenu := func(title string) *appkit.Menu {
@@ -225,14 +241,25 @@ func installMainMenu(app *appkit.Application, suspendable bool) {
 	addItem(viewMenu, "Toggle Screen Share", "weaveScreenShare:", "")
 
 	// ── Control menu (Run.swift:848): Start / Stop / Request Stop, plus Suspend
-	// when the VM is suspendable on macOS 14+.
+	// (snapshot the VM to disk). Always offered on macOS 14+: the handler
+	// snapshots when the VM is running suspendable, otherwise offers to relaunch
+	// it that way (a VM not started suspendable can't be snapshotted live).
 	controlMenu := addTopMenu("Control")
 	addItem(controlMenu, "Start", "weaveStart:", "")
 	addItem(controlMenu, "Stop", "weaveStop:", "")
 	addItem(controlMenu, "Request Stop", "weaveRequestStop:", "")
-	if weaveplatform.MacOSAtLeast(14) && suspendable {
-		addItem(controlMenu, "Suspend", "weaveSuspend:", "")
+	if weaveplatform.MacOSAtLeast(14) {
+		addItem(controlMenu, "Suspend (RAM State)…", "weaveSuspend:", "")
 	}
+	// Disk snapshots: a submenu to take, revert to, and delete named snapshots.
+	// Available on any macOS version (file clone + VZ pause/resume).
+	snapshotsItem := addMenuItemWithAction(controlMenu, "Snapshots", "", "")
+	snapshotsMenu := newMenu("Snapshots")
+	snapshotsItem.WithSubmenu(snapshotsMenu)
+	addItem(snapshotsMenu, "Take Snapshot…", "weaveSnapshot:", "")
+	snapshotsMenu.AddItem(appkit.SeparatorItem())
+	addItem(snapshotsMenu, "Revert to Snapshot…", "weaveSnapshotRevert:", "")
+	addItem(snapshotsMenu, "Delete Snapshot…", "weaveSnapshotDelete:", "")
 	controlMenu.AddItem(appkit.SeparatorItem())
 	addItem(controlMenu, "Restart", "weaveRestart:", "")
 	addItem(controlMenu, "Force Stop", "weaveForceStop:", "")
@@ -272,7 +299,10 @@ var menuTargetClass = sync.OnceValue(func() purego.Class {
 			method("weaveStart:", func() { go func() { _ = activeVM.StartMachine(false) }() }),
 			method("weaveStop:", func() { killSelf(syscall.SIGINT) }),
 			method("weaveRequestStop:", func() { killSelf(syscall.SIGUSR2) }),
-			method("weaveSuspend:", func() { killSelf(syscall.SIGUSR1) }),
+			method("weaveSuspend:", suspendFromMenu),
+			method("weaveSnapshot:", takeSnapshotFromMenu),
+			method("weaveSnapshotRevert:", revertSnapshotFromMenu),
+			method("weaveSnapshotDelete:", deleteSnapshotFromMenu),
 			method("weaveForceStop:", forceStop),
 			method("weaveRestart:", restartVM),
 			method("weaveClipboard:", showClipboardStatus),
