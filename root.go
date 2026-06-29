@@ -27,8 +27,8 @@ type commandRunner interface {
 var rootSubcommands = []string{
 	"create", "clone", "run", "set", "get", "list", "login", "logout", "ip",
 	"exec", "ssh", "pull", "push", "import", "export", "prune", "rename", "stop",
-	"delete", "fqn", "suspend", "ipsw", "images", "logs", "config", "serve",
-	"setup", "hvmm",
+	"delete", "fqn", "suspend", "snapshot", "ipsw", "images", "logs", "config",
+	"serve", "setup", "hvmm",
 }
 
 // parseRootCommand parses os.Args[1:] into a runnable command. The returned
@@ -482,6 +482,46 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 			return name, nil, weaveerrors.ErrGeneric("usage: weave suspend <name>")
 		}
 		return name, &weavecommand.SuspendCommand{Name: rest[0]}, nil
+
+	case "snapshot":
+		if len(rest) == 0 {
+			return name, nil, weaveerrors.ErrGeneric("usage: weave snapshot <create|list|revert|delete> <vm> [args]")
+		}
+		sub, subArgs := rest[0], rest[1:]
+		switch sub {
+		case "create":
+			command := &weavecommand.SnapshotCreateCommand{}
+			fs := weavecommand.NewFlagSet("snapshot create")
+			fs.StringVar(&command.Description, "description", "", "")
+			fs.StringVar(&command.Description, "d", "", "")
+			positionals, err := weavecommand.ParseInterleaved(fs, subArgs)
+			if err != nil {
+				return name, nil, err
+			}
+			if len(positionals) != 2 {
+				return name, nil, weaveerrors.ErrGeneric("usage: weave snapshot create <vm> <snapshot-name> [--description <text>]")
+			}
+			command.VM = positionals[0]
+			command.Name = positionals[1]
+			return name, command, nil
+		case "list", "ls":
+			if len(subArgs) != 1 {
+				return name, nil, weaveerrors.ErrGeneric("usage: weave snapshot list <vm>")
+			}
+			return name, &weavecommand.SnapshotListCommand{VM: subArgs[0]}, nil
+		case "revert", "restore":
+			if len(subArgs) != 2 {
+				return name, nil, weaveerrors.ErrGeneric("usage: weave snapshot revert <vm> <snapshot-name>")
+			}
+			return name, &weavecommand.SnapshotRevertCommand{VM: subArgs[0], Ref: subArgs[1]}, nil
+		case "delete", "rm":
+			if len(subArgs) != 2 {
+				return name, nil, weaveerrors.ErrGeneric("usage: weave snapshot delete <vm> <snapshot-name>")
+			}
+			return name, &weavecommand.SnapshotDeleteCommand{VM: subArgs[0], Ref: subArgs[1]}, nil
+		default:
+			return name, nil, weaveerrors.ErrGeneric("unknown snapshot subcommand %q\n\nsubcommands: create, list, revert, delete", sub)
+		}
 
 	case "ipsw":
 		if len(rest) != 0 {

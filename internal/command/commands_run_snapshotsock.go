@@ -1,0 +1,131 @@
+// Snapshot command socket: a tiny per-VM Unix socket served by the "weave run"
+// process so external clients (`weave snapshot create`, the REST API) can
+// snapshot a *running* VM. Only the run process owns the VZ handle, so it
+// performs the pause → clone → resume itself. Stopped VMs are snapshotted
+// directly by the client and never touch this socket.
+//go:build darwin
+
+package command
+
+import (
+	"context"
+	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
+	"time"
+
+	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	"github.com/deploymenttheory/weave/internal/vmdirectory"
+)
+
+const snapshotSocketName = "snapshot.sock"
+
+// snapshotSocketRequest / snapshotSocketResponse are the newline-delimited JSON
+// wire format spoken on the snapshot socket.
+type snapshotSocketRequest struct {
+	Command     string `json:"command"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type snapshotSocketResponse struct {
+	Snapshot *vmdirectory.Snapshot `json:"snapshot,omitempty"`
+	Error    string                `json:"error,omitempty"`
+}
+
+func snapshotSocketPath(vmDir *vmdirectory.VMDirectory) string {
+	return filepath.Join(vmDir.Path(), snapshotSocketName)
+}
+
+// serveSnapshotSocket binds the snapshot socket and handles requests until ctx
+// is cancelled. Best-effort: if binding fails, running-VM snapshots are simply
+// unavailable (the client falls back to reporting the VM is busy).
+func serveSnapshotSocket(ctx context.Context, vmDir *vmdirectory.VMDirectory) {
+	path := snapshotSocketPath(vmDir)
+	_ = os.Remove(path)
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		return
+	}
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
+		_ = os.Remove(path)
+	}()
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		go handleSnapshotConn(vmDir, conn)
+	}
+}
+
+func handleSnapshotConn(vmDir *vmdirectory.VMDirectory, conn net.Conn) {
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Minute))
+
+	var req snapshotSocketRequest
+	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+		writeSnapshotResponse(conn, snapshotSocketResponse{Error: "invalid request: " + err.Error()})
+		return
+	}
+
+	switch req.Command {
+	case "create":
+		if vm == nil {
+			writeSnapshotResponse(conn, snapshotSocketResponse{Error: "the VM is not running"})
+			return
+		}
+		snap, err := vm.CreateSnapshotPaused(vmDir, req.Name, req.Description)
+		if err != nil {
+			writeSnapshotResponse(conn, snapshotSocketResponse{Error: err.Error()})
+			return
+		}
+		writeSnapshotResponse(conn, snapshotSocketResponse{Snapshot: &snap})
+	default:
+		writeSnapshotResponse(conn, snapshotSocketResponse{Error: "unknown command: " + req.Command})
+	}
+}
+
+func writeSnapshotResponse(conn net.Conn, resp snapshotSocketResponse) {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+	_, _ = conn.Write(append(data, '\n'))
+}
+
+// requestSnapshotOverSocket asks the run process to snapshot a running VM. The
+// returned error distinguishes "no run process listening" (so the caller can
+// report the VM as not running) via errSnapshotSocketUnavailable.
+func requestSnapshotOverSocket(vmDir *vmdirectory.VMDirectory, name, description string) (vmdirectory.Snapshot, error) {
+	conn, err := net.DialTimeout("unix", snapshotSocketPath(vmDir), 5*time.Second)
+	if err != nil {
+		return vmdirectory.Snapshot{}, errSnapshotSocketUnavailable
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Minute))
+
+	req := snapshotSocketRequest{Command: "create", Name: name, Description: description}
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return vmdirectory.Snapshot{}, err
+	}
+
+	var resp snapshotSocketResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return vmdirectory.Snapshot{}, weaveerrors.ErrGeneric("the run process did not return a snapshot result: %v", err)
+	}
+	if resp.Error != "" {
+		return vmdirectory.Snapshot{}, weaveerrors.ErrGeneric("%s", resp.Error)
+	}
+	if resp.Snapshot == nil {
+		return vmdirectory.Snapshot{}, weaveerrors.ErrGeneric("the run process returned an empty snapshot result")
+	}
+	return *resp.Snapshot, nil
+}
+
+// errSnapshotSocketUnavailable means no run process is listening on the VM's
+// snapshot socket (the VM is not running, or is too old to serve it).
+var errSnapshotSocketUnavailable = weaveerrors.ErrGeneric("no run process is serving the VM")

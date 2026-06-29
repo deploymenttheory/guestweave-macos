@@ -202,6 +202,79 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "500": { $ref: "#/components/responses/Error" }
 
+  /weave/vms/{name}/snapshots:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    get:
+      tags: [vms]
+      summary: List a VM's disk snapshots.
+      responses:
+        "200":
+          description: The VM's snapshots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    description: { type: string }
+                    created_at: { type: string, format: date-time }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [vms]
+      summary: Create a named disk snapshot of a VM (paused/cloned/resumed if running).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+      responses:
+        "201":
+          description: The created snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  description: { type: string }
+                  created_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/snapshots/{snapshot}/revert:
+    parameters:
+      - $ref: "#/components/parameters/Name"
+      - { name: snapshot, in: path, required: true, schema: { type: string }, description: "Snapshot name or id." }
+    post:
+      tags: [vms]
+      summary: Revert a stopped VM's disk to a snapshot.
+      responses:
+        "200": { description: Reverted., content: { application/json: { schema: { type: object, properties: { reverted: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /weave/vms/{name}/snapshots/{snapshot}:
+    parameters:
+      - $ref: "#/components/parameters/Name"
+      - { name: snapshot, in: path, required: true, schema: { type: string }, description: "Snapshot name or id." }
+    delete:
+      tags: [vms]
+      summary: Delete a VM's snapshot.
+      responses:
+        "200": { description: Deleted., content: { application/json: { schema: { type: object, properties: { deleted: { type: string } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Error" }
+
   /weave/vms/{name}/rename:
     parameters: [ { $ref: "#/components/parameters/Name" } ]
     post:

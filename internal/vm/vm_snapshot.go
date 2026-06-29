@@ -6,12 +6,41 @@
 package vm
 
 import (
+	"fmt"
+
 	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 )
+
+// Pause pauses the running VM's vCPUs, quiescing in-flight disk I/O. Resume
+// restarts them.
+func (vm *VM) Pause() error  { return vm.SendErrorCompletion("pauseWithCompletionHandler:") }
+func (vm *VM) Resume() error { return vm.SendErrorCompletion("resumeWithCompletionHandler:") }
+
+// CreateSnapshotPaused takes a full live snapshot (disk + firmware + RAM/device
+// state) of a running VM: it pauses for a consistent capture, saves the machine
+// state, clones the disk, then resumes. The VM keeps running afterwards, and
+// reverting later resumes this exact moment rather than rebooting. (For a
+// stopped VM, call vmDir.CreateSnapshot directly — there is no RAM to capture.)
+func (vm *VM) CreateSnapshotPaused(vmDir *vmdirectory.VMDirectory, name, description string) (vmdirectory.Snapshot, error) {
+	if err := vm.Pause(); err != nil {
+		return vmdirectory.Snapshot{}, fmt.Errorf("failed to pause the VM: %w", err)
+	}
+	snap, createErr := vmDir.CreateSnapshot(vmdirectory.SnapshotCreateOptions{
+		Name:               name,
+		Description:        description,
+		ExtraRequiredBytes: int64(vm.Config.MemorySize),
+		SaveState:          vm.SaveMachineStateTo,
+	})
+	if resumeErr := vm.Resume(); resumeErr != nil && createErr == nil {
+		createErr = fmt.Errorf("snapshot saved but failed to resume the VM: %w", resumeErr)
+	}
+	return snap, createErr
+}
 
 // restoreMachineStateFrom / saveMachineStateTo bridge the macOS 14 snapshot
 // APIs through manual blocks.

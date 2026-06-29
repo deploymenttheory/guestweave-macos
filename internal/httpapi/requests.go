@@ -106,6 +106,11 @@ type renameRequest struct {
 	NewName string `json:"newName"`
 }
 
+type snapshotCreateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
 type loginRequest struct {
 	Host       string `json:"host"`
 	Username   string `json:"username"`

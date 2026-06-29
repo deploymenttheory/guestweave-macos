@@ -8,8 +8,10 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/deploymenttheory/go-bindings-macosplatform v0.12.1 h1:TATVZVuJggJi/svA2swt2VQLVaUQ9VydwvDarAMg+2k=
-github.com/deploymenttheory/go-bindings-macosplatform v0.12.1/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
+github.com/deploymenttheory/go-bindings-macosplatform v0.13.0 h1:mhsI8pcLmpslMYE7/pi7JPPiURuIJqVXnKP2OzzpD9E=
+github.com/deploymenttheory/go-bindings-macosplatform v0.13.0/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
+github.com/deploymenttheory/go-sdk-vtpm2 v1.0.0 h1:tCGwJayazsbn0eC3eKNJ3hBAfZU5UrcK1apRIW08SmA=
+github.com/deploymenttheory/go-sdk-vtpm2 v1.0.0/go.mod h1:sQle2N7YTVbLPw7o2pQHeEPmsrzHIk2KYOcZqTKaDe4=
 github.com/deploymenttheory/go-sdk-winmediafoundry v0.6.1 h1:8CAMr2HnzUpft0gXkuy/23GfWarMe4CKaDfsWWv9pN4=
 github.com/deploymenttheory/go-sdk-winmediafoundry v0.6.1/go.mod h1:nHIMDpyDstio7x/Oe1xLuusqUF2PenpzLwuYaVE6jgQ=
 github.com/diskfs/go-diskfs v1.9.3 h1:cLciNCeZ4QAXVxyPJDr1ZJ9N9CCG3rQlQ/z/Cs/cNDM=

@@ -279,7 +279,7 @@ func (c *RunCommand) Validate() error {
 			return err
 		}
 		if _, ok := config.Platform.(vmconfig.PlatformSuspendable); !ok {
-			return weaveerrors.ErrGeneric("You can only suspend macOS VMs")
+			return weaveerrors.ErrGeneric("Only macOS and Linux VMs can be suspended")
 		}
 
 		if c.NoTrackpad {
@@ -508,6 +508,11 @@ func (c *RunCommand) RunMainThread() error {
 	runCtx, cancelRun := context.WithCancel(context.Background())
 
 	go c.driveVM(runCtx, localStorage, vmDir, vncImpl)
+
+	// Serve disk-snapshot requests for this running VM (`weave snapshot create`,
+	// the REST API): the run process owns the VZ handle, so it performs the
+	// pause/clone/resume.
+	go serveSnapshotSocket(runCtx, vmDir)
 
 	// "weave stop" support.
 	sigint := make(chan os.Signal, 1)
@@ -779,16 +784,25 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 	mainthread.Do(func() {
 		validateErr = vm.Configuration.ValidateSaveRestoreSupport()
 	})
-	if validateErr == nil {
-		fmt.Println("pausing VM to take a snapshot...")
-		validateErr = vm.SendErrorCompletion("pauseWithCompletionHandler:")
-	}
-	if validateErr == nil {
-		fmt.Println("creating a snapshot...")
-		validateErr = vm.SaveMachineStateTo(vmDir.StateURL())
-	}
 	if validateErr != nil {
+		// The running configuration can't be saved — typically the VM was
+		// started without --suspendable, so it still carries USB input/entropy
+		// devices, or its guest has no save/restore-compatible device set. The
+		// VM has not been paused yet, so report the failure and leave it running
+		// instead of tearing it down.
 		fmt.Println(weaveerrors.ErrSuspendFailed(validateErr.Error()))
+		return
+	}
+
+	fmt.Println("pausing VM to take a snapshot...")
+	if err := vm.SendErrorCompletion("pauseWithCompletionHandler:"); err != nil {
+		fmt.Println(weaveerrors.ErrSuspendFailed(err.Error()))
+		telemetry.OTelShared().Flush()
+		os.Exit(1)
+	}
+	fmt.Println("creating a snapshot...")
+	if err := vm.SaveMachineStateTo(vmDir.StateURL()); err != nil {
+		fmt.Println(weaveerrors.ErrSuspendFailed(err.Error()))
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
 	}

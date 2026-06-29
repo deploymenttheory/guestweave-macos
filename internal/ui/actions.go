@@ -23,6 +23,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/logging"
 	"github.com/deploymenttheory/weave/internal/macaddress"
 	"github.com/deploymenttheory/weave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	"github.com/deploymenttheory/weave/internal/screenviewer"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
@@ -298,6 +299,66 @@ func restartVM() {
 	// The child sleeps briefly so this process releases the VM lock first, then
 	// re-runs with the original args (os.Args[1:] = the run subcommand + flags).
 	relaunch := shellJoin(append([]string{exe}, os.Args[1:]...))
+	cmd := exec.Command("/bin/sh", "-c", "sleep 3; exec "+relaunch)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // survive this process exiting
+	if err := cmd.Start(); err != nil {
+		showError("Restart failed", err.Error())
+		return
+	}
+	_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+}
+
+// suspendFromMenu is the Control ▸ Suspend (Snapshot) action: it snapshots the
+// running VM's state to disk and shuts it down, the GUI counterpart of
+// `weave suspend`. Re-running the VM restores and resumes from the snapshot.
+//
+// Save/restore (macOS 14+) requires the VM to have been started in suspendable
+// mode (a save/restore-compatible device set). When it was, this sends SIGUSR1,
+// which the run process's handler turns into the pause+save snapshot. When it
+// wasn't, the live state can't be snapshotted, so it offers to relaunch the VM
+// suspendable instead.
+func suspendFromMenu() {
+	if !weaveplatform.MacOSAtLeast(14) {
+		showInfo("Snapshot unavailable",
+			"Suspending a VM to disk requires macOS 14 (Sonoma) or newer.")
+		return
+	}
+	if suspendableFlag.Load() {
+		if !confirm("Suspend VM?",
+			"This snapshots the VM's state to disk and shuts it down. Re-running the VM will restore and resume from the snapshot.") {
+			return
+		}
+		_ = syscall.Kill(syscall.Getpid(), syscall.SIGUSR1)
+		return
+	}
+	if confirm("Enable Snapshots?",
+		"This VM isn't running in suspendable mode, so its current state can't be snapshotted. Restart it in suspendable mode now?\n\nWhile suspendable, audio is muted and host input devices are limited (Linux guests have no keyboard or pointer — use SSH or VNC).") {
+		relaunchSuspendable()
+	}
+}
+
+// relaunchSuspendable gracefully stops this run and starts a detached
+// `guestweave run … --suspendable` reproducing the original invocation with
+// suspend enabled. Mirrors restartVM's relaunch mechanism (the child sleeps so
+// this process releases the VM lock first).
+func relaunchSuspendable() {
+	exe, err := os.Executable()
+	if err != nil {
+		showError("Restart failed", err.Error())
+		return
+	}
+	args := append([]string{}, os.Args[1:]...)
+	hasSuspendable := false
+	for _, a := range args {
+		if strings.TrimLeft(a, "-") == "suspendable" {
+			hasSuspendable = true
+			break
+		}
+	}
+	if !hasSuspendable {
+		args = append(args, "--suspendable")
+	}
+	relaunch := shellJoin(append([]string{exe}, args...))
 	cmd := exec.Command("/bin/sh", "-c", "sleep 3; exec "+relaunch)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // survive this process exiting
 	if err := cmd.Start(); err != nil {
