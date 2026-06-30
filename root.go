@@ -28,7 +28,7 @@ var rootSubcommands = []string{
 	"create", "clone", "run", "set", "get", "list", "login", "logout", "ip",
 	"exec", "ssh", "pull", "push", "import", "export", "prune", "rename", "stop",
 	"delete", "fqn", "suspend", "snapshot", "ipsw", "images", "logs", "config",
-	"serve", "setup", "hvmm",
+	"clipboard", "serve", "setup", "hvmm",
 }
 
 // parseRootCommand parses os.Args[1:] into a runnable command. The returned
@@ -108,6 +108,8 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		fs.StringVar(&command.ClipboardDirection, "clipboard-direction", "", "")
 		fs.StringVar(&command.ClipboardFormats, "clipboard-formats", "", "")
 		fs.StringVar(&command.ClipboardFiles, "clipboard-files", "", "")
+		fs.StringVar(&command.ClipboardAllowedTypes, "clipboard-allowed-types", "", "")
+		fs.StringVar(&command.ClipboardAudit, "clipboard-audit", "", "")
 		fs.IntVar(&command.ClipboardSessionMbps, "clipboard-session-mbps", 0, "")
 		fs.IntVar(&command.ClipboardBandwidthPct, "clipboard-bandwidth-pct", 0, "")
 		fs.Int64Var(&command.ClipboardMaxBytes, "clipboard-max-bytes", 0, "")
@@ -173,6 +175,15 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		fs.BoolVar(&command.RandomSerial, "random-serial", false, "")
 		fs.StringVar(&command.Disk, "disk", "", "")
 		diskSize := fs.Uint("disk-size", 0, "")
+		fs.StringVar(&command.Clipboard.Enabled, "clipboard-enabled", "", "")
+		fs.StringVar(&command.Clipboard.Direction, "clipboard-direction", "", "")
+		fs.StringVar(&command.Clipboard.Formats, "clipboard-formats", "", "")
+		fs.StringVar(&command.Clipboard.Files, "clipboard-files", "", "")
+		fs.StringVar(&command.Clipboard.AllowedTypes, "clipboard-allowed-types", "", "")
+		fs.StringVar(&command.Clipboard.Audit, "clipboard-audit", "", "")
+		fs.IntVar(&command.Clipboard.SessionMbps, "clipboard-session-mbps", 0, "")
+		fs.IntVar(&command.Clipboard.BandwidthPct, "clipboard-bandwidth-pct", 0, "")
+		fs.Int64Var(&command.Clipboard.MaxBytes, "clipboard-max-bytes", 0, "")
 		positionals, err := weavecommand.ParseInterleaved(fs, rest)
 		if err != nil {
 			return name, nil, err
@@ -532,6 +543,10 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 	case "config":
 		// Sub-verbs parse their own flags.
 		return name, &weavecommand.ConfigCommand{Args: rest}, nil
+
+	case "clipboard":
+		// Sub-verbs (get|set) parse their own flags.
+		return name, &weavecommand.ClipboardCommand{Args: rest}, nil
 
 	case "setup":
 		command := &weavecommand.SetupCommand{Mode: "preset", MaxIterations: 200}

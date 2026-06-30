@@ -51,6 +51,10 @@ type Policy struct {
 	MaxContentBytes int64     `json:"maxContentBytes,omitempty" yaml:"maxContentBytes,omitempty"`
 	SessionMbps     int       `json:"sessionMbps,omitempty" yaml:"sessionMbps,omitempty"`
 	BandwidthPct    int       `json:"bandwidthPct,omitempty" yaml:"bandwidthPct,omitempty"`
+	// AuditLog enables a structured audit record per clipboard transfer and
+	// rejection, written to the clipboard audit log (the WEAVE_CLIP_AUDIT env
+	// var forces it on regardless of this field).
+	AuditLog bool `json:"auditLog,omitempty" yaml:"auditLog,omitempty"`
 }
 
 // DefaultMaxContentBytes is the per-item/file transfer cap when unset.
@@ -159,11 +163,24 @@ type Override struct {
 	MaxContentBytes *int64
 	SessionMbps     *int
 	BandwidthPct    *int
+	AuditLog        *bool
 	AllowedTypes    []string
 }
 
-// apply layers the override's set fields onto p.
-func (o Override) apply(p Policy) Policy {
+// IsZero reports whether the override sets no fields at all (every pointer nil
+// and AllowedTypes nil), i.e. applying it would be a no-op. Callers use it to
+// skip persisting a policy when no clipboard flags were supplied.
+func (o Override) IsZero() bool {
+	return o.Enabled == nil && o.Direction == nil && o.PlainText == nil &&
+		o.RichText == nil && o.Image == nil && o.FileTransfer == nil &&
+		o.MaxContentBytes == nil && o.SessionMbps == nil && o.BandwidthPct == nil &&
+		o.AuditLog == nil && o.AllowedTypes == nil
+}
+
+// Apply layers the override's set fields onto p and returns the result. It is
+// the building block of Resolve, exposed so the set/config commands can persist
+// a flag-driven override onto a stored policy.
+func (o Override) Apply(p Policy) Policy {
 	if o.Enabled != nil {
 		p.Enabled = *o.Enabled
 	}
@@ -191,6 +208,9 @@ func (o Override) apply(p Policy) Policy {
 	if o.BandwidthPct != nil {
 		p.BandwidthPct = *o.BandwidthPct
 	}
+	if o.AuditLog != nil {
+		p.AuditLog = *o.AuditLog
+	}
 	if o.AllowedTypes != nil {
 		p.AllowedTypes = o.AllowedTypes
 	}
@@ -209,5 +229,5 @@ func Resolve(settingsDefault, perVM *Policy, cli Override) Policy {
 	if perVM != nil {
 		base = *perVM
 	}
-	return cli.apply(base)
+	return cli.Apply(base)
 }

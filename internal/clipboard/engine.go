@@ -22,6 +22,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/deploymenttheory/weave/internal/clipboard/macpb"
@@ -115,7 +116,13 @@ func (h Health) AllOK() bool {
 
 // Engine mirrors the clipboard between the host and one VM under a policy.
 type Engine struct {
+	// policy and its derived state (allowedSet/allowedList/limiter/auditOn) are
+	// mutated only on the sync goroutine. A live update via SetPolicy queues the
+	// new policy in pendingPolicy (guarded by mu); the sync loop applies it at the
+	// top of the next cycle, so the derived state never changes mid-cycle.
 	policy             clipboardpolicy.Policy
+	mu                 sync.Mutex
+	pendingPolicy      *clipboardpolicy.Policy
 	vmName             string
 	vmDir              *vmdirectory.VMDirectory
 	mac                macaddress.MACAddress
@@ -125,6 +132,7 @@ type Engine struct {
 	allowedSet  map[wire.Canonical]bool
 	allowedList []wire.Canonical
 	limiter     *limiter
+	auditOn     bool   // structured transfer auditing enabled (policy or env)
 	stageDir    string // host staging dir for files applied to the host pasteboard
 
 	// Loop-prevention state.
@@ -196,9 +204,7 @@ func (e *Engine) Run(ctx context.Context) {
 		return
 	}
 
-	e.allowedSet = e.policy.AllowedCanonical()
-	e.allowedList = sortedCanonicals(e.allowedSet)
-	e.limiter = newLimiter(e.policy.BytesPerSec())
+	e.recomputeDerived()
 	if dir, err := os.MkdirTemp("", "weave-clip-host-"); err == nil {
 		e.stageDir = dir
 	}
@@ -239,8 +245,60 @@ func (e *Engine) initHostState() {
 	e.lastGuestHash = hash // assume the guest starts matching the host
 }
 
+// recomputeDerived rebuilds the per-cycle state derived from e.policy. Called
+// only on the sync goroutine (Run init and applyPendingPolicy).
+func (e *Engine) recomputeDerived() {
+	e.allowedSet = e.policy.AllowedCanonical()
+	e.allowedList = sortedCanonicals(e.allowedSet)
+	e.limiter = newLimiter(e.policy.BytesPerSec())
+	e.auditOn = e.policy.AuditLog || os.Getenv("WEAVE_CLIP_AUDIT") != ""
+}
+
+// SetPolicy requests a live policy change. The new policy is queued and applied
+// at the start of the next sync cycle (within one poll interval), keeping all
+// derived-state mutation on the sync goroutine. Safe to call from any goroutine
+// (the control listener, the UI). A no-op if the engine never started.
+func (e *Engine) SetPolicy(p clipboardpolicy.Policy) {
+	e.mu.Lock()
+	e.pendingPolicy = &p
+	e.mu.Unlock()
+}
+
+// Policy returns the engine's current effective policy (the last applied one,
+// not a not-yet-applied pending change). Safe to call from any goroutine.
+func (e *Engine) Policy() clipboardpolicy.Policy {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.pendingPolicy != nil {
+		return *e.pendingPolicy
+	}
+	return e.policy
+}
+
+// applyPendingPolicy applies a queued live policy change, recomputing derived
+// state and auditing the delta. Called only at the top of a sync cycle.
+func (e *Engine) applyPendingPolicy() {
+	e.mu.Lock()
+	pending := e.pendingPolicy
+	e.pendingPolicy = nil
+	e.mu.Unlock()
+	if pending == nil {
+		return
+	}
+
+	old := e.summary()
+	e.policy = *pending
+	e.recomputeDerived()
+	now := e.summary()
+	logging.LogInfo("Clipboard policy updated for %s: %s → %s", e.vmName, old, now)
+	e.auditPolicyChange(now)
+	e.publishHealth()
+}
+
 func (e *Engine) sync(ctx context.Context) {
 	defer e.publishHealth() // refresh the status panel every cycle
+
+	e.applyPendingPolicy()
 
 	client := e.agent(ctx)
 	if client == nil {
@@ -271,6 +329,7 @@ func (e *Engine) sync(ctx context.Context) {
 					e.handleError("sync clipboard to guest", err) // leave state for retry
 				} else {
 					dbg("H→G: pushed ok")
+					e.auditTransfer(auditHostToGuest, payload)
 					e.lastHostChangeCount = hostCC
 					e.lastHostHash = hash
 					e.lastGuestHash = hash
@@ -307,6 +366,7 @@ func (e *Engine) sync(ctx context.Context) {
 		if !payload.Empty() && hash != e.lastGuestHash && hash != e.lastHostHash {
 			dbg("G→H: applying to host")
 			e.applyHost(payload)
+			e.auditTransfer(auditGuestToHost, payload)
 			e.lastGuestHash = hash
 			e.lastHostHash = hash
 		} else {
@@ -372,7 +432,7 @@ func (e *Engine) getGuest(ctx context.Context) (wire.Payload, error) {
 	c.Lock()
 	defer c.Unlock()
 
-	raw, _ := json.Marshal(wire.Meta{Allowed: e.allowedList})
+	raw, _ := json.Marshal(wire.Meta{Allowed: e.allowedList, MaxBytes: e.policy.MaxBytes()})
 	if err := proto.WriteRequest(c.Writer(), proto.Request{Module: wire.Module, Op: wire.OpGet, Meta: raw}); err != nil {
 		return wire.Payload{}, e.dropClient(err)
 	}
@@ -384,6 +444,13 @@ func (e *Engine) getGuest(ctx context.Context) (wire.Payload, error) {
 	if err != nil {
 		return wire.Payload{}, e.dropClient(err)
 	}
+	// Authoritative cap on receive: a guest that ignores the advertised MaxBytes
+	// (old, buggy, or compromised) must not push an oversize item onto the host.
+	payload, dropped := payload.CapTo(e.policy.MaxBytes())
+	for _, d := range dropped {
+		dbg("G→H: dropped oversize %s%s (%d B > cap %d)", d.Format, d.Name, d.Size, e.policy.MaxBytes())
+	}
+	e.auditBlocked(auditGuestToHost, "oversize", dropped)
 	return payload, nil
 }
 

@@ -196,6 +196,65 @@ func (s *APIServer) handleStopVM(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"stopped": name})
 }
 
+// setClipboardPolicyRequest live-updates a running VM's clipboard policy; each
+// field maps to a `weave clipboard set` flag (omitted = leave unchanged).
+type setClipboardPolicyRequest struct {
+	Enabled      string `json:"enabled,omitempty"` // on|off
+	Direction    string `json:"direction,omitempty"`
+	Formats      string `json:"formats,omitempty"`
+	Files        string `json:"files,omitempty"`
+	AllowedTypes string `json:"allowedTypes,omitempty"`
+	Audit        string `json:"audit,omitempty"`
+	SessionMbps  int    `json:"sessionMbps,omitempty"`
+	BandwidthPct int    `json:"bandwidthPct,omitempty"`
+	MaxBytes     int64  `json:"maxBytes,omitempty"`
+	Persist      bool   `json:"persist,omitempty"`
+}
+
+func (req setClipboardPolicyRequest) toArgs(name string) []string {
+	args := []string{"set", name}
+	addValue := func(value, flag string) {
+		if value != "" {
+			args = append(args, flag, value)
+		}
+	}
+	addValue(req.Enabled, "--enabled")
+	addValue(req.Direction, "--direction")
+	addValue(req.Formats, "--formats")
+	addValue(req.Files, "--files")
+	addValue(req.AllowedTypes, "--allowed-types")
+	addValue(req.Audit, "--audit")
+	if req.SessionMbps != 0 {
+		args = append(args, "--session-mbps", strconv.Itoa(req.SessionMbps))
+	}
+	if req.BandwidthPct != 0 {
+		args = append(args, "--bandwidth-pct", strconv.Itoa(req.BandwidthPct))
+	}
+	if req.MaxBytes != 0 {
+		args = append(args, "--max-bytes", strconv.FormatInt(req.MaxBytes, 10))
+	}
+	if req.Persist {
+		args = append(args, "--persist")
+	}
+	return args
+}
+
+// handleSetClipboardPolicy pushes a live clipboard-policy update onto a running
+// VM (POST /vms/{name}/clipboard), sharing the `weave clipboard set` path.
+func (s *APIServer) handleSetClipboardPolicy(w http.ResponseWriter, r *http.Request) {
+	request, ok := readJSON[setClipboardPolicyRequest](w, r)
+	if !ok {
+		return
+	}
+	name := chi.URLParam(r, "name")
+	command := &weavecommand.ClipboardCommand{Args: request.toArgs(name)}
+	if err := command.Run(r.Context()); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"updated": name})
+}
+
 func (s *APIServer) handleSuspendVM(w http.ResponseWriter, r *http.Request) {
 	if !weaveplatform.MacOSAtLeast(14) {
 		writeJSON(
@@ -280,6 +339,7 @@ func (req runVMRequest) toArgs() []string {
 	addValue(req.ClipboardDirection, "--clipboard-direction")
 	addValue(req.ClipboardFormats, "--clipboard-formats")
 	addValue(req.ClipboardFiles, "--clipboard-files")
+	addValue(req.ClipboardAllowedTypes, "--clipboard-allowed-types")
 	if req.ClipboardSessionMbps != 0 {
 		args = append(args, "--clipboard-session-mbps", strconv.Itoa(req.ClipboardSessionMbps))
 	}

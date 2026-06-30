@@ -40,6 +40,7 @@ type Meta struct {
 	AgentVersion string      `json:"agentVersion,omitempty"`
 	OS           string      `json:"os,omitempty"`
 	Allowed      []Canonical `json:"allowed,omitempty"`
+	MaxBytes     int64       `json:"maxBytes,omitempty"` // per-item/file cap the sender must honour (0 = unlimited)
 	Items        []Item      `json:"items,omitempty"`
 	Files        []FileRef   `json:"files,omitempty"`
 }
@@ -65,6 +66,44 @@ type Payload struct {
 
 // Empty reports whether the payload carries nothing.
 func (p Payload) Empty() bool { return len(p.Items) == 0 && len(p.Files) == 0 }
+
+// OversizeDrop describes one representation removed by CapTo because it exceeded
+// the per-item/file size cap. Format is set for an item (Name empty); Name is
+// set for a file (Format empty).
+type OversizeDrop struct {
+	Format Canonical
+	Name   string
+	Size   int
+}
+
+// CapTo returns p with any item or file whose data exceeds maxBytes removed
+// (maxBytes <= 0 means unlimited), plus a description of what was dropped. It
+// mirrors the host capture cap (macpb.Read's tooBig) so that a guest→host
+// payload cannot exceed the policy's MaxContentBytes regardless of what the
+// guest sends — the host enforces the cap on receive, the guest applies it
+// before transfer to avoid wasting bandwidth.
+func (p Payload) CapTo(maxBytes int64) (Payload, []OversizeDrop) {
+	if maxBytes <= 0 {
+		return p, nil
+	}
+	var kept Payload
+	var dropped []OversizeDrop
+	for _, it := range p.Items {
+		if int64(len(it.Data)) > maxBytes {
+			dropped = append(dropped, OversizeDrop{Format: it.Format, Size: len(it.Data)})
+			continue
+		}
+		kept.Items = append(kept.Items, it)
+	}
+	for _, f := range p.Files {
+		if int64(len(f.Data)) > maxBytes {
+			dropped = append(dropped, OversizeDrop{Name: f.Name, Size: len(f.Data)})
+			continue
+		}
+		kept.Files = append(kept.Files, f)
+	}
+	return kept, dropped
+}
 
 // MetaFor builds the meta describing p, filling item formats/sizes and file
 // names/sizes in transmission order.

@@ -3,9 +3,10 @@
 // guest clipboard with full format fidelity through a platform backend
 // (NSPasteboard on macOS, xclip/wl-clipboard on Linux).
 //
-// The module applies no policy of its own: the host sends an explicit allow-list
-// on every GET and only ever sends permitted formats on SET. Directionality and
-// bandwidth throttling live in the host engine.
+// The module makes no policy decisions of its own: the host sends an explicit
+// allow-list and per-item size cap on every GET (which the module honours before
+// transfer) and only ever sends permitted formats on SET. Directionality,
+// bandwidth throttling, and authoritative cap enforcement live in the host engine.
 package clipguest
 
 import (
@@ -84,6 +85,9 @@ func (m *Module) Serve(req proto.Request, in io.Reader, out io.Writer) error {
 		if gerr != nil {
 			return proto.WriteResponse(out, proto.Response{Err: gerr.Error()})
 		}
+		// Honour the host's per-item/file cap before transfer so an oversize
+		// guest item isn't pushed over the wire (the host re-enforces on receive).
+		payload, _ = payload.CapTo(meta.MaxBytes)
 		return writeMeta(out, wire.MetaFor(payload), &payload)
 
 	case wire.OpSet:

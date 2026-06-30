@@ -5,6 +5,50 @@ import (
 	"testing"
 )
 
+func TestCapTo(t *testing.T) {
+	p := Payload{
+		Items: []DataItem{
+			{Format: CanonPlainText, Data: []byte("small")},         // 5 B
+			{Format: CanonTIFF, Data: bytes.Repeat([]byte{0}, 100)}, // 100 B
+		},
+		Files: []DataFile{
+			{Name: "ok.txt", Data: bytes.Repeat([]byte{1}, 10)},   // 10 B
+			{Name: "big.bin", Data: bytes.Repeat([]byte{2}, 200)}, // 200 B
+		},
+	}
+
+	kept, dropped := p.CapTo(50)
+	if len(kept.Items) != 1 || kept.Items[0].Format != CanonPlainText {
+		t.Errorf("items: kept %+v, want only text/plain", kept.Items)
+	}
+	if len(kept.Files) != 1 || kept.Files[0].Name != "ok.txt" {
+		t.Errorf("files: kept %+v, want only ok.txt", kept.Files)
+	}
+	if len(dropped) != 2 {
+		t.Fatalf("dropped %d, want 2: %+v", len(dropped), dropped)
+	}
+	// The TIFF item and big file should be reported, with their sizes.
+	var sawItem, sawFile bool
+	for _, d := range dropped {
+		if d.Format == CanonTIFF && d.Size == 100 {
+			sawItem = true
+		}
+		if d.Name == "big.bin" && d.Size == 200 {
+			sawFile = true
+		}
+	}
+	if !sawItem || !sawFile {
+		t.Errorf("dropped descriptors wrong: %+v", dropped)
+	}
+
+	// maxBytes <= 0 means unlimited: nothing dropped.
+	kept2, dropped2 := p.CapTo(0)
+	if len(kept2.Items) != 2 || len(kept2.Files) != 2 || dropped2 != nil {
+		t.Errorf("CapTo(0) should be a no-op, got items=%d files=%d dropped=%v",
+			len(kept2.Items), len(kept2.Files), dropped2)
+	}
+}
+
 func TestClassOf(t *testing.T) {
 	cases := map[Canonical]FormatClass{
 		CanonPlainText: ClassPlainText,

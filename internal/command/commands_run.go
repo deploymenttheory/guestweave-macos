@@ -26,6 +26,7 @@ import (
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/weave/internal/clipboard"
+	"github.com/deploymenttheory/weave/internal/clipboardctl"
 	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/controlsocket"
@@ -128,15 +129,18 @@ type RunCommand struct {
 	ClipboardDirection    string // disabled|bidirectional|hostToGuest|guestToHost
 	ClipboardFormats      string // csv of text,rich,image
 	ClipboardFiles        string // on|off
+	ClipboardAllowedTypes string // csv of canonical types, e.g. "text/html,text/plain"
+	ClipboardAudit        string // on|off — structured transfer audit log
 	ClipboardSessionMbps  int
 	ClipboardBandwidthPct int
 	ClipboardMaxBytes     int64
 
 	// Resolved in RunMainThread, consumed in driveVM.
-	clipboardPolicy   clipboardpolicy.Policy
-	clipboardRun      bool
-	guestGOOS         string
-	guestGOARCH       string
+	clipboardPolicy clipboardpolicy.Policy
+	clipboardRun    bool
+	clipboardEngine *clipboard.Engine // retained for live policy updates
+	guestGOOS       string
+	guestGOARCH     string
 
 	// Host ends of the clipboard agent's virtio serial channel. Created once
 	// (lazily, in buildVMInstance) and reused across in-process VM rebuilds so the
@@ -147,31 +151,31 @@ type RunCommand struct {
 	clipSerialHostW     *os.File
 	clipSerialVMReadFD  int // framework reads this (host→guest); raw/blocking
 	clipSerialVMWriteFD int // framework writes guest output here (guest→host)
-	Recovery          bool
-	VNC               bool
-	VNCExperimental   bool
-	VNCPassword       string
-	Disk              []string
-	RosettaTag        string
-	Dir               []string
-	SharedDir         []string
-	USBStorage        []string
-	Nested            bool
-	NetProfile        string
-	NetDevice         []string
-	NetBridged        []string
-	NetSoftnet        bool
-	NetSoftnetAllow   string
-	NetSoftnetBlock   string
-	NetSoftnetExpose  string
-	NetHost           bool
-	RootDiskOpts      string
-	Suspendable       bool
-	CaptureSystemKeys bool
-	NoTrackpad        bool
-	NoPointer         bool
-	NoKeyboard        bool
-	ShowScreen        bool // serve a view-only browser viewer of the VM screen
+	Recovery            bool
+	VNC                 bool
+	VNCExperimental     bool
+	VNCPassword         string
+	Disk                []string
+	RosettaTag          string
+	Dir                 []string
+	SharedDir           []string
+	USBStorage          []string
+	Nested              bool
+	NetProfile          string
+	NetDevice           []string
+	NetBridged          []string
+	NetSoftnet          bool
+	NetSoftnetAllow     string
+	NetSoftnetBlock     string
+	NetSoftnetExpose    string
+	NetHost             bool
+	RootDiskOpts        string
+	Suspendable         bool
+	CaptureSystemKeys   bool
+	NoTrackpad          bool
+	NoPointer           bool
+	NoKeyboard          bool
+	ShowScreen          bool // serve a view-only browser viewer of the VM screen
 
 	// primaryBridged records whether the resolved primary NIC is bridged, so
 	// the VNC layer resolves the guest IP via ARP rather than DHCP. Set during
@@ -722,7 +726,10 @@ func (c *RunCommand) driveVM(
 					if c.clipSerialHostR != nil && c.clipSerialHostW != nil {
 						engine.SetSerialChannel(c.clipSerialHostR, c.clipSerialHostW)
 					}
+					c.clipboardEngine = engine
 					go engine.Run(ctx)
+					// Host control socket for live `weave clipboard set` updates.
+					go c.serveClipboardControl(ctx, vmDir, engine)
 				}
 			}
 
@@ -850,32 +857,19 @@ func (c *RunCommand) driveVM(
 // (e.g. settings/per-VM with direction=disabled), turns the clipboard off
 // entirely — neither the engine nor SPICE runs.
 func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
-	override := clipboardpolicy.Override{}
+	override := clipboardFlagValues{
+		Direction:    c.ClipboardDirection,
+		Formats:      c.ClipboardFormats,
+		Files:        c.ClipboardFiles,
+		AllowedTypes: c.ClipboardAllowedTypes,
+		Audit:        c.ClipboardAudit,
+		SessionMbps:  c.ClipboardSessionMbps,
+		BandwidthPct: c.ClipboardBandwidthPct,
+		MaxBytes:     c.ClipboardMaxBytes,
+	}.override()
 	if c.Clipboard {
 		enabled := true
 		override.Enabled = &enabled
-	}
-	if c.ClipboardDirection != "" {
-		direction := clipboardpolicy.Direction(c.ClipboardDirection)
-		override.Direction = &direction
-	}
-	if c.ClipboardFormats != "" {
-		set := parseCSVSet(c.ClipboardFormats)
-		plain, rich, image := set["text"], set["rich"], set["image"]
-		override.PlainText, override.RichText, override.Image = &plain, &rich, &image
-	}
-	if c.ClipboardFiles != "" {
-		files := isOn(c.ClipboardFiles)
-		override.FileTransfer = &files
-	}
-	if c.ClipboardSessionMbps > 0 {
-		override.SessionMbps = &c.ClipboardSessionMbps
-	}
-	if c.ClipboardBandwidthPct > 0 {
-		override.BandwidthPct = &c.ClipboardBandwidthPct
-	}
-	if c.ClipboardMaxBytes > 0 {
-		override.MaxContentBytes = &c.ClipboardMaxBytes
 	}
 
 	var settingsDefault *clipboardpolicy.Policy
@@ -889,6 +883,37 @@ func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
 	c.clipboardRun = !c.NoClipboard && policy.Active()
 	c.guestGOOS = string(vmConfig.OS)
 	c.guestGOARCH = string(vmConfig.Arch)
+}
+
+// serveClipboardControl runs the host control socket that lets `weave clipboard
+// set` push live policy overrides onto this VM's running engine. Each request
+// layers its override onto the engine's current policy, applies it live, and —
+// when persist is set — writes the resulting policy to the VM config in place
+// (a rename would invalidate this process's fcntl run-lock on config.json).
+func (c *RunCommand) serveClipboardControl(ctx context.Context, vmDir *vmdirectory.VMDirectory, engine *clipboard.Engine) {
+	handler := func(req clipboardctl.Request) (clipboardpolicy.Policy, error) {
+		// An empty override is a pure query (weave clipboard get): return the
+		// current policy without touching the engine.
+		if req.Override.IsZero() {
+			return engine.Policy(), nil
+		}
+		updated := req.Override.Apply(engine.Policy())
+		engine.SetPolicy(updated)
+		if req.Persist {
+			vmConfig, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
+			if err != nil {
+				return updated, err
+			}
+			vmConfig.ClipboardPolicy = &updated
+			if err := vmConfig.SaveInPlace(vmDir.ConfigURL()); err != nil {
+				return updated, err
+			}
+		}
+		return updated, nil
+	}
+	if err := clipboardctl.Serve(ctx, vmDir.ClipboardControlSocketURL(), handler); err != nil && ctx.Err() == nil {
+		logging.LogError("clipboard control socket: %v", err)
+	}
 }
 
 func parseCSVSet(csv string) map[string]bool {

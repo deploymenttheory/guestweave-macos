@@ -19,11 +19,14 @@ package command
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 
+	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 	weavenetwork "github.com/deploymenttheory/weave/internal/network"
@@ -36,7 +39,7 @@ type ConfigCommand struct {
 	Args []string
 }
 
-const configUsage = "usage: weave config <get|storage|cache|registry|network|logging> ..."
+const configUsage = "usage: weave config <get|storage|cache|registry|network|logging|clipboard> ..."
 
 func (c *ConfigCommand) Run(ctx context.Context) error {
 	if len(c.Args) == 0 {
@@ -64,9 +67,87 @@ func (c *ConfigCommand) Run(ctx context.Context) error {
 		return c.runNetwork(rest)
 	case "logging":
 		return c.runLogging(settings, rest)
+	case "clipboard":
+		return c.runClipboard(settings, rest)
 	default:
 		return weaveerrors.ErrGeneric(configUsage)
 	}
+}
+
+// runClipboard shows or sets the global default clipboard policy applied to VMs
+// that have no per-VM override:
+//
+//	config clipboard                        show the effective default policy
+//	config clipboard reset                  clear the default (back to built-in)
+//	config clipboard --direction hostToGuest --formats text,rich --files off \
+//	    --allowed-types text/html --max-bytes N --session-mbps N \
+//	    --bandwidth-pct N --enabled on
+func (c *ConfigCommand) runClipboard(settings *weaveconfig.Settings, args []string) error {
+	if len(args) == 1 && args[0] == "reset" {
+		settings.DefaultClipboardPolicy = nil
+		if err := settings.Save(); err != nil {
+			return err
+		}
+		fmt.Println("Default clipboard policy reset to the built-in default.")
+		return nil
+	}
+
+	var v clipboardFlagValues
+	fs := flag.NewFlagSet("config clipboard", flag.ContinueOnError)
+	fs.StringVar(&v.Enabled, "enabled", "", "on|off")
+	fs.StringVar(&v.Direction, "direction", "", "disabled|bidirectional|hostToGuest|guestToHost")
+	fs.StringVar(&v.Formats, "formats", "", "csv of text,rich,image")
+	fs.StringVar(&v.Files, "files", "", "on|off")
+	fs.StringVar(&v.AllowedTypes, "allowed-types", "", "csv of canonical types, e.g. text/html")
+	fs.StringVar(&v.Audit, "audit", "", "on|off")
+	fs.IntVar(&v.SessionMbps, "session-mbps", 0, "declared session bandwidth (Mbps)")
+	fs.IntVar(&v.BandwidthPct, "bandwidth-pct", 0, "percent of session bandwidth for clipboard")
+	fs.Int64Var(&v.MaxBytes, "max-bytes", 0, "per-item/file size cap in bytes")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	override := v.override()
+	if override.IsZero() {
+		// No flags: show the effective default policy.
+		base := clipboardpolicy.Default()
+		if settings.DefaultClipboardPolicy != nil {
+			base = *settings.DefaultClipboardPolicy
+		}
+		printClipboardPolicy(base)
+		return nil
+	}
+
+	base := clipboardpolicy.Default()
+	if settings.DefaultClipboardPolicy != nil {
+		base = *settings.DefaultClipboardPolicy
+	}
+	updated := override.Apply(base)
+	settings.DefaultClipboardPolicy = &updated
+	if err := settings.Save(); err != nil {
+		return err
+	}
+	fmt.Println("Default clipboard policy updated:")
+	printClipboardPolicy(updated)
+	return nil
+}
+
+func printClipboardPolicy(p clipboardpolicy.Policy) {
+	fmt.Printf("Enabled: %t\n", p.Enabled)
+	fmt.Printf("Direction: %s\n", p.Direction)
+	fmt.Printf("Formats: plainText=%t richText=%t image=%t\n",
+		p.Formats.PlainText, p.Formats.RichText, p.Formats.Image)
+	fmt.Printf("File transfer: %t\n", p.FileTransfer)
+	if len(p.AllowedTypes) > 0 {
+		fmt.Printf("Allowed types: %s\n", strings.Join(p.AllowedTypes, ", "))
+	}
+	fmt.Printf("Max content bytes: %d\n", p.MaxBytes())
+	if bps := p.BytesPerSec(); bps > 0 {
+		fmt.Printf("Bandwidth: %d Mbps × %d%% = %d bytes/sec\n", p.SessionMbps, p.BandwidthPct, bps)
+	} else {
+		fmt.Println("Bandwidth: unlimited")
+	}
+	fmt.Printf("Audit log: %t\n", p.AuditLog)
 }
 
 func (c *ConfigCommand) runGet(settings *weaveconfig.Settings) error {
