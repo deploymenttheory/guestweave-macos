@@ -314,6 +314,25 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "500": { $ref: "#/components/responses/Error" }
 
+  /weave/vms/{name}/clipboard:
+    parameters: [ { $ref: "#/components/parameters/Name" } ]
+    post:
+      tags: [vms]
+      summary: Live-update a running VM's clipboard policy.
+      description: >
+        Pushes a clipboard-policy override onto the running VM's engine without a
+        restart. Omitted fields are left unchanged. Set `persist` to also write
+        the resulting policy to the VM's stored config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetClipboardPolicyRequest" }
+      responses:
+        "200": { description: Policy updated., content: { application/json: { schema: { type: object, properties: { updated: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/Error" }
+
   /weave/vms/{name}/fqn:
     parameters: [ { $ref: "#/components/parameters/Name" } ]
     get:
@@ -1038,6 +1057,21 @@ components:
         maxIterations: { type: integer, default: 200 }
         systemPrompt: { type: string }
         showScreen: { type: boolean }
+
+    SetClipboardPolicyRequest:
+      type: object
+      description: Live clipboard-policy override; omitted fields are unchanged.
+      properties:
+        enabled: { type: string, enum: [on, off], description: "Master clipboard switch." }
+        direction: { type: string, enum: [disabled, bidirectional, hostToGuest, guestToHost] }
+        formats: { type: string, description: "CSV of text,rich,image." }
+        files: { type: string, enum: [on, off], description: "File transfer channel." }
+        allowedTypes: { type: string, description: "CSV of canonical types, e.g. text/html." }
+        audit: { type: string, enum: [on, off], description: "Structured transfer audit log." }
+        sessionMbps: { type: integer, description: "Declared session bandwidth (Mbps)." }
+        bandwidthPct: { type: integer, description: "Percent of session bandwidth for clipboard." }
+        maxBytes: { type: integer, format: int64, description: "Per-item/file size cap in bytes." }
+        persist: { type: boolean, description: "Also write the policy to the VM config." }
 
     ExecRequest:
       type: object

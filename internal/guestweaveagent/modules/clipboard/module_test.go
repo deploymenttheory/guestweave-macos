@@ -32,8 +32,7 @@ func (f *fakeBackend) Write(p wire.Payload) error {
 // withFake returns a module wired to a fake backend, bypassing newBackend.
 func withFake(b backend) *Module {
 	m := New()
-	m.backend = b
-	m.once.Do(func() {}) // mark initialised so ensure() returns the fake
+	m.backend = b // ensure() returns a non-nil backend as-is
 	return m
 }
 
@@ -85,6 +84,42 @@ func TestModuleGet(t *testing.T) {
 	}
 	if len(got.Files) != 1 || got.Files[0].Name != "a.txt" {
 		t.Errorf("get files mismatch: %+v", got.Files)
+	}
+}
+
+func TestModuleGetHonoursMaxBytes(t *testing.T) {
+	content := wire.Payload{
+		Items: []wire.DataItem{
+			{Format: wire.CanonPlainText, Data: []byte("ok")},             // 2 B, kept
+			{Format: wire.CanonTIFF, Data: bytes.Repeat([]byte{0}, 4096)}, // 4 KiB, over cap
+		},
+	}
+	fake := &fakeBackend{content: content}
+	m := withFake(fake)
+
+	reqMeta, _ := json.Marshal(wire.Meta{
+		Allowed:  []wire.Canonical{wire.CanonPlainText, wire.CanonTIFF},
+		MaxBytes: 1024,
+	})
+	var out bytes.Buffer
+	if err := m.Serve(proto.Request{Module: wire.Module, Op: wire.OpGet, Meta: reqMeta}, nil, &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	resp, err := proto.ReadResponse(&out)
+	if err != nil || resp.Err != "" {
+		t.Fatalf("response err: %v / %s", err, resp.Err)
+	}
+	var meta wire.Meta
+	if err := json.Unmarshal(resp.Meta, &meta); err != nil {
+		t.Fatal(err)
+	}
+	got, err := wire.ReadBody(&out, meta, nil)
+	if err != nil {
+		t.Fatalf("ReadBody: %v", err)
+	}
+	if len(got.Items) != 1 || got.Items[0].Format != wire.CanonPlainText {
+		t.Errorf("oversize TIFF should be dropped, got %+v", got.Items)
 	}
 }
 

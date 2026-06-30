@@ -21,12 +21,33 @@ SPEC         := internal/httpapi/schema/openapi.yaml
 SPEC_RULESET := internal/httpapi/schema/vacuum-ruleset.yaml
 VACUUM       ?= vacuum
 
-.PHONY: all build sign install uninstall clean test-api lint-openapi acceptance-serve acceptance-api-vm
+# Guest agent (weave-guestd) cross-compile: the host embeds one binary per guest
+# OS/arch and deploys it on demand to drive the clipboard (and future modules).
+# Without these binaries the host engine falls back to disabled clipboard, so the
+# `build` target depends on `agent` to keep the embed dir populated.
+AGENT_PKG    := ./internal/guestweaveagent/cmd/weave-guestd
+AGENT_DIST   := internal/guestweaveagent/agentbin/dist
+AGENT_TARGETS := darwin/arm64 linux/arm64 linux/amd64
+
+.PHONY: all build agent sign install uninstall clean test-api lint-openapi acceptance-serve acceptance-api-vm acceptance-clipboard clip-lab-linux clip-lab-macos
 
 all: build
 
-## build: compile and ad-hoc code-sign the guestweave binary at the repo root.
-build:
+## agent: cross-compile the weave-guestd guest agent into the embed dir, one
+## binary per guest OS/arch. Pure-Go (CGO disabled), so it cross-compiles from
+## any host. These artifacts are git-ignored and embedded by //go:embed dist.
+agent:
+	@mkdir -p $(AGENT_DIST)
+	$(foreach t,$(AGENT_TARGETS), \
+		echo "building weave-guestd-$(subst /,-,$(t))"; \
+		CGO_ENABLED=0 GOOS=$(word 1,$(subst /, ,$(t))) GOARCH=$(word 2,$(subst /, ,$(t))) \
+			go build -trimpath -ldflags="-s -w" \
+			-o $(AGENT_DIST)/weave-guestd-$(subst /,-,$(t)) $(AGENT_PKG); \
+	)
+
+## build: cross-compile the guest agent, then compile and ad-hoc code-sign the
+## guestweave binary at the repo root (the host embeds the agent binaries).
+build: agent
 	go build -o $(BINARY) .
 	codesign --force --sign - --identifier $(IDENTIFIER) --entitlements $(ENTITLEMENTS) $(BINARY)
 
@@ -49,9 +70,10 @@ uninstall:
 	rm -f $(PREFIX)/$(COMMAND)
 	@echo "Removed $(PREFIX)/$(COMMAND)"
 
-## clean: remove the built binary.
+## clean: remove the built binary and the embedded guest-agent artifacts.
 clean:
 	rm -f $(BINARY)
+	rm -f $(AGENT_DIST)/weave-guestd-*
 
 ## test-api: HTTP API unit tests — OpenAPI validity + router/spec drift (no VM).
 test-api:
@@ -72,3 +94,30 @@ acceptance-serve:
 ## Set WEAVE_ACC_API_HEAVY=1 to also exercise the export/import round-trip.
 acceptance-api-vm:
 	go run ./internal/acceptance -suites api-vm
+
+## acceptance-clipboard: real host ⇄ guest text round-trip through the unified
+## weave-guestd clipboard engine, for a Linux and (optionally) a macOS guest.
+## Depends on `agent` so the harness's binary embeds the guest agent.
+##   Linux: needs the image cached — weave pull ghcr.io/cirruslabs/ubuntu:latest
+##   macOS: set WEAVE_ACC_MACOS_GUEST to a provisioned, stopped macOS VM name
+##          (creds WEAVE_ACC_MACOS_USER / WEAVE_ACC_MACOS_PASSWORD, default weave)
+## Each guest's case skips cleanly when that guest is unavailable.
+acceptance-clipboard: agent
+	go run ./internal/acceptance -suites clipboard
+
+## clip-lab-linux: stand up a reusable Linux clipboard lab VM headed, so you can
+## validate the clipboard by eye (copy text host ⇄ guest). Builds + signs first.
+## Override the base image with IMAGE=...; the VM is named weave-cliplab-linux.
+IMAGE ?= ghcr.io/cirruslabs/ubuntu:latest
+clip-lab-linux: build
+	./$(BINARY) pull $(IMAGE)
+	./$(BINARY) clone $(IMAGE) weave-cliplab-linux || true
+	@echo "Booting weave-cliplab-linux headed with clipboard. In the guest, install a"
+	@echo "desktop session (or xclip + an X server) to exchange text with the host."
+	./$(BINARY) run weave-cliplab-linux --clipboard --clipboard-user admin --clipboard-password admin
+
+## clip-lab-macos: boot a provisioned macOS VM headed with clipboard for by-eye
+## validation. Set VM=<name> (a VM you created from an IPSW and set up).
+clip-lab-macos: build
+	@test -n "$(VM)" || { echo "set VM=<macos-vm-name>"; exit 1; }
+	./$(BINARY) run $(VM) --clipboard

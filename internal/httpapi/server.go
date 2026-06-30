@@ -97,6 +97,7 @@ func (s *APIServer) router() chi.Router {
 				r.Delete("/snapshots/{snapshot}", s.handleDeleteSnapshot)
 				r.Post("/rename", s.handleRenameVM)
 				r.Post("/setup", s.handleSetupVM)
+				r.Post("/clipboard", s.handleSetClipboardPolicy)
 				r.Get("/fqn", s.handleFQN)
 				r.Get("/ip", s.handleIP)
 				r.Post("/exec", s.handleExec)

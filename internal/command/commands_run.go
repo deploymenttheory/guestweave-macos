@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/weave/internal/clipboard"
+	"github.com/deploymenttheory/weave/internal/clipboardctl"
 	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/controlsocket"
@@ -129,40 +129,53 @@ type RunCommand struct {
 	ClipboardDirection    string // disabled|bidirectional|hostToGuest|guestToHost
 	ClipboardFormats      string // csv of text,rich,image
 	ClipboardFiles        string // on|off
+	ClipboardAllowedTypes string // csv of canonical types, e.g. "text/html,text/plain"
+	ClipboardAudit        string // on|off — structured transfer audit log
 	ClipboardSessionMbps  int
 	ClipboardBandwidthPct int
 	ClipboardMaxBytes     int64
 
 	// Resolved in RunMainThread, consumed in driveVM.
-	clipboardPolicy   clipboardpolicy.Policy
-	clipboardRun      bool
-	guestGOOS         string
-	guestGOARCH       string
-	Recovery          bool
-	VNC               bool
-	VNCExperimental   bool
-	VNCPassword       string
-	Disk              []string
-	RosettaTag        string
-	Dir               []string
-	SharedDir         []string
-	USBStorage        []string
-	Nested            bool
-	NetProfile        string
-	NetDevice         []string
-	NetBridged        []string
-	NetSoftnet        bool
-	NetSoftnetAllow   string
-	NetSoftnetBlock   string
-	NetSoftnetExpose  string
-	NetHost           bool
-	RootDiskOpts      string
-	Suspendable       bool
-	CaptureSystemKeys bool
-	NoTrackpad        bool
-	NoPointer         bool
-	NoKeyboard        bool
-	ShowScreen        bool // serve a view-only browser viewer of the VM screen
+	clipboardPolicy clipboardpolicy.Policy
+	clipboardRun    bool
+	clipboardEngine *clipboard.Engine // retained for live policy updates
+	guestGOOS       string
+	guestGOARCH     string
+
+	// Host ends of the clipboard agent's virtio serial channel. Created once
+	// (lazily, in buildVMInstance) and reused across in-process VM rebuilds so the
+	// clipboard engine's connection survives a snapshot revert. The host writes
+	// requests to clipSerialHostW and reads responses from clipSerialHostR; the
+	// VM's serial-port attachment is wired to the other ends.
+	clipSerialHostR     *os.File
+	clipSerialHostW     *os.File
+	clipSerialVMReadFD  int // framework reads this (host→guest); raw/blocking
+	clipSerialVMWriteFD int // framework writes guest output here (guest→host)
+	Recovery            bool
+	VNC                 bool
+	VNCExperimental     bool
+	VNCPassword         string
+	Disk                []string
+	RosettaTag          string
+	Dir                 []string
+	SharedDir           []string
+	USBStorage          []string
+	Nested              bool
+	NetProfile          string
+	NetDevice           []string
+	NetBridged          []string
+	NetSoftnet          bool
+	NetSoftnetAllow     string
+	NetSoftnetBlock     string
+	NetSoftnetExpose    string
+	NetHost             bool
+	RootDiskOpts        string
+	Suspendable         bool
+	CaptureSystemKeys   bool
+	NoTrackpad          bool
+	NoPointer           bool
+	NoKeyboard          bool
+	ShowScreen          bool // serve a view-only browser viewer of the VM screen
 
 	// primaryBridged records whether the resolved primary NIC is bridged, so
 	// the VNC layer resolves the guest IP via ARP rather than DHCP. Set during
@@ -466,9 +479,7 @@ func (c *RunCommand) RunMainThread() error {
 	go func() {
 		for range sigusr2 {
 			fmt.Println("Requesting guest OS to stop...")
-			mainthread.Do(func() {
-				_ = vm.VirtualMachine.RequestStop()
-			})
+			_ = vm.RequestStop()
 		}
 	}()
 
@@ -511,6 +522,17 @@ func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *v
 			return nil, weaveerrors.ErrVMConfigurationError("Failed to open PTY")
 		}
 		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
+	}
+
+	// Dedicated serial channel for the resident clipboard agent (in-session,
+	// announces itself over this port). Added whenever the clipboard engine will
+	// run, independent of the user's --serial console.
+	if c.clipboardRun {
+		agentPort, err := c.clipboardAgentSerialPort()
+		if err != nil {
+			return nil, err
+		}
+		serialPorts = append(serialPorts, agentPort)
 	}
 
 	// Parse root disk options.
@@ -567,13 +589,21 @@ func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *v
 		Suspendable:              c.Suspendable,
 		Nested:                   c.Nested,
 		NoAudio:                  c.NoAudio,
-		NoClipboard:              c.NoClipboard,
-		ClipboardPolicyEnabled:   c.clipboardRun,
-		Sync:                     syncMode,
-		Caching:                  caching,
-		NoTrackpad:               c.NoTrackpad,
-		NoPointer:                c.NoPointer,
-		NoKeyboard:               c.NoKeyboard,
+		// Clipboard is off entirely when the user passed --no-clipboard or the
+		// resolved policy is disabled; otherwise the engine owns it and SPICE
+		// stays off (vm.go gates on ClipboardPolicyEnabled).
+		NoClipboard:            c.NoClipboard || !c.clipboardPolicy.Active(),
+		ClipboardPolicyEnabled: c.clipboardRun,
+		Sync:                   syncMode,
+		Caching:                caching,
+		NoTrackpad:             c.NoTrackpad,
+		NoPointer:              c.NoPointer,
+		NoKeyboard:             c.NoKeyboard,
+		// Bind the VM to the main queue when a UI surface touches it on the main
+		// thread — the headed VZVirtualMachineView, or the VNC server (set on the
+		// main queue). A pure headless run (--no-graphics, no VNC) leaves it on a
+		// dedicated serial queue, off the main thread.
+		MainQueue: !c.NoGraphics || c.VNC || c.VNCExperimental,
 	})
 }
 
@@ -681,13 +711,25 @@ func (c *RunCommand) driveVM(
 			// Resolved in RunMainThread; when active it owns the clipboard and the
 			// SPICE agent clipboard is disabled (see VMOptions.ClipboardPolicyEnabled).
 			if c.clipboardRun {
-				if mac, err := vmDir.MACAddress(); err == nil {
-					if vmMAC, ok := macaddress.NewMACAddress(mac); ok {
-						engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
-							c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
-						go engine.Run(ctx)
-						ui.SetClipboardStatus(string(c.clipboardPolicy.Direction))
+				// Use the already-loaded config's MAC rather than vmDir.MACAddress(),
+				// which would reopen config.json and drop this process's fcntl PID
+				// lock (making the VM misreport as stopped).
+				if vmMAC, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String()); ok {
+					engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
+						c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
+					// The engine reports a live health snapshot each sync cycle to
+					// the Control ▸ Clipboard Status panel.
+					engine.SetReporter(ui.SetClipboardHealth)
+					// The resident guest agent is reached over the dedicated virtio
+					// serial channel built in buildVMInstance; hand the engine its
+					// host ends. SSH (creds below) is used only to install the agent.
+					if c.clipSerialHostR != nil && c.clipSerialHostW != nil {
+						engine.SetSerialChannel(c.clipSerialHostR, c.clipSerialHostW)
 					}
+					c.clipboardEngine = engine
+					go engine.Run(ctx)
+					// Host control socket for live `weave clipboard set` updates.
+					go c.serveClipboardControl(ctx, vmDir, engine)
 				}
 			}
 
@@ -806,35 +848,28 @@ func (c *RunCommand) driveVM(
 // resolveClipboard computes the effective enterprise clipboard policy for this
 // run (CLI flags > per-VM config > settings default > built-in default) and
 // records whether the engine should run plus the guest's OS/arch for agent
-// deployment. The engine runs when --clipboard is passed or a policy is
-// configured (per-VM or settings), and the resolved policy is active.
+// deployment.
+//
+// The weave-guestd engine is the single clipboard mechanism: it runs by default
+// (the built-in policy is enabled + bidirectional) for every guest OS, and owns
+// the clipboard so the SPICE agent path is not also wired (vm.go gates SPICE on
+// ClipboardPolicyEnabled). --no-clipboard, or a resolved policy that is disabled
+// (e.g. settings/per-VM with direction=disabled), turns the clipboard off
+// entirely — neither the engine nor SPICE runs.
 func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
-	override := clipboardpolicy.Override{}
+	override := clipboardFlagValues{
+		Direction:    c.ClipboardDirection,
+		Formats:      c.ClipboardFormats,
+		Files:        c.ClipboardFiles,
+		AllowedTypes: c.ClipboardAllowedTypes,
+		Audit:        c.ClipboardAudit,
+		SessionMbps:  c.ClipboardSessionMbps,
+		BandwidthPct: c.ClipboardBandwidthPct,
+		MaxBytes:     c.ClipboardMaxBytes,
+	}.override()
 	if c.Clipboard {
 		enabled := true
 		override.Enabled = &enabled
-	}
-	if c.ClipboardDirection != "" {
-		direction := clipboardpolicy.Direction(c.ClipboardDirection)
-		override.Direction = &direction
-	}
-	if c.ClipboardFormats != "" {
-		set := parseCSVSet(c.ClipboardFormats)
-		plain, rich, image := set["text"], set["rich"], set["image"]
-		override.PlainText, override.RichText, override.Image = &plain, &rich, &image
-	}
-	if c.ClipboardFiles != "" {
-		files := isOn(c.ClipboardFiles)
-		override.FileTransfer = &files
-	}
-	if c.ClipboardSessionMbps > 0 {
-		override.SessionMbps = &c.ClipboardSessionMbps
-	}
-	if c.ClipboardBandwidthPct > 0 {
-		override.BandwidthPct = &c.ClipboardBandwidthPct
-	}
-	if c.ClipboardMaxBytes > 0 {
-		override.MaxContentBytes = &c.ClipboardMaxBytes
 	}
 
 	var settingsDefault *clipboardpolicy.Policy
@@ -845,9 +880,40 @@ func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
 
 	policy := clipboardpolicy.Resolve(settingsDefault, perVM, override)
 	c.clipboardPolicy = policy
-	c.clipboardRun = (c.Clipboard || perVM != nil || settingsDefault != nil) && policy.Active()
+	c.clipboardRun = !c.NoClipboard && policy.Active()
 	c.guestGOOS = string(vmConfig.OS)
 	c.guestGOARCH = string(vmConfig.Arch)
+}
+
+// serveClipboardControl runs the host control socket that lets `weave clipboard
+// set` push live policy overrides onto this VM's running engine. Each request
+// layers its override onto the engine's current policy, applies it live, and —
+// when persist is set — writes the resulting policy to the VM config in place
+// (a rename would invalidate this process's fcntl run-lock on config.json).
+func (c *RunCommand) serveClipboardControl(ctx context.Context, vmDir *vmdirectory.VMDirectory, engine *clipboard.Engine) {
+	handler := func(req clipboardctl.Request) (clipboardpolicy.Policy, error) {
+		// An empty override is a pure query (weave clipboard get): return the
+		// current policy without touching the engine.
+		if req.Override.IsZero() {
+			return engine.Policy(), nil
+		}
+		updated := req.Override.Apply(engine.Policy())
+		engine.SetPolicy(updated)
+		if req.Persist {
+			vmConfig, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
+			if err != nil {
+				return updated, err
+			}
+			vmConfig.ClipboardPolicy = &updated
+			if err := vmConfig.SaveInPlace(vmDir.ConfigURL()); err != nil {
+				return updated, err
+			}
+		}
+		return updated, nil
+	}
+	if err := clipboardctl.Serve(ctx, vmDir.ClipboardControlSocketURL(), handler); err != nil && ctx.Err() == nil {
+		logging.LogError("clipboard control socket: %v", err)
+	}
 }
 
 func parseCSVSet(csv string) map[string]bool {
@@ -880,10 +946,7 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 		os.Exit(1)
 	}
 
-	var validateErr error
-	mainthread.Do(func() {
-		validateErr = vm.Configuration.ValidateSaveRestoreSupport()
-	})
+	validateErr := vm.ValidateSaveRestoreSupport()
 	if validateErr != nil {
 		// The running configuration can't be saved — typically the VM was
 		// started without --suspendable, so it still carries USB input/entropy
@@ -920,6 +983,37 @@ func createSerialPortConfiguration(
 		ttyWrite,
 	)
 	return idvirt.NewVirtioConsoleDeviceSerialPortConfiguration().WithAttachment(attachment)
+}
+
+// clipboardAgentSerialPort builds the dedicated virtio serial port the resident
+// clipboard agent talks over, bridged to the host with two pipes (mirroring
+// VirtualBuddy's Pipe()-backed VZFileHandleSerialPortAttachment). The host ends
+// are stored on c and reused across VM rebuilds; fresh FileHandles wrap the same
+// fds each build (an attachment consumes its handles).
+//
+// Per VZFileHandleSerialPortAttachment semantics — data written to
+// fileHandleForReading goes to the guest, guest output appears on
+// fileHandleForWriting — the VM reads the host→guest pipe and writes the
+// guest→host pipe; the host writes the former and reads the latter.
+func (c *RunCommand) clipboardAgentSerialPort() (idvirt.SerialPortConfigurationProvider, error) {
+	if c.clipSerialHostR == nil || c.clipSerialHostW == nil {
+		var h2g, g2h [2]int // [read, write]
+		if err := syscall.Pipe(h2g[:]); err != nil {
+			return nil, weaveerrors.ErrVMConfigurationError("clipboard serial pipe: %v", err)
+		}
+		if err := syscall.Pipe(g2h[:]); err != nil {
+			return nil, weaveerrors.ErrVMConfigurationError("clipboard serial pipe: %v", err)
+		}
+		// VM ends stay raw/blocking (handed to the framework as bare fds); host
+		// ends become *os.File so Go's runtime poller drives their I/O.
+		c.clipSerialVMReadFD = h2g[0]  // framework reads -> to guest
+		c.clipSerialVMWriteFD = g2h[1] // framework writes guest output here
+		c.clipSerialHostW = os.NewFile(uintptr(h2g[1]), "weave-clip-h2g-w")
+		c.clipSerialHostR = os.NewFile(uintptr(g2h[0]), "weave-clip-g2h-r")
+	}
+	ttyRead := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(c.clipSerialVMReadFD, false)
+	ttyWrite := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(c.clipSerialVMWriteFD, false)
+	return createSerialPortConfiguration(ttyRead, ttyWrite), nil
 }
 
 func isInteractiveSession() bool {

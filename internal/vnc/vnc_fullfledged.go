@@ -17,7 +17,7 @@ import (
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/mainthread"
 )
 
 // FullFledgedVNC ports tart's FullFledgedVNC class.

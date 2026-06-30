@@ -3,9 +3,10 @@
 // guest clipboard with full format fidelity through a platform backend
 // (NSPasteboard on macOS, xclip/wl-clipboard on Linux).
 //
-// The module applies no policy of its own: the host sends an explicit allow-list
-// on every GET and only ever sends permitted formats on SET. Directionality and
-// bandwidth throttling live in the host engine.
+// The module makes no policy decisions of its own: the host sends an explicit
+// allow-list and per-item size cap on every GET (which the module honours before
+// transfer) and only ever sends permitted formats on SET. Directionality,
+// bandwidth throttling, and authoritative cap enforcement live in the host engine.
 package clipguest
 
 import (
@@ -28,12 +29,13 @@ type backend interface {
 
 // Module implements agent.Module for the clipboard. The backend is initialised
 // lazily so a guest without a usable clipboard (e.g. Linux with no display
-// server) still runs the agent and reports a per-operation error rather than
-// failing to start.
+// server yet) still runs the agent and reports a per-operation error rather than
+// failing to start. Init is retried on every operation until it succeeds, so a
+// display that comes up after the agent connected (e.g. a desktop session or a
+// headless Xvfb started post-boot) is picked up without restarting the agent.
 type Module struct {
-	once    sync.Once
+	mu      sync.Mutex
 	backend backend
-	initErr error
 }
 
 // New returns the clipboard module.
@@ -43,8 +45,17 @@ func New() *Module { return &Module{} }
 func (m *Module) Name() string { return wire.Module }
 
 func (m *Module) ensure() (backend, error) {
-	m.once.Do(func() { m.backend, m.initErr = newBackend() })
-	return m.backend, m.initErr
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backend != nil {
+		return m.backend, nil
+	}
+	b, err := newBackend()
+	if err != nil {
+		return nil, err
+	}
+	m.backend = b
+	return b, nil
 }
 
 // Serve handles one clipboard request.
@@ -74,6 +85,9 @@ func (m *Module) Serve(req proto.Request, in io.Reader, out io.Writer) error {
 		if gerr != nil {
 			return proto.WriteResponse(out, proto.Response{Err: gerr.Error()})
 		}
+		// Honour the host's per-item/file cap before transfer so an oversize
+		// guest item isn't pushed over the wire (the host re-enforces on receive).
+		payload, _ = payload.CapTo(meta.MaxBytes)
 		return writeMeta(out, wire.MetaFor(payload), &payload)
 
 	case wire.OpSet:

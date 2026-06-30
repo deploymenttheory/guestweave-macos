@@ -1,9 +1,9 @@
 // Package agentbin embeds the cross-compiled weave-guestd binaries so the host
 // can deploy the right one into a guest without a separate artifact. The
-// binaries are produced by guestagent/build.sh into the dist/ directory and
-// named weave-guestd-<goos>-<goarch>. When a target's binary is absent (e.g. a
-// plain `go build` without the build step), Binary reports false and the host
-// engine falls back to legacy text-only clipboard sync.
+// binaries are produced by `make agent` (or `make build`) into the dist/
+// directory and named weave-guestd-<goos>-<goarch>. When a target's binary is
+// absent (e.g. a plain `go build .` that skips the agent step), Binary reports
+// false and the host clipboard engine disables itself.
 package agentbin
 
 import (

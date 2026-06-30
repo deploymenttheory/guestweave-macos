@@ -6,8 +6,9 @@
 //     at runtime through purego (vmDelegateClass).
 //   - Generated *CompletionHandler bindings panic under purego, so every
 //     async call builds its block manually (see fetcher.go for the pattern).
-//   - All VZVirtualMachine access is dispatched to the main queue via
-//     mainthread.Do (opinionated/custom/mainthread), matching the @MainActor annotations.
+//   - VZVirtualMachine is queue-confined: all of its access goes through vm.do,
+//     which runs on the VM's dispatch queue (the main queue when headed, a
+//     dedicated serial queue otherwise).
 //go:build darwin
 
 package vm
@@ -48,10 +49,13 @@ import (
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/mainthread"
+	serialqueue "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/serialqueue"
 	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idiomatic "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
+
+	ebiobjc "github.com/ebitengine/purego/objc"
 )
 
 // Error types ported from VM.swift.
@@ -111,6 +115,13 @@ type VMOptions struct {
 	NoTrackpad             bool
 	NoPointer              bool
 	NoKeyboard             bool
+
+	// MainQueue binds the VZVirtualMachine to the process main queue instead of a
+	// dedicated serial queue. Required for a headed run, where the VM is shown in
+	// a VZVirtualMachineView (an @MainActor NSView) that must share the main
+	// queue. Headless runs and `create` leave it false so VM work runs off the
+	// main thread on its own serial queue.
+	MainQueue bool
 }
 
 func (o *VMOptions) normalize() {
@@ -163,7 +174,19 @@ type VM struct {
 
 	network    *weavenetwork.Topology
 	delegateID purego.ID
+
+	// exec runs a closure on the queue the VZVirtualMachine is confined to — the
+	// main queue (headed) or vq (headless). All VZVirtualMachine calls go through
+	// vm.do so they stay on that one queue. vq is nil in the main-queue case.
+	exec func(func())
+	vq   *serialqueue.Queue
 }
+
+// do runs fn on the VM's dispatch queue and blocks until it returns.
+// VZVirtualMachine is queue-confined (it must be used on the queue it was created
+// on), so every VZVirtualMachine call must go through here rather than running on
+// an arbitrary goroutine.
+func (vm *VM) do(fn func()) { vm.exec(fn) }
 
 var _ controlsocket.VirtioSocketConnector = (*VM)(nil)
 
@@ -258,16 +281,32 @@ func NewVMWithConfig(vmDir *vmdirectory.VMDirectory, config *vmconfig.VMConfig, 
 		Config:        config,
 		network:       topology,
 	}
-	vm.attachVirtualMachine()
+	vm.attachVirtualMachine(options.MainQueue)
 
 	return vm, nil
 }
 
-// attachVirtualMachine creates the VZVirtualMachine on the main queue and
-// installs the delegate (Swift: VZVirtualMachine(configuration:) + delegate).
-func (vm *VM) attachVirtualMachine() {
-	mainthread.Do(func() {
-		vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfiguration(vm.Configuration)
+// attachVirtualMachine creates the VZVirtualMachine on its dispatch queue and
+// installs the delegate (Swift: VZVirtualMachine(configuration:queue:) +
+// delegate). When mainQueue is set the VM is bound to the main queue (headed
+// runs, where the VZVirtualMachineView shares it); otherwise it gets a dedicated
+// serial queue so its work runs off the main thread. The delegate's callbacks
+// then fire on whichever queue the VM owns, and just signal vm.sema.
+func (vm *VM) attachVirtualMachine(mainQueue bool) {
+	if mainQueue {
+		vm.exec = mainthread.Do
+	} else {
+		vm.vq = serialqueue.New("com.deploymenttheory.guestweave.vm")
+		vm.exec = vm.vq.Do
+	}
+
+	vm.do(func() {
+		if vm.vq != nil {
+			queue := obj.Wrap(ebiobjc.ID(vm.vq.Handle()))
+			vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfigurationQueue(vm.Configuration, queue)
+		} else {
+			vm.VirtualMachine = idiomatic.NewVirtualMachineWithConfiguration(vm.Configuration)
+		}
 
 		delegateID := purego.ID(vmDelegateClass()).Send(purego.RegisterName("new"))
 		vmDelegateRegistry.Store(delegateID, vm)
@@ -380,7 +419,7 @@ func (vm *VM) InFinalState() bool {
 
 func (vm *VM) machineState() idiomatic.VirtualMachineState {
 	var state idiomatic.VirtualMachineState
-	mainthread.Do(func() {
+	vm.do(func() {
 		state = vm.VirtualMachine.State()
 	})
 	return state
@@ -471,7 +510,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory
 		Config:        config,
 		network:       topology,
 	}
-	vm.attachVirtualMachine()
+	vm.attachVirtualMachine(options.MainQueue)
 
 	// Run automated installation.
 	if err := vm.install(ctx, ipswPath); err != nil {
@@ -495,7 +534,7 @@ func loadMacOSRestoreImage(ctx context.Context, ipswPath string) (*idiomatic.Mac
 // install ports VM.install(_:): runs VZMacOSInstaller with progress logging.
 func (vm *VM) install(ctx context.Context, ipswPath string) error {
 	var installer *idiomatic.MacOSInstaller
-	mainthread.Do(func() {
+	vm.do(func() {
 		installer = idiomatic.NewMACOSInstallerWithVirtualMachineRestoreImageURL(
 			vm.VirtualMachine, ipswPath)
 	})
@@ -512,7 +551,7 @@ func (vm *VM) install(ctx context.Context, ipswPath string) error {
 			errCh <- nil
 		}
 	})
-	mainthread.Do(func() {
+	vm.do(func() {
 		obj.ID(installer).Send(purego.RegisterName("installWithCompletionHandler:"), block)
 	})
 
@@ -574,7 +613,7 @@ func (vm *VM) Start(recovery bool, shouldResume bool) error {
 // interface used by ControlSocket.
 func (vm *VM) Connect(ctx context.Context, toPort uint32) (*idiomatic.VirtioSocketConnection, error) {
 	var socketDeviceID purego.ID
-	mainthread.Do(func() {
+	vm.do(func() {
 		devices := vm.VirtualMachine.SocketDevices()
 		if len(devices) > 0 {
 			socketDeviceID = obj.ID(devices[0])
@@ -603,7 +642,7 @@ func (vm *VM) Connect(ctx context.Context, toPort uint32) (*idiomatic.VirtioSock
 		}
 		resultCh <- result{connection: idiomatic.VirtioSocketConnectionFromID(purego.Retain(connectionID))}
 	})
-	mainthread.Do(func() {
+	vm.do(func() {
 		socketDeviceID.Send(purego.RegisterName("connectToPort:completionHandler:"), toPort, block)
 	})
 
@@ -652,7 +691,7 @@ func (vm *VM) startMachine(recovery bool) error {
 		}
 	})
 
-	mainthread.Do(func() {
+	vm.do(func() {
 		startOptions := idiomatic.NewMacOSVirtualMachineStartOptions()
 		startOptions.WithStartUpFromMACOSRecovery(recovery)
 		obj.ID(vm.VirtualMachine).Send(
@@ -672,6 +711,22 @@ func (vm *VM) stopMachine() error {
 	return vm.SendErrorCompletion("stopWithCompletionHandler:")
 }
 
+// RequestStop asks the guest OS to shut down cleanly
+// (VZVirtualMachine.requestStop), dispatched onto the VM's queue.
+func (vm *VM) RequestStop() error {
+	var err error
+	vm.do(func() { err = vm.VirtualMachine.RequestStop() })
+	return err
+}
+
+// ValidateSaveRestoreSupport reports whether the running configuration can be
+// saved and restored, dispatched onto the VM's queue.
+func (vm *VM) ValidateSaveRestoreSupport() error {
+	var err error
+	vm.do(func() { err = vm.Configuration.ValidateSaveRestoreSupport() })
+	return err
+}
+
 func (vm *VM) SendErrorCompletion(selector string) error {
 	errCh := make(chan error, 1)
 	block := purego.NewBlock(func(_ purego.Block, errID purego.ID) {
@@ -681,7 +736,7 @@ func (vm *VM) SendErrorCompletion(selector string) error {
 			errCh <- nil
 		}
 	})
-	mainthread.Do(func() {
+	vm.do(func() {
 		obj.ID(vm.VirtualMachine).Send(purego.RegisterName(selector), block)
 	})
 	return <-errCh

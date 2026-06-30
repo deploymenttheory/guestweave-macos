@@ -88,14 +88,29 @@ order (see also `WEAVE_HOME`):
 
 ## Clipboard
 
-The enterprise clipboard engine syncs the host and guest pasteboards over the
-guest agent, governed by a policy. Precedence: per-run `--clipboard*` flags →
-the VM's own policy → `defaultClipboardPolicy` in settings → built-in default.
+A single policy-driven engine syncs the host and guest pasteboards over the
+embedded `weave-guestd` agent (deployed to the guest over SSH), for both Linux
+and macOS guests. It is **on by default** (built-in policy: enabled,
+bidirectional, all formats) and owns the clipboard — the SPICE agent clipboard is
+not also wired, so there is one owner. `--no-clipboard`, or a resolved policy
+whose direction is `disabled`, turns the clipboard off entirely.
+
+Precedence: per-run `--clipboard*` flags → the VM's own policy →
+`defaultClipboardPolicy` in settings → built-in default.
 
 Per-run flags (see [CLI Reference → run](cli-reference.md#run)):
 `--clipboard` / `--no-clipboard`, `--clipboard-direction`, `--clipboard-formats`,
 `--clipboard-files`, `--clipboard-user`, `--clipboard-password`,
 `--clipboard-session-mbps`, `--clipboard-bandwidth-pct`, `--clipboard-max-bytes`.
+
+**Guest requirements.** The agent connects over SSH, so the guest must be
+reachable with the configured `--clipboard-user` / `--clipboard-password`
+(default `weave` / `weave`). A **Linux** guest also needs a clipboard CLI
+(`xclip` for X11 or `wl-clipboard` for Wayland) and a display: a desktop session
+(headed) or a headless `Xvfb` (e.g. `Xvfb :99 -ac`) — the agent discovers the
+active Wayland socket or X display automatically. **macOS** guests use the system
+pasteboard directly and need no extra tooling. The host binary must be built with
+the agent embedded (`make build`); see the build notes in `CLAUDE.md`.
 
 The run window's **Control ▸ Clipboard Status…** shows the resolved direction
 (read-only; the policy is fixed at launch).

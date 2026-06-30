@@ -12,6 +12,8 @@ package main
 import (
 	"strings"
 	"time"
+
+	"github.com/deploymenttheory/weave/internal/clipboard"
 )
 
 // guestChecks are the leaf cases exercised once a guest is running with SSH.
@@ -42,7 +44,7 @@ func guestChecks(vmName, user, password string) []Case {
 				t.Fatalf("starting run --clipboard: %v", err)
 			}
 			defer bg.Stop()
-			if !bg.waitForOutput("Clipboard sync started", 30*time.Second) {
+			if !bg.waitForOutput(clipboard.StartedMarker, 30*time.Second) {
 				t.Errorf("clipboard sync did not start:\n%s", bg.Output())
 			}
 		}},

@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/deploymenttheory/weave/internal/clipboard/wire"
@@ -34,13 +36,135 @@ func newBackend() (backend, error) {
 		return nil, fmt.Errorf("create staging dir: %w", err)
 	}
 
-	if os.Getenv("WAYLAND_DISPLAY") != "" && haveAll("wl-paste", "wl-copy") {
+	// The agent is launched over a non-login SSH channel, so DISPLAY /
+	// WAYLAND_DISPLAY (and XAUTHORITY / XDG_RUNTIME_DIR) are usually unset even
+	// when a graphical session is running. Discover the active session — or a
+	// headless Xvfb — and export what the CLI clipboard tools need. Setting them
+	// on this process makes every exec.Command below inherit them.
+	setupDisplayEnv()
+
+	wayland := os.Getenv("WAYLAND_DISPLAY") != ""
+	x11 := os.Getenv("DISPLAY") != ""
+
+	if wayland && haveAll("wl-paste", "wl-copy") {
 		return &linuxBackend{stageDir: dir, listTargets: wlListTargets, paste: wlPaste, copy: wlCopy}, nil
 	}
-	if haveAll("xclip") {
+	if x11 && haveAll("xclip") {
 		return &linuxBackend{stageDir: dir, listTargets: xclipListTargets, paste: xclipPaste, copy: xclipCopy}, nil
 	}
-	return nil, fmt.Errorf("no clipboard tool found (need wl-clipboard or xclip)")
+
+	switch {
+	case !wayland && !x11:
+		return nil, fmt.Errorf("no display server found (need DISPLAY or WAYLAND_DISPLAY; clipboard needs a graphical session or a headless Xvfb)")
+	case wayland:
+		return nil, fmt.Errorf("Wayland display %q found but wl-clipboard (wl-copy/wl-paste) is not installed", os.Getenv("WAYLAND_DISPLAY"))
+	default:
+		return nil, fmt.Errorf("X11 display %q found but xclip is not installed", os.Getenv("DISPLAY"))
+	}
+}
+
+// setupDisplayEnv discovers the guest's graphical session and exports the
+// environment the clipboard CLIs need (DISPLAY/WAYLAND_DISPLAY, XDG_RUNTIME_DIR,
+// XAUTHORITY) when they are not already set. It prefers Wayland (a wayland-*
+// socket in the runtime dir), then falls back to X11 (an X socket under
+// /tmp/.X11-unix — covers Xorg, Xwayland and a headless Xvfb). An environment
+// supplied by the caller (e.g. a systemd user service) is left untouched.
+func setupDisplayEnv() {
+	uid := os.Getuid()
+
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if runtimeDir == "" {
+		runtimeDir = fmt.Sprintf("/run/user/%d", uid)
+		if fi, err := os.Stat(runtimeDir); err == nil && fi.IsDir() {
+			_ = os.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+		}
+	}
+
+	if os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("DISPLAY") != "" {
+		return // honour an explicitly provided session
+	}
+
+	if sock := firstWaylandSocket(runtimeDir); sock != "" {
+		_ = os.Setenv("WAYLAND_DISPLAY", sock)
+		return
+	}
+
+	if disp := firstX11Display(); disp != "" {
+		_ = os.Setenv("DISPLAY", disp)
+		if os.Getenv("XAUTHORITY") == "" {
+			if xauth := discoverXAuthority(uid); xauth != "" {
+				_ = os.Setenv("XAUTHORITY", xauth)
+			}
+		}
+	}
+}
+
+// firstWaylandSocket returns the name (e.g. "wayland-0") of the first Wayland
+// display socket in runtimeDir, ignoring the ".lock" companions.
+func firstWaylandSocket(runtimeDir string) string {
+	if runtimeDir == "" {
+		return ""
+	}
+	entries, err := os.ReadDir(runtimeDir)
+	if err != nil {
+		return ""
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, "wayland-") && !strings.HasSuffix(name, ".lock") {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	if len(names) > 0 {
+		return names[0]
+	}
+	return ""
+}
+
+// firstX11Display returns the lowest-numbered X display (e.g. ":0") that has a
+// socket under /tmp/.X11-unix.
+func firstX11Display() string {
+	entries, err := os.ReadDir("/tmp/.X11-unix")
+	if err != nil {
+		return ""
+	}
+	nums := make([]int, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name() // "X0", "X99", …
+		if !strings.HasPrefix(name, "X") {
+			continue
+		}
+		if n, err := strconv.Atoi(name[1:]); err == nil {
+			nums = append(nums, n)
+		}
+	}
+	if len(nums) == 0 {
+		return ""
+	}
+	slices.Sort(nums)
+	return fmt.Sprintf(":%d", nums[0])
+}
+
+// discoverXAuthority returns the first plausible X authority file for the
+// running user, or "" when none is found (a headless Xvfb started with -ac
+// needs no authority).
+func discoverXAuthority(uid int) string {
+	candidates := []string{
+		os.Getenv("HOME") + "/.Xauthority",
+		fmt.Sprintf("/run/user/%d/gdm/Xauthority", uid),
+		fmt.Sprintf("/run/user/%d/.mutter-Xwaylandauth", uid),
+	}
+	for _, path := range candidates {
+		if path == "/.Xauthority" {
+			continue
+		}
+		if fi, err := os.Stat(path); err == nil && !fi.IsDir() {
+			return path
+		}
+	}
+	return ""
 }
 
 func (b *linuxBackend) Stat() (uint64, error) {
@@ -93,6 +217,13 @@ func (b *linuxBackend) Read(allowed map[wire.Canonical]bool) (wire.Payload, erro
 				payload.Files = append(payload.Files, wire.DataFile{Name: filepath.Base(path), Data: contents})
 			}
 		}
+	}
+
+	// Files-authoritative: a file copy also advertises the path/name as text;
+	// keep only the files so the host⇄guest round-trip converges (matches the
+	// host-side macpb.Read behaviour).
+	if len(payload.Files) > 0 {
+		payload.Items = nil
 	}
 
 	return payload, nil

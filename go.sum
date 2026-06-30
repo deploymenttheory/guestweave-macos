@@ -10,6 +10,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/deploymenttheory/go-bindings-macosplatform v0.13.0 h1:mhsI8pcLmpslMYE7/pi7JPPiURuIJqVXnKP2OzzpD9E=
 github.com/deploymenttheory/go-bindings-macosplatform v0.13.0/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
+github.com/deploymenttheory/go-bindings-macosplatform v0.14.0 h1:sJTuyNfpMtPSDkonKwg62ljMGjasjKc9TcTxLN1AwQQ=
+github.com/deploymenttheory/go-bindings-macosplatform v0.14.0/go.mod h1:v4PQ+3qS9Yc3vqje6j4c2GpXsk7fdWJLGD5lJ0l+6hY=
 github.com/deploymenttheory/go-sdk-vtpm2 v1.0.0 h1:tCGwJayazsbn0eC3eKNJ3hBAfZU5UrcK1apRIW08SmA=
 github.com/deploymenttheory/go-sdk-vtpm2 v1.0.0/go.mod h1:sQle2N7YTVbLPw7o2pQHeEPmsrzHIk2KYOcZqTKaDe4=
 github.com/deploymenttheory/go-sdk-winmediafoundry v0.6.1 h1:8CAMr2HnzUpft0gXkuy/23GfWarMe4CKaDfsWWv9pN4=

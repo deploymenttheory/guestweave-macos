@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/deploymenttheory/weave/internal/clipboard"
 	"github.com/deploymenttheory/weave/internal/logging"
 	"github.com/deploymenttheory/weave/internal/macaddress"
 	"github.com/deploymenttheory/weave/internal/objcutil"
@@ -42,14 +43,14 @@ const nsPasteboardTypeString = "public.utf8-plain-text"
 
 // Window-scoped state shared with the ObjC menu-target callbacks (which cannot
 // carry Go closure state). activeVMDir and activeView are set in Run() on the
-// main thread before the run loop starts; vncURL and clipboardStatus arrive
+// main thread before the run loop starts; vncURL and clipboardHealth arrive
 // asynchronously from the run command's driveVM goroutine, so they are atomics.
 var (
 	activeVMDir string
 	activeView  *virtualization.VirtualMachineView
 
 	vncURLHolder    atomic.Value // string
-	clipboardStatus atomic.Value // string
+	clipboardHealth atomic.Value // clipboard.Health
 
 	screenShareMu     sync.Mutex
 	screenShareCancel context.CancelFunc
@@ -59,12 +60,16 @@ var (
 // Connect ▸ Open VNC Viewer and View ▸ Toggle Screen Share menu items.
 func SetVNCURL(url string) { vncURLHolder.Store(url) }
 
-// SetClipboardStatus records the resolved clipboard direction for the
-// Control ▸ Clipboard Status item (empty = clipboard sync disabled).
-func SetClipboardStatus(status string) { clipboardStatus.Store(status) }
+// SetClipboardHealth records the engine's latest health snapshot for the
+// Control ▸ Clipboard Status panel. It is the reporter the clipboard engine
+// calls each sync cycle (see Engine.SetReporter).
+func SetClipboardHealth(h clipboard.Health) { clipboardHealth.Store(h) }
 
-func loadVNCURL() string        { s, _ := vncURLHolder.Load().(string); return s }
-func loadClipboardStatus() string { s, _ := clipboardStatus.Load().(string); return s }
+func loadVNCURL() string { s, _ := vncURLHolder.Load().(string); return s }
+func loadClipboardHealth() (clipboard.Health, bool) {
+	h, ok := clipboardHealth.Load().(clipboard.Health)
+	return h, ok
+}
 
 // ── Connect ─────────────────────────────────────────────────────────────────
 
@@ -262,15 +267,37 @@ func showVMInfo() {
 	showInfo("VM Info", info)
 }
 
-// showClipboardStatus reports the resolved clipboard sync direction. (Toggling
-// at runtime would require new hooks on the clipboard engine; this is read-only.)
+// showClipboardStatus reports the live clipboard health as a checklist: the
+// resolved policy plus a 🟢/🔴 light for each prerequisite (embedded agent,
+// guest IP, SSH/Remote Login, agent connected, last sync), so the user can see
+// exactly what is missing. Read-only; the engine updates it each sync cycle.
 func showClipboardStatus() {
-	status := loadClipboardStatus()
-	if status == "" {
-		showInfo("Clipboard", "Clipboard sync is disabled for this VM.")
+	h, ok := loadClipboardHealth()
+	if !ok || !h.Enabled {
+		showInfo("Clipboard Status", "Clipboard sync is disabled for this VM.\n\n"+
+			"Enable it by running without --no-clipboard (it is on by default), "+
+			"or set a clipboard policy.")
 		return
 	}
-	showInfo("Clipboard", "Clipboard sync direction: "+status)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Policy:  %s\n\n", h.Summary)
+	for _, c := range h.Checks {
+		light := "🔴"
+		if c.OK {
+			light = "🟢"
+		}
+		fmt.Fprintf(&b, "%s  %s\n", light, c.Label)
+		if c.Detail != "" {
+			fmt.Fprintf(&b, "        %s\n", c.Detail)
+		}
+	}
+	if h.AllOK() {
+		b.WriteString("\n✅ Clipboard is fully operational.")
+	} else {
+		b.WriteString("\n⚠️  Resolve the 🔴 items above to enable clipboard.")
+	}
+	showInfo("Clipboard Status", b.String())
 }
 
 // forceStop terminates the run process immediately (SIGKILL), powering off the

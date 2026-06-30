@@ -61,6 +61,12 @@ func (d *VMDirectory) ManifestURL() string { return filepath.Join(d.BaseURL, "ma
 // its directory and binds the short relative name (104-byte sun_path limit).
 func (d *VMDirectory) ControlSocketURL() string { return filepath.Join(d.BaseURL, "control.sock") }
 
+// ClipboardControlSocketURL is the host-side socket the running VM process
+// listens on for live clipboard-policy updates (weave clipboard set).
+func (d *VMDirectory) ClipboardControlSocketURL() string {
+	return filepath.Join(d.BaseURL, "clipboard-control.sock")
+}
+
 func (d *VMDirectory) ExplicitlyPulledMark() string {
 	return filepath.Join(d.BaseURL, ".explicitly-pulled")
 }

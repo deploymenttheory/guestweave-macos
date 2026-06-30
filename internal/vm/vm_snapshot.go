@@ -11,9 +11,8 @@ import (
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // Pause pauses the running VM's vCPUs, quiescing in-flight disk I/O. Resume
@@ -64,7 +63,7 @@ func (vm *VM) sendURLErrorCompletion(selector string, path string) error {
 	// Keep the bridged NSURL alive across the async send by capturing it in the
 	// closure.
 	url := objcutil.NSURLFromPath(path)
-	mainthread.Do(func() {
+	vm.do(func() {
 		obj.ID(vm.VirtualMachine).Send(purego.RegisterName(selector), obj.ID(url), block)
 	})
 	return <-errCh

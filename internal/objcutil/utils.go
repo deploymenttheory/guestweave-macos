@@ -12,6 +12,8 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/ebitengine/purego/objc"
+
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/errkit"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
@@ -51,6 +53,12 @@ func EnvironmentValue(name string) (string, bool) {
 // Init* instance methods.
 func AllocClass(className string) purego.ID {
 	return purego.Send[purego.ID](purego.ID(purego.GetClass(className)), purego.RegisterName("alloc"))
+}
+
+// NSClass returns the named Objective-C class as an obj.Object, for APIs that
+// take a class array (e.g. NSPasteboard readObjectsForClasses:).
+func NSClass(name string) obj.Object {
+	return obj.Wrap(objc.ID(purego.GetClass(name)))
 }
 
 // NSDataToBytes copies an NSData's contents — raw or idiomatic, identified by

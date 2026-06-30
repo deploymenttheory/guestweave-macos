@@ -67,6 +67,7 @@ type runVMRequest struct {
 	ClipboardDirection    string `json:"clipboardDirection,omitempty"`
 	ClipboardFormats      string `json:"clipboardFormats,omitempty"`
 	ClipboardFiles        string `json:"clipboardFiles,omitempty"`
+	ClipboardAllowedTypes string `json:"clipboardAllowedTypes,omitempty"`
 	ClipboardSessionMbps  int    `json:"clipboardSessionMbps,omitempty"`
 	ClipboardBandwidthPct int    `json:"clipboardBandwidthPct,omitempty"`
 	ClipboardMaxBytes     int64  `json:"clipboardMaxBytes,omitempty"`

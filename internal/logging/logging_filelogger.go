@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	LogFileInfoName  = "weave.info.log"
-	LogFileErrorName = "weave.error.log"
+	LogFileInfoName           = "weave.info.log"
+	LogFileErrorName          = "weave.error.log"
+	LogFileClipboardAuditName = "weave.clipboard-audit.log"
 )
 
 var fileLoggerMutex sync.Mutex
@@ -72,6 +73,17 @@ func LogError(format string, args ...any) {
 	}
 }
 
+// LogAudit appends a pre-formatted audit record (typically a JSON object) to the
+// clipboard audit log as its own line and dual-emits it to OTel. Unlike LogInfo
+// it writes the record verbatim — no "<ts> [pid]" prefix — so the file stays
+// valid JSON-lines for machine consumption (the record carries its own time).
+func LogAudit(record string) {
+	appendRotated(LogFileClipboardAuditName, func() string { return record + "\n" })
+	if fn := otelSink; fn != nil {
+		fn("AUDIT", record)
+	}
+}
+
 // Clear removes every log file — info, error, and their rotated .old copies.
 // Used by `weave logs clear` and the run window's Clear Logs menu item.
 func Clear() error {
@@ -85,8 +97,8 @@ func Clear() error {
 
 	var firstErr error
 	for _, name := range []string{
-		LogFileInfoName, LogFileErrorName,
-		LogFileInfoName + ".old", LogFileErrorName + ".old",
+		LogFileInfoName, LogFileErrorName, LogFileClipboardAuditName,
+		LogFileInfoName + ".old", LogFileErrorName + ".old", LogFileClipboardAuditName + ".old",
 	} {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) && firstErr == nil {
 			firstErr = err
@@ -96,6 +108,16 @@ func Clear() error {
 }
 
 func appendLogLine(fileName string, message string) {
+	appendRotated(fileName, func() string {
+		timestamp := time.Now().Format("2006-01-02 15:04:05.000")
+		return fmt.Sprintf("%s [%d] %s\n", timestamp, os.Getpid(), message)
+	})
+}
+
+// appendRotated performs the size-capped rotation and locked append shared by
+// every log file; render produces the exact bytes to write (including the
+// trailing newline). Logging failures are silent.
+func appendRotated(fileName string, render func() string) {
 	dir := LogsDir()
 	if dir == "" {
 		return
@@ -121,6 +143,5 @@ func appendLogLine(fileName string, message string) {
 	}
 	defer file.Close()
 
-	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
-	_, _ = fmt.Fprintf(file, "%s [%d] %s\n", timestamp, os.Getpid(), message)
+	_, _ = file.WriteString(render())
 }

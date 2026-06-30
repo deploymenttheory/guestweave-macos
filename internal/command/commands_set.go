@@ -12,6 +12,7 @@ import (
 
 	"github.com/deploymenttheory/weave/internal/vmconfig"
 
+	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/weave/internal/config"
 	"github.com/deploymenttheory/weave/internal/diskimage"
 	"github.com/deploymenttheory/weave/internal/fsutil"
@@ -31,6 +32,7 @@ type SetCommand struct {
 	RandomSerial bool
 	Disk         string
 	DiskSize     *uint16
+	Clipboard    clipboardFlagValues // persisted onto the VM's clipboard policy
 }
 
 func (c *SetCommand) Run(ctx context.Context) error {
@@ -80,6 +82,17 @@ func (c *SetCommand) Run(ctx context.Context) error {
 			ecid := idvirt.NewMacMachineIdentifier()
 			vmConfig.Platform = vmconfig.NewDarwinPlatform(ecid, oldPlatform.HardwareModel)
 		}
+	}
+
+	// Persist any clipboard-policy flags onto the VM's stored policy, layering
+	// the override on the existing per-VM policy (or the built-in default).
+	if override := c.Clipboard.override(); !override.IsZero() {
+		base := clipboardpolicy.Default()
+		if vmConfig.ClipboardPolicy != nil {
+			base = *vmConfig.ClipboardPolicy
+		}
+		updated := override.Apply(base)
+		vmConfig.ClipboardPolicy = &updated
 	}
 
 	if err := vmConfig.Save(vmDir.ConfigURL()); err != nil {

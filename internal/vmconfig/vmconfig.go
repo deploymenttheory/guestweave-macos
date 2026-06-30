@@ -189,6 +189,27 @@ func (c *VMConfig) Save(toPath string) error {
 	return nil
 }
 
+// SaveInPlace rewrites the config file at toPath without replacing its inode
+// (truncate + write rather than temp + rename). Save's atomic rename swaps the
+// inode, which would invalidate the fcntl(2) record lock the running VM process
+// holds on config.json and make the VM misreport as stopped. A live update from
+// inside the running process must use this instead. It is not crash-atomic, so
+// reserve it for that case; prefer Save everywhere else.
+func (c *VMConfig) SaveInPlace(toPath string) error {
+	object, err := c.jsonObject()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(object, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(toPath, data, 0o644); err != nil {
+		return weaveerrors.ErrGeneric("failed to write VM configuration to %s: %v", toPath, err)
+	}
+	return nil
+}
+
 func (c *VMConfig) jsonObject() (map[string]any, error) {
 	object := map[string]any{
 		"version":       c.Version,
