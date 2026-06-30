@@ -108,6 +108,7 @@ func ensureResidentDarwin(ctx context.Context, ssh *weavessh.SSHClient, binary [
 		logPath   = p.home + "/.weave/weave-guestd.log"
 		plistPath = p.home + "/Library/LaunchAgents/" + residentLabel + ".plist"
 	)
+	restart := false
 	if p.version != agent.Version {
 		if err := ssh.Upload(ctx, bytes.NewReader(binary), binPath, 0o755); err != nil {
 			return fmt.Errorf("guestagent: upload binary: %w", err)
@@ -118,13 +119,22 @@ func ensureResidentDarwin(ctx context.Context, ssh *weavessh.SSHClient, binary [
 		if err := ssh.Upload(ctx, strings.NewReader(agent.Version), verPath, 0o644); err != nil {
 			return fmt.Errorf("guestagent: write version: %w", err)
 		}
+		restart = true
 	}
-	// Load + (re)start the LaunchAgent in our own GUI domain (gui/$(id -u) needs no
-	// root for the session's own user). bootout first makes it idempotent and
-	// ensures a fresh start so the agent re-opens this run's serial channel.
+	// launchd already auto-loads ~/Library/LaunchAgents at GUI login, so usually
+	// the agent is running by now. Don't bootout/bootstrap a live instance (that
+	// races KeepAlive → exit 125): only bootstrap when it isn't loaded, and only
+	// kickstart-restart when we just replaced the binary. Loading into our own
+	// gui/$(id -u) domain needs no root.
+	kick := ":"
+	if restart {
+		kick = `launchctl kickstart -k "gui/$uid/$l"`
+	}
 	script := fmt.Sprintf(
-		`uid=$(id -u); p="%s"; launchctl bootout gui/$uid "$p" 2>/dev/null; launchctl bootstrap gui/$uid "$p"`,
-		plistRel)
+		`uid=$(id -u); l="%s"; pl="%s"; `+
+			`if launchctl print "gui/$uid/$l" >/dev/null 2>&1; then %s; `+
+			`else launchctl bootstrap "gui/$uid" "$pl"; fi`,
+		residentLabel, plistRel, kick)
 	if err := run(ctx, ssh, script); err != nil {
 		return fmt.Errorf("guestagent: load LaunchAgent: %w", err)
 	}

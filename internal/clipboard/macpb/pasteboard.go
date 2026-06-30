@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 
 	"github.com/deploymenttheory/weave/internal/clipboard/wire"
@@ -58,11 +59,7 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 	}
 
 	if allowed[wire.CanonFiles] {
-		for _, item := range pb.PasteboardItems() {
-			path := filePathFromURL(item.StringForType(objcutil.NSStr(FileURLType)))
-			if path == "" {
-				continue
-			}
+		for _, path := range fileURLs(pb) {
 			data, err := os.ReadFile(path)
 			if err != nil || tooBig(int64(len(data)), maxBytes) {
 				continue
@@ -120,13 +117,26 @@ func Write(p wire.Payload, stageDir string) error {
 
 func tooBig(n, maxBytes int64) bool { return maxBytes > 0 && n > maxBytes }
 
-func filePathFromURL(urlStr string) string {
-	if urlStr == "" {
-		return ""
+// fileURLs returns the POSIX paths of every real file URL on the pasteboard,
+// reading public.file-url canonically via readObjectsForClasses:[NSURL] so it
+// works whether Finder stored the URL as data or a string (StringForType only
+// reads the string form). Non-file URLs (http, etc.) are skipped via IsFileURL,
+// matching the guest JXA reader.
+func fileURLs(pb *appkit.Pasteboard) []string {
+	res := pb.ReadObjectsForClassesOptions([]obj.Object{objcutil.NSClass("NSURL")}, nil)
+	arr := foundation.ArrayFromID(obj.ID(res))
+	if arr == nil {
+		return nil
 	}
-	parsed, err := url.Parse(urlStr)
-	if err != nil || parsed.Scheme != "file" {
-		return ""
+	var paths []string
+	for i := 0; i < arr.Count(); i++ {
+		u, ok := obj.As(arr.ObjectAtIndex(i), "NSURL", foundation.URLFromID)
+		if !ok || !u.IsFileURL() {
+			continue
+		}
+		if p := u.Path(); p != "" {
+			paths = append(paths, p)
+		}
 	}
-	return parsed.Path
+	return paths
 }

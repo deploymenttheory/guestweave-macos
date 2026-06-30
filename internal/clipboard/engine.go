@@ -44,6 +44,42 @@ const (
 	errorLogThreshold = 3
 )
 
+// clipDebug enables verbose per-cycle sync tracing to stderr when WEAVE_CLIP_DEBUG
+// is set. Used to diagnose host⇄guest conflict/ordering issues.
+var clipDebug = os.Getenv("WEAVE_CLIP_DEBUG") != ""
+
+func dbg(format string, a ...any) {
+	if clipDebug {
+		fmt.Fprintf(os.Stderr, "[clipdbg] "+format+"\n", a...)
+	}
+}
+
+// short truncates a hash for debug logs.
+func short(h string) string {
+	if len(h) > 8 {
+		return h[:8]
+	}
+	if h == "" {
+		return "<none>"
+	}
+	return h
+}
+
+// summarize renders a payload's shape for debug logs.
+func summarize(p wire.Payload) string {
+	var b strings.Builder
+	for _, it := range p.Items {
+		fmt.Fprintf(&b, "item(%s,%dB) ", it.Format, len(it.Data))
+	}
+	for _, f := range p.Files {
+		fmt.Fprintf(&b, "file(%s,%dB) ", f.Name, len(f.Data))
+	}
+	if b.Len() == 0 {
+		return "<empty>"
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // StartedMarker is the stable prefix the engine prints to stdout once its sync
 // loop is live. Tooling (the acceptance harness) waits for this exact string to
 // know the clipboard engine has started, so keep it in sync with the Run log.
@@ -223,13 +259,18 @@ func (e *Engine) sync(ctx context.Context) {
 		if hostCC != e.lastHostChangeCount {
 			payload := e.captureHost()
 			hash := hashPayload(payload)
+			dbg("H→G: hostCC %d→%d captured=%s hash=%s lastHost=%s lastGuest=%s",
+				e.lastHostChangeCount, hostCC, summarize(payload), hash[:8], short(e.lastHostHash), short(e.lastGuestHash))
 			switch {
 			case payload.Empty() || hash == e.lastHostHash || hash == e.lastGuestHash:
+				dbg("H→G: skip (empty=%v matchHost=%v matchGuest=%v)", payload.Empty(), hash == e.lastHostHash, hash == e.lastGuestHash)
 				e.lastHostChangeCount = hostCC // nothing new to push; accept the count
 			default:
 				if err := e.setGuest(ctx, payload); err != nil {
+					dbg("H→G: setGuest ERR: %v", err)
 					e.handleError("sync clipboard to guest", err) // leave state for retry
 				} else {
+					dbg("H→G: pushed ok")
 					e.lastHostChangeCount = hostCC
 					e.lastHostHash = hash
 					e.lastGuestHash = hash
@@ -261,10 +302,15 @@ func (e *Engine) sync(ctx context.Context) {
 			return
 		}
 		hash := hashPayload(payload)
+		dbg("G→H: guestCC %d→%d got=%s hash=%s lastHost=%s lastGuest=%s",
+			e.lastGuestChangeCount, guestCC, summarize(payload), hash[:8], short(e.lastHostHash), short(e.lastGuestHash))
 		if !payload.Empty() && hash != e.lastGuestHash && hash != e.lastHostHash {
+			dbg("G→H: applying to host")
 			e.applyHost(payload)
 			e.lastGuestHash = hash
 			e.lastHostHash = hash
+		} else {
+			dbg("G→H: skip apply (empty=%v matchHost=%v matchGuest=%v)", payload.Empty(), hash == e.lastHostHash, hash == e.lastGuestHash)
 		}
 		e.lastGuestChangeCount = guestCC
 		e.resetFailure()
