@@ -20,13 +20,15 @@ import (
 
 // CloneCommand ports the Clone command.
 type CloneCommand struct {
-	SourceName  string
-	NewName     string
-	Registry    string // registry profile name for a remote source
-	Insecure    bool
-	Concurrency uint
-	Deduplicate bool
-	PruneLimit  uint
+	SourceName   string
+	NewName      string
+	Registry     string // registry profile name for a remote source
+	Insecure     bool
+	Concurrency  uint
+	Deduplicate  bool
+	PruneLimit   uint
+	RandomMAC    bool // force a fresh MAC on the clone (default: only on collision)
+	RandomSerial bool // give the clone a fresh macOS machine identifier (ECID)
 }
 
 func (c *CloneCommand) Validate() error {
@@ -124,11 +126,22 @@ func (c *CloneCommand) Run(ctx context.Context) error {
 		cleanup()
 		return err
 	}
-	generateMAC := hasCollision && sourceState != vmdirectory.VMDirectoryStateSuspended
+	// Regenerate the MAC on a collision, or unconditionally when --random-mac is
+	// passed. (A collision-driven regen is skipped for a suspended source to
+	// preserve resumability; an explicit --random-mac overrides that.)
+	generateMAC := (hasCollision && sourceState != vmdirectory.VMDirectoryStateSuspended) || c.RandomMAC
 
 	if err := sourceVM.Clone(tmpVMDir, generateMAC); err != nil {
 		cleanup()
 		return err
+	}
+
+	// Give the clone a fresh hardware serial when requested (macOS guests only).
+	if c.RandomSerial {
+		if _, err := tmpVMDir.RegenerateSerial(); err != nil {
+			cleanup()
+			return err
+		}
 	}
 
 	if err := localStorage.Move(c.NewName, tmpVMDir); err != nil {
