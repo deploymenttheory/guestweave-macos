@@ -17,6 +17,7 @@ both CLI and UI usage:
 - [CLI Reference](docs/manual/cli-reference.md) — every subcommand and flag
 - [UI Guide](docs/manual/ui-guide.md) — the run window and its menus
 - [Configuration](docs/manual/configuration.md) — settings file, `weave config`, environment variables
+- [Clipboard](docs/manual/clipboard.md) — enterprise clipboard policy (formats, files, direction, size caps, live updates, audit log)
 - [Networking](docs/manual/networking.md) — network profiles
 - [Logging](docs/manual/logging.md) — viewing, capping, and clearing logs
 - [Troubleshooting](docs/manual/troubleshooting.md) — common errors and fixes

@@ -38,10 +38,13 @@ defaultClipboardPolicy:
   enabled: true
   direction: bidirectional      # disabled | bidirectional | hostToGuest | guestToHost
   formats:
-    text: true
-    rich: true
+    plainText: true
+    richText: true
     image: false
   fileTransfer: false
+  allowedTypes: []              # e.g. [text/html] — authoritative when non-empty
+  maxContentBytes: 52428800     # per-item/file cap (50 MiB)
+  auditLog: false               # structured transfer/rejection audit log
 
 # File-logger size cap and rotation (see Logging).
 logging:
@@ -88,32 +91,34 @@ order (see also `WEAVE_HOME`):
 
 ## Clipboard
 
-A single policy-driven engine syncs the host and guest pasteboards over the
-embedded `weave-guestd` agent (deployed to the guest over SSH), for both Linux
-and macOS guests. It is **on by default** (built-in policy: enabled,
-bidirectional, all formats) and owns the clipboard — the SPICE agent clipboard is
-not also wired, so there is one owner. `--no-clipboard`, or a resolved policy
-whose direction is `disabled`, turns the clipboard off entirely.
+A single policy-driven engine syncs the host and guest pasteboards — text, rich
+text, images, and files, both directions — for Linux and macOS guests, over a
+resident `weave-guestd` agent that talks to the host on a virtio serial channel
+(SSH is used only to install the agent). It is **on by default** (built-in policy:
+enabled, bidirectional, all formats and files, 50 MiB cap) and owns the clipboard,
+so the SPICE-agent clipboard is not also wired. `--no-clipboard`, or a resolved
+policy whose direction is `disabled`, turns it off entirely.
 
-Precedence: per-run `--clipboard*` flags → the VM's own policy →
-`defaultClipboardPolicy` in settings → built-in default.
+The policy is a full control plane — directionality, per-format allow-lists,
+independent file transfer, a size cap enforced in both directions, a bandwidth
+limit, and an opt-in audit log — settable globally, per-VM, per-run, **or live on
+a running VM**. Precedence: live `weave clipboard set` → per-run `--clipboard*`
+flags → the VM's own policy → `defaultClipboardPolicy` here in settings → built-in
+default.
 
-Per-run flags (see [CLI Reference → run](cli-reference.md#run)):
-`--clipboard` / `--no-clipboard`, `--clipboard-direction`, `--clipboard-formats`,
-`--clipboard-files`, `--clipboard-user`, `--clipboard-password`,
-`--clipboard-session-mbps`, `--clipboard-bandwidth-pct`, `--clipboard-max-bytes`.
+Configure the global default with `weave config clipboard`:
 
-**Guest requirements.** The agent connects over SSH, so the guest must be
-reachable with the configured `--clipboard-user` / `--clipboard-password`
-(default `weave` / `weave`). A **Linux** guest also needs a clipboard CLI
-(`xclip` for X11 or `wl-clipboard` for Wayland) and a display: a desktop session
-(headed) or a headless `Xvfb` (e.g. `Xvfb :99 -ac`) — the agent discovers the
-active Wayland socket or X display automatically. **macOS** guests use the system
-pasteboard directly and need no extra tooling. The host binary must be built with
-the agent embedded (`make build`); see the build notes in `CLAUDE.md`.
+```sh
+weave config clipboard                              # show the effective default
+weave config clipboard --direction hostToGuest --formats text,rich --audit on
+weave config clipboard reset                        # back to the built-in default
+```
 
-The run window's **Control ▸ Clipboard Status…** shows the resolved direction
-(read-only; the policy is fixed at launch).
+The run window's **Control ▸ Clipboard Status…** shows the resolved direction and
+connection health; change a running VM's policy with `weave clipboard set`.
+
+See the [Clipboard](clipboard.md) page for the full policy model, every
+configuration surface, enforcement details, the audit log, and the HTTP API.
 
 ## Environment variables
 
