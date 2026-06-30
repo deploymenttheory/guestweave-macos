@@ -219,6 +219,13 @@ func (b *linuxBackend) Read(allowed map[wire.Canonical]bool) (wire.Payload, erro
 		}
 	}
 
+	// Files-authoritative: a file copy also advertises the path/name as text;
+	// keep only the files so the host⇄guest round-trip converges (matches the
+	// host-side macpb.Read behaviour).
+	if len(payload.Files) > 0 {
+		payload.Items = nil
+	}
+
 	return payload, nil
 }
 

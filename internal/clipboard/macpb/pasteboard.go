@@ -32,6 +32,12 @@ func ChangeCount() uint64 {
 // Read captures the general pasteboard restricted to the allowed canonical
 // formats. maxBytes drops any single item/file larger than the cap (0 =
 // unlimited). The file channel is read only when wire.CanonFiles is allowed.
+//
+// A file copy is files-authoritative: when the pasteboard holds files, only the
+// files are returned. A Finder file copy also advertises the file name as text
+// and the icon as an image; syncing those alongside the file makes the host⇄guest
+// round-trip lossy (the guest can only re-expose the file) and loop, so they are
+// dropped when any file is present.
 func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 	pb := appkit.GeneralPasteboard()
 	var payload wire.Payload
@@ -63,6 +69,11 @@ func Read(allowed map[wire.Canonical]bool, maxBytes int64) wire.Payload {
 			}
 			payload.Files = append(payload.Files, wire.DataFile{Name: filepath.Base(path), Data: data})
 		}
+	}
+
+	// Files-authoritative: drop the incidental name-text/icon when files present.
+	if len(payload.Files) > 0 {
+		payload.Items = nil
 	}
 
 	return payload

@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/deploymenttheory/go-bindings-macosplatform v0.13.0
+	github.com/deploymenttheory/go-bindings-macosplatform v0.14.0
 	github.com/deploymenttheory/go-sdk-vtpm2 v1.0.0
 	github.com/deploymenttheory/go-sdk-winmediafoundry v0.6.1
 	github.com/ebitengine/purego v0.10.1

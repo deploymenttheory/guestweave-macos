@@ -18,7 +18,7 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/oslog"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/oslog"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 

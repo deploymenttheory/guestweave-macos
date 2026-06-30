@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego/objcerrors"
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
@@ -138,6 +137,16 @@ type RunCommand struct {
 	clipboardRun      bool
 	guestGOOS         string
 	guestGOARCH       string
+
+	// Host ends of the clipboard agent's virtio serial channel. Created once
+	// (lazily, in buildVMInstance) and reused across in-process VM rebuilds so the
+	// clipboard engine's connection survives a snapshot revert. The host writes
+	// requests to clipSerialHostW and reads responses from clipSerialHostR; the
+	// VM's serial-port attachment is wired to the other ends.
+	clipSerialHostR     *os.File
+	clipSerialHostW     *os.File
+	clipSerialVMReadFD  int // framework reads this (host→guest); raw/blocking
+	clipSerialVMWriteFD int // framework writes guest output here (guest→host)
 	Recovery          bool
 	VNC               bool
 	VNCExperimental   bool
@@ -466,9 +475,7 @@ func (c *RunCommand) RunMainThread() error {
 	go func() {
 		for range sigusr2 {
 			fmt.Println("Requesting guest OS to stop...")
-			mainthread.Do(func() {
-				_ = vm.VirtualMachine.RequestStop()
-			})
+			_ = vm.RequestStop()
 		}
 	}()
 
@@ -511,6 +518,17 @@ func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *v
 			return nil, weaveerrors.ErrVMConfigurationError("Failed to open PTY")
 		}
 		serialPorts = append(serialPorts, createSerialPortConfiguration(ttyRead, ttyWrite))
+	}
+
+	// Dedicated serial channel for the resident clipboard agent (in-session,
+	// announces itself over this port). Added whenever the clipboard engine will
+	// run, independent of the user's --serial console.
+	if c.clipboardRun {
+		agentPort, err := c.clipboardAgentSerialPort()
+		if err != nil {
+			return nil, err
+		}
+		serialPorts = append(serialPorts, agentPort)
 	}
 
 	// Parse root disk options.
@@ -577,6 +595,11 @@ func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *v
 		NoTrackpad:             c.NoTrackpad,
 		NoPointer:              c.NoPointer,
 		NoKeyboard:             c.NoKeyboard,
+		// Bind the VM to the main queue when a UI surface touches it on the main
+		// thread — the headed VZVirtualMachineView, or the VNC server (set on the
+		// main queue). A pure headless run (--no-graphics, no VNC) leaves it on a
+		// dedicated serial queue, off the main thread.
+		MainQueue: !c.NoGraphics || c.VNC || c.VNCExperimental,
 	})
 }
 
@@ -693,6 +716,12 @@ func (c *RunCommand) driveVM(
 					// The engine reports a live health snapshot each sync cycle to
 					// the Control ▸ Clipboard Status panel.
 					engine.SetReporter(ui.SetClipboardHealth)
+					// The resident guest agent is reached over the dedicated virtio
+					// serial channel built in buildVMInstance; hand the engine its
+					// host ends. SSH (creds below) is used only to install the agent.
+					if c.clipSerialHostR != nil && c.clipSerialHostW != nil {
+						engine.SetSerialChannel(c.clipSerialHostR, c.clipSerialHostW)
+					}
 					go engine.Run(ctx)
 				}
 			}
@@ -892,10 +921,7 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 		os.Exit(1)
 	}
 
-	var validateErr error
-	mainthread.Do(func() {
-		validateErr = vm.Configuration.ValidateSaveRestoreSupport()
-	})
+	validateErr := vm.ValidateSaveRestoreSupport()
 	if validateErr != nil {
 		// The running configuration can't be saved — typically the VM was
 		// started without --suspendable, so it still carries USB input/entropy
@@ -932,6 +958,37 @@ func createSerialPortConfiguration(
 		ttyWrite,
 	)
 	return idvirt.NewVirtioConsoleDeviceSerialPortConfiguration().WithAttachment(attachment)
+}
+
+// clipboardAgentSerialPort builds the dedicated virtio serial port the resident
+// clipboard agent talks over, bridged to the host with two pipes (mirroring
+// VirtualBuddy's Pipe()-backed VZFileHandleSerialPortAttachment). The host ends
+// are stored on c and reused across VM rebuilds; fresh FileHandles wrap the same
+// fds each build (an attachment consumes its handles).
+//
+// Per VZFileHandleSerialPortAttachment semantics — data written to
+// fileHandleForReading goes to the guest, guest output appears on
+// fileHandleForWriting — the VM reads the host→guest pipe and writes the
+// guest→host pipe; the host writes the former and reads the latter.
+func (c *RunCommand) clipboardAgentSerialPort() (idvirt.SerialPortConfigurationProvider, error) {
+	if c.clipSerialHostR == nil || c.clipSerialHostW == nil {
+		var h2g, g2h [2]int // [read, write]
+		if err := syscall.Pipe(h2g[:]); err != nil {
+			return nil, weaveerrors.ErrVMConfigurationError("clipboard serial pipe: %v", err)
+		}
+		if err := syscall.Pipe(g2h[:]); err != nil {
+			return nil, weaveerrors.ErrVMConfigurationError("clipboard serial pipe: %v", err)
+		}
+		// VM ends stay raw/blocking (handed to the framework as bare fds); host
+		// ends become *os.File so Go's runtime poller drives their I/O.
+		c.clipSerialVMReadFD = h2g[0]  // framework reads -> to guest
+		c.clipSerialVMWriteFD = g2h[1] // framework writes guest output here
+		c.clipSerialHostW = os.NewFile(uintptr(h2g[1]), "weave-clip-h2g-w")
+		c.clipSerialHostR = os.NewFile(uintptr(g2h[0]), "weave-clip-g2h-r")
+	}
+	ttyRead := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(c.clipSerialVMReadFD, false)
+	ttyWrite := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(c.clipSerialVMWriteFD, false)
+	return createSerialPortConfiguration(ttyRead, ttyWrite), nil
 }
 
 func isInteractiveSession() bool {

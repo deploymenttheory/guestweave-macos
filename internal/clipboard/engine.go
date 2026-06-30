@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -34,7 +35,7 @@ import (
 	weavessh "github.com/deploymenttheory/weave/internal/ssh"
 	"github.com/deploymenttheory/weave/internal/vmdirectory"
 
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/mainthread"
 )
 
 const (
@@ -96,8 +97,17 @@ type Engine struct {
 	lastHostHash         string
 	lastGuestHash        string
 
-	// Agent connection, invalidated on error or IP change.
-	client   *guestclient.Client
+	// Resident guest agent over a virtio serial channel. serialR/serialW are the
+	// host ends of the bridge (set by the run command before Run); serial is the
+	// live connection, created once the resident agent has been installed and
+	// started. installed gates the one-time SSH install.
+	serialR   io.Reader
+	serialW   io.Writer
+	serial    *guestclient.SerialConn
+	installed bool
+
+	// Active agent connection (== serial once ready), invalidated on error.
+	client   guestclient.Conn
 	cachedIP string
 
 	// Error suppression.
@@ -119,6 +129,14 @@ type Engine struct {
 // SetReporter registers a callback the engine invokes with a fresh Health
 // snapshot whenever its connection/sync state changes. Call before Run.
 func (e *Engine) SetReporter(fn func(Health)) { e.reporter = fn }
+
+// SetSerialChannel wires the host ends of the resident agent's virtio serial
+// channel (built by the run command). Call before Run. Without it the engine has
+// no transport and stays disabled.
+func (e *Engine) SetSerialChannel(r io.Reader, w io.Writer) {
+	e.serialR = r
+	e.serialW = w
+}
 
 // NewEngine builds a clipboard engine for one VM. guestOS/guestArch select the
 // agent binary to deploy (e.g. "darwin"/"arm64", "linux"/"amd64").
@@ -346,7 +364,7 @@ func (e *Engine) setGuest(ctx context.Context, payload wire.Payload) error {
 
 // readMeta reads a response envelope and decodes its clipboard meta, mapping a
 // transport error to a client drop and a module error to a plain error.
-func (e *Engine) readMeta(c *guestclient.Client) (wire.Meta, error) {
+func (e *Engine) readMeta(c guestclient.Conn) (wire.Meta, error) {
 	resp, err := proto.ReadResponse(c.Reader())
 	if err != nil {
 		return wire.Meta{}, e.dropClient(err)
@@ -385,20 +403,31 @@ func (e *Engine) gate(ctx context.Context) wire.Gate {
 
 // ── Agent connection ─────────────────────────────────────────────────────────
 
-// agent returns a connected guest agent client for the VM's current IP, or nil
-// when the VM is not running, has no resolvable IP yet, or the agent cannot be
-// deployed (silent skip — the VM may still be booting).
-func (e *Engine) agent(ctx context.Context) *guestclient.Client {
+// agent returns a connected guest agent over the resident serial channel, or nil
+// when the VM has no resolvable IP yet, the resident agent isn't installed/up
+// yet, or the agent cannot be deployed (silent skip — the VM may still be
+// booting or sitting at the login window).
+//
+// The transport is the dedicated virtio serial channel wired by the run command
+// (SetSerialChannel); SSH is used only for the one-time-per-version install of
+// the resident in-session agent (EnsureResident).
+func (e *Engine) agent(ctx context.Context) guestclient.Conn {
 	if e.disabled {
 		return nil
 	}
-	// The engine runs inside the "weave run" process, so the VM is up for as long
-	// as ctx is live. Don't probe vmDir.Running() here: it opens config.json (the
-	// PID-lock file), and on macOS closing that descriptor drops the run
-	// process's own fcntl lock (POSIX releases a process's locks when it closes
-	// any descriptor to the file), making the VM misreport as stopped/suspended.
 	if ctx.Err() != nil {
 		return nil
+	}
+	if e.serialR == nil || e.serialW == nil {
+		// No serial channel wired — nothing to talk over.
+		e.disabled = true
+		logging.DefaultLogger().AppendNewLine("Clipboard disabled: no serial channel")
+		return nil
+	}
+
+	// Already connected over serial.
+	if e.client != nil {
+		return e.client
 	}
 
 	ip, found, err := macaddress.ResolveIP(ctx, e.mac, macaddress.IPResolutionStrategyDHCP, 0, e.vmDir.ControlSocketURL())
@@ -414,39 +443,50 @@ func (e *Engine) agent(ctx context.Context) *guestclient.Client {
 	e.hIPResolved = true
 	e.hIP = ip.String()
 
-	if e.client != nil && e.cachedIP == ip.String() {
-		return e.client
-	}
-	if e.client != nil {
-		_ = e.client.Close()
-		e.client = nil
-	}
-
-	ssh := weavessh.NewSSHClient(ip.String(), 22, e.user, e.password)
-	client, err := guestclient.Dial(ctx, ssh, guestclient.Options{GOOS: e.guestOS, GOARCH: e.guestArch, Password: e.password})
-	if err != nil {
-		e.hConnected = false
-		e.hAgentVersion = ""
-		e.recordDialError(err)
-		if strings.Contains(err.Error(), "no embedded agent") {
-			e.disabled = true
-			logging.DefaultLogger().AppendNewLine("Clipboard disabled: " + err.Error())
+	// One-time (per version): install + start the resident agent over SSH. Retried
+	// each cycle until it succeeds — the guest may still be booting, SSH may be
+	// down, or the user may not be logged in yet (loading a LaunchAgent into the
+	// GUI session needs a console user).
+	if !e.installed {
+		ssh := weavessh.NewSSHClient(ip.String(), 22, e.user, e.password)
+		if err := guestclient.EnsureResident(ctx, ssh, guestclient.Options{GOOS: e.guestOS, GOARCH: e.guestArch, Password: e.password}); err != nil {
+			e.hConnected = false
+			e.hAgentVersion = ""
+			e.recordDialError(err)
+			if strings.Contains(err.Error(), "no embedded agent") {
+				e.disabled = true
+				logging.DefaultLogger().AppendNewLine("Clipboard disabled: " + err.Error())
+				e.publishHealth()
+				return nil
+			}
+			e.handleError("install guest agent", err)
 			e.publishHealth()
 			return nil
 		}
-		e.handleError("connect guest agent", err)
+		e.installed = true
+		e.hSSHOK = true
+		e.hSSHDetail = fmt.Sprintf("%s@%s", e.user, ip.String())
+	}
+
+	// Open the serial connection once (writes a single hello); it becomes ready
+	// when the resident agent answers.
+	if e.serial == nil {
+		e.serial = guestclient.NewSerial(e.serialR, e.serialW)
+	}
+	if !e.serial.Ready() {
+		e.hConnected = false
+		e.hAgentVersion = ""
+		e.hSSHDetail = fmt.Sprintf("%s@%s (starting agent)", e.user, ip.String())
 		e.publishHealth()
 		return nil
 	}
-	e.client = client
-	e.cachedIP = ip.String()
-	e.hSSHOK = true
-	e.hSSHDetail = fmt.Sprintf("%s@%s", e.user, ip.String())
+
+	e.client = e.serial
 	e.hConnected = true
-	e.hAgentVersion = agentVersionLabel(client)
+	e.hAgentVersion = agentVersionLabel(e.serial)
 	e.resetFailure()
 	e.publishHealth()
-	return client
+	return e.client
 }
 
 // recordDialError classifies a Dial failure for the SSH/Remote Login check: a
@@ -475,11 +515,12 @@ func (e *Engine) recordDialError(err error) {
 }
 
 // agentVersionLabel renders the connected agent's identity for the status panel.
-func agentVersionLabel(c *guestclient.Client) string {
-	if c.Hello.Version == "" {
+func agentVersionLabel(c guestclient.Conn) string {
+	h := c.HelloInfo()
+	if h.Version == "" {
 		return "connected"
 	}
-	return fmt.Sprintf("%s (%s/%s)", c.Hello.Version, c.Hello.OS, c.Hello.Arch)
+	return fmt.Sprintf("%s (%s/%s)", h.Version, h.OS, h.Arch)
 }
 
 // ── Error suppression ────────────────────────────────────────────────────────

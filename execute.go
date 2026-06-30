@@ -25,7 +25,7 @@ import (
 	"github.com/deploymenttheory/weave/internal/telemetry"
 	"github.com/deploymenttheory/weave/internal/terminal"
 
-	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/custom/mainthread"
+	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/mainthread"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -77,9 +77,12 @@ func run() {
 		os.Exit(0)
 	}
 
-	// Every other command doesn't own the main thread: drive it from a
-	// goroutine and keep the main thread pumping the main queue (tart's
-	// dispatchMain() equivalent).
+	// Every other command doesn't own the main thread: drive it on a goroutine
+	// and hand the main thread to libdispatch so the main queue stays serviced
+	// (the idiomatic layer auto-dispatches @MainActor calls there). VM work no
+	// longer needs the main queue — VZVirtualMachine runs on its own serial queue
+	// — so this is purely to keep any stray main-queue work flowing. The command
+	// goroutine ends the process via os.Exit; DispatchMain never returns.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sigint := make(chan os.Signal, 1)
@@ -89,25 +92,18 @@ func run() {
 		cancel()
 	}()
 
-	done := make(chan error, 1)
 	go func() {
-		done <- command.Run(ctx)
+		err := command.Run(ctx)
+		if err != nil {
+			handleError(err, span, commandStart, name) // os.Exits for handled errors
+		}
+		recordCommandDuration(ctx, name, commandStart)
+		span.End()
+		telemetry.OTelShared().Flush()
+		os.Exit(0)
 	}()
 
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				handleError(err, span, commandStart, name)
-			}
-			recordCommandDuration(ctx, name, commandStart)
-			span.End()
-			telemetry.OTelShared().Flush()
-			os.Exit(0)
-		default:
-			mainthread.PumpMainRunLoop(0.05)
-		}
-	}
+	mainthread.DispatchMain()
 }
 
 // startCommandSpan ports Root.startCommandSpan(for:).
