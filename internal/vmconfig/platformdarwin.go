@@ -74,6 +74,17 @@ func (p *DarwinPlatform) platformEncodeJSON(object map[string]any) error {
 
 func (p *DarwinPlatform) OS() weaveplatform.OS { return weaveplatform.OSDarwin }
 
+// Serial returns the VM's machine identifier (ECID) as a base64 string — the
+// value `--random-serial` regenerates and the basis of the guest's hardware
+// identity. Returns "" for a guest with no macOS platform (e.g. Linux).
+func (c *VMConfig) Serial() string {
+	p, ok := c.Platform.(*DarwinPlatform)
+	if !ok || p.ECID == nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(obj.Bytes(p.ECID.DataRepresentation()))
+}
+
 func (p *DarwinPlatform) BootLoader(nvramPath string) (idiomatic.BootLoaderProvider, error) {
 	return idiomatic.NewMacOSBootLoader(), nil
 }

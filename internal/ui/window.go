@@ -331,15 +331,14 @@ var menuTargetClass = sync.OnceValue(func() purego.Class {
 	return class
 })
 
-// showAboutPanel ports AboutTart (Run.swift:886): an About panel listing the
-// VM's CPU, memory and display plus a link to the weave repository.
+// showAboutPanel shows the standard macOS About panel for weave, with global,
+// host, and runtime facts as the credits (see aboutText). Per-VM configuration
+// lives in VM Info, not here.
 func showAboutPanel() {
 	app := appkit.SharedApplication()
 
-	credits := fmt.Sprintf("CPU: %d cores\nMemory: %d MB\nDisplay: %s\nhttps://github.com/deploymenttheory/guestweave-macos",
-		activeVM.Config.CPUCount, activeVM.Config.MemorySize/1024/1024, activeVM.Config.Display.String())
 	attributedCredits := purego.Send[purego.ID](objcutil.AllocClass("NSAttributedString"),
-		purego.RegisterName("initWithString:"), objcutil.NSStr(credits))
+		purego.RegisterName("initWithString:"), obj.ID(objcutil.NSStr(aboutText())))
 
 	// The idiomatic appkit option-key accessors return the NSString objc.ID
 	// directly (no symbol-address dereference needed); build the options map with
