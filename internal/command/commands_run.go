@@ -567,13 +567,16 @@ func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *v
 		Suspendable:              c.Suspendable,
 		Nested:                   c.Nested,
 		NoAudio:                  c.NoAudio,
-		NoClipboard:              c.NoClipboard,
-		ClipboardPolicyEnabled:   c.clipboardRun,
-		Sync:                     syncMode,
-		Caching:                  caching,
-		NoTrackpad:               c.NoTrackpad,
-		NoPointer:                c.NoPointer,
-		NoKeyboard:               c.NoKeyboard,
+		// Clipboard is off entirely when the user passed --no-clipboard or the
+		// resolved policy is disabled; otherwise the engine owns it and SPICE
+		// stays off (vm.go gates on ClipboardPolicyEnabled).
+		NoClipboard:            c.NoClipboard || !c.clipboardPolicy.Active(),
+		ClipboardPolicyEnabled: c.clipboardRun,
+		Sync:                   syncMode,
+		Caching:                caching,
+		NoTrackpad:             c.NoTrackpad,
+		NoPointer:              c.NoPointer,
+		NoKeyboard:             c.NoKeyboard,
 	})
 }
 
@@ -681,13 +684,16 @@ func (c *RunCommand) driveVM(
 			// Resolved in RunMainThread; when active it owns the clipboard and the
 			// SPICE agent clipboard is disabled (see VMOptions.ClipboardPolicyEnabled).
 			if c.clipboardRun {
-				if mac, err := vmDir.MACAddress(); err == nil {
-					if vmMAC, ok := macaddress.NewMACAddress(mac); ok {
-						engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
-							c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
-						go engine.Run(ctx)
-						ui.SetClipboardStatus(string(c.clipboardPolicy.Direction))
-					}
+				// Use the already-loaded config's MAC rather than vmDir.MACAddress(),
+				// which would reopen config.json and drop this process's fcntl PID
+				// lock (making the VM misreport as stopped).
+				if vmMAC, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String()); ok {
+					engine := clipboard.NewEngine(c.clipboardPolicy, c.Name, vmDir, vmMAC,
+						c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
+					// The engine reports a live health snapshot each sync cycle to
+					// the Control ▸ Clipboard Status panel.
+					engine.SetReporter(ui.SetClipboardHealth)
+					go engine.Run(ctx)
 				}
 			}
 
@@ -806,8 +812,14 @@ func (c *RunCommand) driveVM(
 // resolveClipboard computes the effective enterprise clipboard policy for this
 // run (CLI flags > per-VM config > settings default > built-in default) and
 // records whether the engine should run plus the guest's OS/arch for agent
-// deployment. The engine runs when --clipboard is passed or a policy is
-// configured (per-VM or settings), and the resolved policy is active.
+// deployment.
+//
+// The weave-guestd engine is the single clipboard mechanism: it runs by default
+// (the built-in policy is enabled + bidirectional) for every guest OS, and owns
+// the clipboard so the SPICE agent path is not also wired (vm.go gates SPICE on
+// ClipboardPolicyEnabled). --no-clipboard, or a resolved policy that is disabled
+// (e.g. settings/per-VM with direction=disabled), turns the clipboard off
+// entirely — neither the engine nor SPICE runs.
 func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
 	override := clipboardpolicy.Override{}
 	if c.Clipboard {
@@ -845,7 +857,7 @@ func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
 
 	policy := clipboardpolicy.Resolve(settingsDefault, perVM, override)
 	c.clipboardPolicy = policy
-	c.clipboardRun = (c.Clipboard || perVM != nil || settingsDefault != nil) && policy.Active()
+	c.clipboardRun = !c.NoClipboard && policy.Active()
 	c.guestGOOS = string(vmConfig.OS)
 	c.guestGOARCH = string(vmConfig.Arch)
 }

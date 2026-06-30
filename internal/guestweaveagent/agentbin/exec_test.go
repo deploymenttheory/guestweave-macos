@@ -19,11 +19,11 @@ import (
 // over its stdio — the same path the host uses after deploying it into a guest.
 // It validates the binary boots, completes the hello handshake, and answers a
 // clipboard STAT. Skips when no binary is embedded for this platform (e.g. a
-// plain `go build` without guestagent/build.sh).
+// plain `go build` without `make agent`).
 func TestEmbeddedAgentRoundTrip(t *testing.T) {
 	binary, ok := agentbin.Binary(runtime.GOOS, runtime.GOARCH)
 	if !ok {
-		t.Skipf("no embedded agent for %s/%s (run guestagent/build.sh)", runtime.GOOS, runtime.GOARCH)
+		t.Skipf("no embedded agent for %s/%s (run `make agent`)", runtime.GOOS, runtime.GOARCH)
 	}
 
 	path := filepath.Join(t.TempDir(), "weave-guestd")

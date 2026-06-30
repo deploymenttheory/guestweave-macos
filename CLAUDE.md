@@ -9,12 +9,27 @@ Virtualization framework.
 The CLI builds into a `guestweave` binary at the repo root. **VM operations require
 the binary to be code-signed with the Virtualization entitlement** — otherwise they
 fail with `VZErrorDomain:10004 "Unable to connect to installation service"`. After
-*every* rebuild you must re-sign:
+*every* rebuild you must re-sign.
+
+Prefer `make build`: it cross-compiles the guest agent into the embed dir, builds
+the host binary, and code-signs it in one step:
 
 ```sh
+make build
+```
+
+The manual equivalent (re-sign after *every* rebuild):
+
+```sh
+make agent                 # cross-compile weave-guestd into agentbin/dist (per guest OS/arch)
 go build -o guestweave .
 codesign --force --sign - --identifier com.deploymenttheory.guestweave --entitlements entitlements.plist guestweave
 ```
+
+**Clipboard needs the agent embedded.** The host embeds one `weave-guestd` binary
+per guest OS/arch (via `//go:embed dist`) and deploys it over SSH; a plain
+`go build .` that skips `make agent` embeds none, so the clipboard engine disables
+itself. Always build the agent (or just use `make build`) when testing clipboard.
 
 The binary file and application identity (codesign identifier, os_log subsystem,
 OTel service name) are `guestweave` / `com.deploymenttheory.guestweave`; only the

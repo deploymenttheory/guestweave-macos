@@ -28,12 +28,13 @@ type backend interface {
 
 // Module implements agent.Module for the clipboard. The backend is initialised
 // lazily so a guest without a usable clipboard (e.g. Linux with no display
-// server) still runs the agent and reports a per-operation error rather than
-// failing to start.
+// server yet) still runs the agent and reports a per-operation error rather than
+// failing to start. Init is retried on every operation until it succeeds, so a
+// display that comes up after the agent connected (e.g. a desktop session or a
+// headless Xvfb started post-boot) is picked up without restarting the agent.
 type Module struct {
-	once    sync.Once
+	mu      sync.Mutex
 	backend backend
-	initErr error
 }
 
 // New returns the clipboard module.
@@ -43,8 +44,17 @@ func New() *Module { return &Module{} }
 func (m *Module) Name() string { return wire.Module }
 
 func (m *Module) ensure() (backend, error) {
-	m.once.Do(func() { m.backend, m.initErr = newBackend() })
-	return m.backend, m.initErr
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backend != nil {
+		return m.backend, nil
+	}
+	b, err := newBackend()
+	if err != nil {
+		return nil, err
+	}
+	m.backend = b
+	return b, nil
 }
 
 // Serve handles one clipboard request.

@@ -32,8 +32,7 @@ func (f *fakeBackend) Write(p wire.Payload) error {
 // withFake returns a module wired to a fake backend, bypassing newBackend.
 func withFake(b backend) *Module {
 	m := New()
-	m.backend = b
-	m.once.Do(func() {}) // mark initialised so ensure() returns the fake
+	m.backend = b // ensure() returns a non-nil backend as-is
 	return m
 }
 

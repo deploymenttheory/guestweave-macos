@@ -20,11 +20,16 @@
 // SSH_ASKPASS when a direct TCP connection cannot be established, e.g. in
 // sandboxed environments (sshclient.go, sshclient_system.go, commands_ssh.go).
 //
-// Clipboard sync: "run --clipboard" starts a bidirectional clipboard watcher
-// that polls the host NSPasteboard once a second and the guest (pbpaste/
-// pbcopy over SSH) with failure backoff, base64 transport, a 1MB content cap
-// and sync-loop prevention. This is independent of the SPICE agent clipboard,
-// which remains on unless --no-clipboard is given (clipboardwatcher.go).
+// Clipboard sync: a single policy-driven engine mirrors the host NSPasteboard
+// with the guest clipboard for both Linux and macOS guests. It deploys the
+// embedded weave-guestd agent over SSH and drives it with a framed protocol,
+// preserving rich text/images (not just plain text) under a Citrix-style policy
+// (direction, per-format allow-list, file channel, size cap, bandwidth limit)
+// with change-count + hash sync-loop prevention. It is on by default (the SPICE
+// agent clipboard is not also wired so there is one owner); --no-clipboard, or a
+// disabled policy, turns it off. The Linux guest needs xclip or wl-clipboard and
+// a display (a desktop session or a headless Xvfb); macOS guests use NSPasteboard
+// directly. See internal/clipboard and internal/guestweaveagent.
 //
 // Run command refinements: "--shared-dir path[:ro|rw]" (lume-style directory
 // sharing through the macOS automount tag, mixable with tart's --dir),

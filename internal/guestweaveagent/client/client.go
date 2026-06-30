@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
@@ -24,6 +25,10 @@ import (
 // DefaultRemotePath is where the agent binary is deployed in the guest.
 const DefaultRemotePath = "/tmp/weave-guestd"
 
+// askpassRemotePath is the guest path of the SUDO_ASKPASS helper deployed for
+// macOS guests (see agentLaunchCommand).
+const askpassRemotePath = "/tmp/weave-askpass"
+
 // Options configures a Dial.
 type Options struct {
 	// GOOS/GOARCH select the embedded agent binary for the guest (e.g.
@@ -31,6 +36,11 @@ type Options struct {
 	GOOS, GOARCH string
 	// RemotePath overrides DefaultRemotePath.
 	RemotePath string
+	// Password is the SSH/login password of the guest user. On a macOS guest it
+	// is deployed in a SUDO_ASKPASS helper so the agent can re-enter the console
+	// user's GUI session via `sudo -A launchctl asuser` (which needs root) to
+	// reach the real pasteboard. Unused on other guests.
+	Password string
 }
 
 // Client is a live connection to a guest agent. It serialises exchanges with a
@@ -57,6 +67,18 @@ func Dial(ctx context.Context, ssh *weavessh.SSHClient, opts Options) (*Client, 
 	remotePath := opts.RemotePath
 	if remotePath == "" {
 		remotePath = DefaultRemotePath
+	}
+
+	// macOS guests reach the logged-in user's GUI pasteboard by shelling out to
+	// `sudo -A launchctl asuser <uid> pbpaste|pbcopy` from the darwin backend.
+	// Deploy the SUDO_ASKPASS helper carrying the password so that sudo never
+	// reads stdin (the agent itself runs as a normal long-lived process over the
+	// SSH stdio channel — asuser is used only for those one-shot pasteboard ops).
+	if opts.GOOS == "darwin" {
+		helper := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' %s\n", shellSingleQuote(opts.Password))
+		if err := ssh.Upload(ctx, strings.NewReader(helper), askpassRemotePath, 0o700); err != nil {
+			return nil, fmt.Errorf("guestagent: deploy askpass: %w", err)
+		}
 	}
 
 	// Fast path: an up-to-date agent is already deployed.
@@ -90,8 +112,8 @@ func Dial(ctx context.Context, ssh *weavessh.SSHClient, opts Options) (*Client, 
 	return c, nil
 }
 
-func launch(ctx context.Context, ssh *weavessh.SSHClient, remotePath string) (*Client, error) {
-	session, err := ssh.StartAgent(ctx, remotePath)
+func launch(ctx context.Context, ssh *weavessh.SSHClient, command string) (*Client, error) {
+	session, err := ssh.StartAgent(ctx, command)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +123,13 @@ func launch(ctx context.Context, ssh *weavessh.SSHClient, remotePath string) (*C
 		in:      proto.NewBufferedReader(session.Stdout),
 		out:     proto.NewBufferedWriter(session.Stdin),
 	}, nil
+}
+
+// shellSingleQuote wraps s in single quotes, escaping embedded single quotes, so
+// it is safe as one argument in a remote shell command (used to embed the
+// password literal in the deployed SUDO_ASKPASS helper).
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // Close terminates the agent and its connection.

@@ -150,6 +150,7 @@ func main() {
 		"vnc":               vncSuite,
 		"serve":             serveSuite,
 		"api-vm":            apiVMSuite,
+		"clipboard":         clipboardSuite,
 		"mcp":               mcpSuite,
 	}
 
