@@ -84,6 +84,5 @@ weave run my-vm --vnc           # no native window; serve a VNC endpoint
 - **Restart** gracefully stops the current run and relaunches `guestweave run`
   with the same arguments (so VNC, directory shares, etc. are preserved); the
   window reappears after a few seconds.
-- **Clipboard Status** is read-only; the clipboard policy is fixed at launch via
-  `--clipboard*` flags or the default policy — see
-  [Configuration](configuration.md#clipboard).
+- **Clipboard Status** is read-only here; change a running VM's policy live with
+  `weave clipboard set` — see [Clipboard](clipboard.md).

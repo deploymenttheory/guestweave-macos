@@ -11,9 +11,12 @@ Under `<home>/logs` (follows `WEAVE_HOME`; default `~/.weave/logs`):
 |------|----------|
 | `weave.info.log` | informational events (commands started, lifecycle) |
 | `weave.error.log` | errors and warnings |
+| `weave.clipboard-audit.log` | clipboard transfer/rejection audit records (when clipboard auditing is on) |
 | `*.log.old` | one rotated generation per stream (when `keepRotated` is on) |
 
-Each line is `YYYY-MM-DD HH:MM:SS.mmm [pid] message`.
+The info/error lines are `YYYY-MM-DD HH:MM:SS.mmm [pid] message`. The clipboard
+audit log is one JSON object per line (enable it with a clipboard `*-audit` flag
+or `WEAVE_CLIP_AUDIT=1` — see [Clipboard](clipboard.md#audit-log)).
 
 ## Viewing logs
 

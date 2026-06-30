@@ -75,10 +75,11 @@ Networking — see [Networking](networking.md):
 `--net-softnet`, `--net-softnet-allow`, `--net-softnet-block`,
 `--net-softnet-expose`, `--net-host`.
 
-Clipboard (enterprise clipboard engine — see [Configuration](configuration.md#clipboard)):
+Clipboard (enterprise clipboard engine — see [Clipboard](clipboard.md)):
 `--clipboard` / `--no-clipboard`, `--clipboard-user`, `--clipboard-password`,
 `--clipboard-direction`, `--clipboard-formats`, `--clipboard-files`,
-`--clipboard-session-mbps`, `--clipboard-bandwidth-pct`, `--clipboard-max-bytes`.
+`--clipboard-allowed-types`, `--clipboard-audit`, `--clipboard-session-mbps`,
+`--clipboard-bandwidth-pct`, `--clipboard-max-bytes`.
 
 Serial console: `--serial` (PTY), `--serial-path <path>`.
 
@@ -167,9 +168,11 @@ Modify a stopped VM's configuration.
 | `--display-refit` / `--no-display-refit` | Auto display reconfiguration on/off |
 | `--disk <spec>` / `--disk-size <GB>` | Resize/replace the disk |
 | `--random-mac` / `--random-serial` | Regenerate MAC / serial |
+| `--clipboard-*` | Persist a clipboard policy onto this VM — see [Clipboard](clipboard.md) |
 
 ```sh
 weave set my-vm --cpu 4 --memory 8589934592 --display 1920x1080
+weave set my-vm --clipboard-direction guestToHost --clipboard-files off
 ```
 
 ### fqn
@@ -319,6 +322,25 @@ Resolve and print a running VM's IP address.
 weave ip my-vm --wait 30
 ```
 
+### clipboard
+Inspect or **live-update** a running VM's clipboard policy (no restart). See
+[Clipboard](clipboard.md).
+
+| Form | Description |
+|------|-------------|
+| `clipboard get <name>` | Print the running effective policy |
+| `clipboard set <name> [flags]` | Apply policy changes live |
+
+`set` flags (omitted = unchanged): `--enabled`, `--direction`, `--formats`,
+`--files`, `--allowed-types`, `--audit`, `--session-mbps`, `--bandwidth-pct`,
+`--max-bytes`, and `--persist` (also write the VM config).
+
+```sh
+weave clipboard get my-vm
+weave clipboard set my-vm --direction guestToHost
+weave clipboard set my-vm --max-bytes 1048576 --audit on --persist
+```
+
 ---
 
 ## Diagnostics & config
@@ -350,11 +372,13 @@ config cache dir [path]
 config registry <status|ghcr [--registry H] [--organization O]>
 config network interfaces
 config logging [maxSizeMB [N] | keepRotated [true|false]]
+config clipboard [--direction ... --formats ... --files ... | reset]
 ```
 
 ```sh
 weave config get
 weave config logging maxSizeMB 20
+weave config clipboard --direction hostToGuest --audit on
 ```
 
 ---

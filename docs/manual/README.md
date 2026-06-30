@@ -31,6 +31,7 @@ interface and a graphical run window.
 | [CLI Reference](cli-reference.md) | Every subcommand, its flags, and examples |
 | [UI Guide](ui-guide.md) | The run window and every menu action |
 | [Configuration](configuration.md) | Settings file, `weave config`, environment variables |
+| [Clipboard](clipboard.md) | Enterprise clipboard policy: formats, files, direction, size caps, live updates, audit log |
 | [Networking](networking.md) | Network profiles (nat / internet-only / isolated / vm-lab / bridged) |
 | [Logging](logging.md) | Viewing, capping, rotating, and clearing logs |
 | [Troubleshooting](troubleshooting.md) | Common errors and fixes |
