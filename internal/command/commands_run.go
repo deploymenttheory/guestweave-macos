@@ -483,6 +483,8 @@ func (c *RunCommand) RunMainThread() error {
 		}
 	}()
 
+	ui.SetRunInfo(c.buildRunInfo())
+
 	useVNCWithoutGraphics := (c.VNC || c.VNCExperimental) && !c.Graphics
 	if c.NoGraphics || useVNCWithoutGraphics {
 		// Enter the main event loop without bringing up any UI, waiting for
@@ -914,6 +916,59 @@ func (c *RunCommand) serveClipboardControl(ctx context.Context, vmDir *vmdirecto
 	if err := clipboardctl.Serve(ctx, vmDir.ClipboardControlSocketURL(), handler); err != nil && ctx.Err() == nil {
 		logging.LogError("clipboard control socket: %v", err)
 	}
+}
+
+// buildRunInfo collects the applied launch-time options (those not persisted in
+// the VM config) for the UI's VM Info panel.
+func (c *RunCommand) buildRunInfo() ui.RunInfo {
+	return ui.RunInfo{
+		Network:     c.networkSummary(),
+		Clipboard:   c.clipboardSummary(),
+		Disks:       c.Disk,
+		Dirs:        c.Dir,
+		SharedDirs:  c.SharedDir,
+		USBStorage:  c.USBStorage,
+		Rosetta:     c.RosettaTag,
+		Suspendable: c.Suspendable,
+		VNC:         c.VNC || c.VNCExperimental,
+		Nested:      c.Nested,
+		NoAudio:     c.NoAudio,
+		NoTrackpad:  c.NoTrackpad,
+		NoKeyboard:  c.NoKeyboard,
+		NoPointer:   c.NoPointer,
+		CaptureKeys: c.CaptureSystemKeys,
+	}
+}
+
+func (c *RunCommand) networkSummary() string {
+	switch {
+	case c.NetHost:
+		return "host"
+	case len(c.NetBridged) > 0:
+		return "bridged: " + strings.Join(c.NetBridged, ", ")
+	case c.NetSoftnet:
+		return "softnet"
+	case len(c.NetDevice) > 0:
+		return "device: " + strings.Join(c.NetDevice, ", ")
+	case c.NetProfile != "":
+		return "profile: " + c.NetProfile
+	default:
+		return "" // VM Info renders this as "nat (default)"
+	}
+}
+
+func (c *RunCommand) clipboardSummary() string {
+	if !c.clipboardRun || !c.clipboardPolicy.Active() {
+		return "disabled"
+	}
+	parts := []string{string(c.clipboardPolicy.Direction)}
+	if c.clipboardPolicy.FileTransfer {
+		parts = append(parts, "files")
+	}
+	if c.clipboardPolicy.AuditLog {
+		parts = append(parts, "audit")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func parseCSVSet(csv string) map[string]bool {

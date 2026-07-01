@@ -6,6 +6,7 @@ package vmconfig
 
 import (
 	"encoding/base64"
+	"runtime"
 
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 
@@ -73,6 +74,33 @@ func (p *DarwinPlatform) platformEncodeJSON(object map[string]any) error {
 }
 
 func (p *DarwinPlatform) OS() weaveplatform.OS { return weaveplatform.OSDarwin }
+
+// Serial returns the VM's machine identifier (ECID) as a base64 string — the
+// value `--random-serial` regenerates and the basis of the guest's hardware
+// identity. Returns "" for a guest with no macOS platform (e.g. Linux).
+func (c *VMConfig) Serial() string {
+	p, ok := c.Platform.(*DarwinPlatform)
+	if !ok || p.ECID == nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(obj.Bytes(p.ECID.DataRepresentation()))
+}
+
+// RegenerateSerial replaces the macOS machine identifier (ECID) with a fresh
+// one, giving the VM a new hardware serial (the source must be stopped). It is a
+// no-op returning false for a non-macOS guest or on a non-arm64 host
+// (VZMacMachineIdentifier is Apple-Silicon only). The HardwareModel is kept.
+func (c *VMConfig) RegenerateSerial() bool {
+	if runtime.GOARCH != "arm64" {
+		return false
+	}
+	p, ok := c.Platform.(*DarwinPlatform)
+	if !ok {
+		return false
+	}
+	c.Platform = NewDarwinPlatform(idiomatic.NewMacMachineIdentifier(), p.HardwareModel)
+	return true
+}
 
 func (p *DarwinPlatform) BootLoader(nvramPath string) (idiomatic.BootLoaderProvider, error) {
 	return idiomatic.NewMacOSBootLoader(), nil

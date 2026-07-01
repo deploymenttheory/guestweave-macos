@@ -270,6 +270,22 @@ func (d *VMDirectory) RegenerateMACAddress() error {
 	return config.Save(d.ConfigURL())
 }
 
+// RegenerateSerial replaces the VM's macOS machine identifier (ECID) with a
+// fresh one — used by clone --random-serial to give a copy a unique hardware
+// serial. Returns false (no change) for a non-macOS guest or non-arm64 host.
+// Any suspended state is cleared, since a new identity cannot resume it.
+func (d *VMDirectory) RegenerateSerial() (bool, error) {
+	config, err := vmconfig.NewVMConfigFromURL(d.ConfigURL())
+	if err != nil {
+		return false, err
+	}
+	if !config.RegenerateSerial() {
+		return false, nil
+	}
+	_ = os.RemoveAll(d.StateURL())
+	return true, config.Save(d.ConfigURL())
+}
+
 // ResizeDisk ports VMDirectory.resizeDisk(_:format:).
 func (d *VMDirectory) ResizeDisk(sizeGB uint16, format diskimage.DiskImageFormat) error {
 	if fsutil.Exists(d.DiskURL()) {

@@ -27,10 +27,10 @@ import (
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	"github.com/deploymenttheory/weave/internal/screenviewer"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // vncURLPattern mirrors unattended.VNCURLPattern (vnc://:password@host:port);
@@ -258,14 +258,7 @@ func toggleScreenShare() {
 
 // ── Weave / Control ───────────────────────────────────────────────────────────
 
-// showVMInfo presents the VM's resolved configuration.
-func showVMInfo() {
-	c := activeVM.Config
-	info := fmt.Sprintf(
-		"Name: %s\nOS: %s\nCPU: %d cores\nMemory: %d MB\nDisplay: %s\nDirectory: %s",
-		activeVM.Name, c.OS, c.CPUCount, c.MemorySize/1024/1024, c.Display.String(), activeVMDir)
-	showInfo("VM Info", info)
-}
+// showVMInfo lives in info.go (full, copy-pasteable configuration summary).
 
 // showClipboardStatus reports the live clipboard health as a checklist: the
 // resolved policy plus a 🟢/🔴 light for each prerequisite (embedded agent,

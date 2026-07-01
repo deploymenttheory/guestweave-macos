@@ -6,7 +6,6 @@ package command
 import (
 	"context"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -77,11 +76,8 @@ func (c *SetCommand) Run(ctx context.Context) error {
 		vmConfig.MACAddress = idvirt.RandomLocallyAdministeredAddress()
 	}
 
-	if c.RandomSerial && runtime.GOARCH == "arm64" {
-		if oldPlatform, ok := vmConfig.Platform.(*vmconfig.DarwinPlatform); ok {
-			ecid := idvirt.NewMacMachineIdentifier()
-			vmConfig.Platform = vmconfig.NewDarwinPlatform(ecid, oldPlatform.HardwareModel)
-		}
+	if c.RandomSerial {
+		vmConfig.RegenerateSerial()
 	}
 
 	// Persist any clipboard-policy flags onto the VM's stored policy, layering

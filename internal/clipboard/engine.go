@@ -689,15 +689,16 @@ func (e *Engine) publishHealth() {
 		{Label: "Clipboard policy enabled", OK: e.policy.Active(), Detail: e.summary()},
 		{Label: "Guest agent binary embedded", OK: embedded, Detail: agentDetail},
 		{Label: "Guest IP resolved", OK: e.hIPResolved, Detail: e.hIP},
-		{Label: "SSH / Remote Login reachable", OK: e.hSSHOK, Detail: sshDetail},
-		{Label: "Guest agent (weave-guestd) connected", OK: e.hConnected, Detail: e.hAgentVersion},
+		{Label: "Remote Login reachable (agent install)", OK: e.hSSHOK, Detail: sshDetail},
+		{Label: "Guest agent connected (virtio serial)", OK: e.hConnected, Detail: e.hAgentVersion},
 		{Label: "Last clipboard sync", OK: e.hLastErr == "" && e.hConnected, Detail: syncDetail},
 	}
 
 	e.reporter(Health{Enabled: e.policy.Active(), Summary: e.summary(), Checks: checks})
 }
 
-// summary renders the resolved policy as one line, e.g. "bidirectional · text".
+// summary renders the resolved policy as one line, e.g.
+// "bidirectional · text, files · cap 50 MiB · audit on".
 func (e *Engine) summary() string {
 	formats := make([]string, 0, len(e.allowedList))
 	for _, c := range e.allowedList {
@@ -710,7 +711,27 @@ func (e *Engine) summary() string {
 	if len(formats) > 0 {
 		f = strings.Join(formats, ", ")
 	}
-	return fmt.Sprintf("%s · %s", e.policy.Direction, f)
+	parts := []string{string(e.policy.Direction), f, "cap " + formatByteSize(e.policy.MaxBytes())}
+	if e.auditOn {
+		parts = append(parts, "audit on")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// formatByteSize renders a byte count in compact IEC units for the status line
+// (e.g. 52428800 → "50 MiB").
+func formatByteSize(n int64) string {
+	const unit = 1024
+	const suffixes = "KMGTPE"
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit && exp < len(suffixes)-1; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.0f %ciB", float64(n)/float64(div), suffixes[exp])
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

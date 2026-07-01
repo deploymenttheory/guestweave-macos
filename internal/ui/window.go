@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/deploymenttheory/weave/internal/ci"
 	"github.com/deploymenttheory/weave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
 	weavevm "github.com/deploymenttheory/weave/internal/vm"
@@ -70,6 +69,7 @@ func (w *Window) Run() {
 
 	app := appkit.SharedApplication()
 	app.SetActivationPolicy(appkit.ApplicationActivationPolicyRegular)
+	setAppDisplayName("guestweave")
 	installMainMenu(app)
 
 	contentRect := corefoundation.CGRect{
@@ -111,6 +111,18 @@ func (w *Window) Run() {
 
 	app.ActivateIgnoringOtherApps(true)
 	app.Run()
+}
+
+// setAppDisplayName forces the application's display name — the bold app-menu
+// title, the Dock tile, and the Force-Quit list — to the product identity,
+// independent of how the binary was launched. Without it macOS uses the process
+// name (argv[0]), which the Restart and snapshot-revert paths re-exec through
+// `/bin/sh -c`, leaving it as something like "weave snapshot". Setting it on the
+// shared NSProcessInfo before the menu bar is installed makes the app menu read
+// the correct name.
+func setAppDisplayName(name string) {
+	pi := purego.ID(purego.GetClass("NSProcessInfo")).Send(purego.RegisterName("processInfo"))
+	pi.Send(purego.RegisterName("setProcessName:"), obj.ID(objcutil.NSStr(name)))
 }
 
 // windowDelegateClass registers the window delegate that translates a window
@@ -331,23 +343,17 @@ var menuTargetClass = sync.OnceValue(func() purego.Class {
 	return class
 })
 
-// showAboutPanel ports AboutTart (Run.swift:886): an About panel listing the
-// VM's CPU, memory and display plus a link to the weave repository.
+// showAboutPanel shows the standard macOS About panel for weave: the panel draws
+// the app icon, name, and version, and aboutCredits supplies a typeset summary
+// of global/host/runtime facts as the credits. Per-VM configuration lives in VM
+// Info, not here.
 func showAboutPanel() {
 	app := appkit.SharedApplication()
 
-	credits := fmt.Sprintf("CPU: %d cores\nMemory: %d MB\nDisplay: %s\nhttps://github.com/deploymenttheory/guestweave-macos",
-		activeVM.Config.CPUCount, activeVM.Config.MemorySize/1024/1024, activeVM.Config.Display.String())
-	attributedCredits := purego.Send[purego.ID](objcutil.AllocClass("NSAttributedString"),
-		purego.RegisterName("initWithString:"), objcutil.NSStr(credits))
-
-	// The idiomatic appkit option-key accessors return the NSString objc.ID
-	// directly (no symbol-address dereference needed); build the options map with
-	// the idiomatic MutableDictionary and send the panel request via the runtime.
 	options := foundation.NewMutableDictionary()
-	options.Set(appkit.NSAboutPanelOptionApplicationName(), objcutil.NSStr("Weave"))
-	options.Set(appkit.NSAboutPanelOptionApplicationVersion(), objcutil.NSStr(ci.CIVersion()))
-	options.Set(appkit.NSAboutPanelOptionCredits(), obj.Wrap(attributedCredits))
+	options.Set(appkit.NSAboutPanelOptionApplicationName(), objcutil.NSStr("guestweave"))
+	options.Set(appkit.NSAboutPanelOptionApplicationVersion(), objcutil.NSStr(weaveVersion()))
+	options.Set(appkit.NSAboutPanelOptionCredits(), aboutCredits())
 
 	obj.ID(app).Send(purego.RegisterName("orderFrontStandardAboutPanelWithOptions:"), obj.ID(options))
 }
