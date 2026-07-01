@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deploymenttheory/guestweave/branding"
 	"github.com/deploymenttheory/guestweave/internal/ci"
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
@@ -22,7 +23,9 @@ import (
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
+	coretext "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/coretext"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // processStart is set at package init (process start) and drives the About
@@ -204,30 +207,30 @@ func runtimeOptions() string {
 
 const repoURL = "https://github.com/deploymenttheory/guestweave-macos"
 
-// aboutCredits builds the styled credits string for the standard macOS About
-// panel: bold section headers, monospaced column-aligned rows, and a clickable
-// repository link. Returned as an NSAttributedString for the panel's credits
-// option (the app name and version are shown by the panel itself).
-func aboutCredits() *foundation.MutableAttributedString {
+// aboutInfoDocument builds the two-column info grid for the About window: bold
+// section headers, then monospaced rows with secondary-colored labels and
+// primary-colored values. The wordmark, version, and link are separate views.
+func aboutInfoDocument() *foundation.MutableAttributedString {
 	doc := foundation.NewMutableAttributedString()
-	header := fontAttrs(aboutFont("boldSystemFontOfSize:", 13))
-	body := fontAttrs(aboutFont("userFixedPitchFontOfSize:", 11))
+	header := fontAttrs(aboutFont("boldSystemFontOfSize:", 12))
+	label := textAttrs(aboutFont("userFixedPitchFontOfSize:", 11), secondaryColor())
+	value := fontAttrs(aboutFont("userFixedPitchFontOfSize:", 11))
 
 	first := true
 	section := func(title string) {
 		if !first {
-			doc.AppendAttributedString(attrRun("\n", body))
+			doc.AppendAttributedString(attrRun("\n", value))
 		}
 		first = false
 		doc.AppendAttributedString(attrRun(title+"\n", header))
 	}
-	row := func(label, value string) {
-		if value != "" {
-			doc.AppendAttributedString(attrRun(fmt.Sprintf("   %-13s%s\n", label, value), body))
+	row := func(name, val string) {
+		if val != "" {
+			doc.AppendAttributedString(attrRun(fmt.Sprintf("  %-13s", name), label))
+			doc.AppendAttributedString(attrRun(val+"\n", value))
 		}
 	}
 
-	// (The panel header already shows the app name and version.)
 	section("Runtime")
 	row("Uptime", time.Since(processStart).Round(time.Second).String())
 
@@ -247,32 +250,178 @@ func aboutCredits() *foundation.MutableAttributedString {
 		row("Home", cfg.WeaveHomeDir)
 	}
 
-	// Clickable repository link footer.
-	doc.AppendAttributedString(attrRun("\n", body))
-	link := fontAttrs(aboutFont("userFixedPitchFontOfSize:", 11))
-	link.Set(appkit.NSLinkAttributeName(), objcutil.NSStr(repoURL))
-	doc.AppendAttributedString(foundation.NewAttributedStringWithStringAttributes(repoURL, link))
-
 	return doc
 }
 
-// attrRun builds one styled run for the credits string.
+// attrRun builds one styled run for an attributed string.
 func attrRun(s string, attrs *foundation.MutableDictionary) *foundation.AttributedString {
 	return foundation.NewAttributedStringWithStringAttributes(s, attrs)
 }
 
 // fontAttrs returns an attributes dictionary applying font.
 func fontAttrs(font *appkit.Font) *foundation.MutableDictionary {
+	return textAttrs(font, nil)
+}
+
+// textAttrs returns an attributes dictionary applying font and (optionally) a
+// foreground color.
+func textAttrs(font *appkit.Font, color *appkit.Color) *foundation.MutableDictionary {
 	d := foundation.NewMutableDictionary()
 	d.Set(appkit.NSFontAttributeName(), font)
+	if color != nil {
+		d.Set(appkit.NSForegroundColorAttributeName(), color)
+	}
 	return d
 }
 
 // aboutFont resolves an NSFont via a class selector taking a single size (e.g.
-// "boldSystemFontOfSize:" or "userFixedPitchFontOfSize:").
+// "boldSystemFontOfSize:" or "systemFontOfSize:").
 func aboutFont(selector string, size float64) *appkit.Font {
 	id := purego.ID(purego.GetClass("NSFont")).Send(purego.RegisterName(selector), size)
 	return appkit.FontFromID(id)
+}
+
+// brandFont loads the embedded Plus Jakarta Sans face as an in-memory NSFont for
+// the wordmark. It builds a CoreText font descriptor from the raw bytes and makes
+// an NSFont from it — the face is never registered with the font manager, so it
+// is available only to this process for drawing and is not installed into the
+// system or user font library. Returns nil if the face can't be loaded.
+func brandFont(size float64) *appkit.Font {
+	if len(branding.PlusJakartaSansMedium) == 0 {
+		return nil
+	}
+	descriptor := coretext.CTFontManagerCreateFontDescriptorFromData(objcutil.BytesToNSData(branding.PlusJakartaSansMedium))
+	if descriptor == nil {
+		return nil
+	}
+	id := purego.ID(purego.GetClass("NSFont")).Send(
+		purego.RegisterName("fontWithDescriptor:size:"), obj.ID(descriptor), size)
+	if id == 0 {
+		return nil
+	}
+	return appkit.FontFromID(id)
+}
+
+// secondaryColor is NSColor.secondaryLabelColor, for the grid's label column.
+func secondaryColor() *appkit.Color {
+	return appkit.ColorFromID(purego.ID(purego.GetClass("NSColor")).Send(purego.RegisterName("secondaryLabelColor")))
+}
+
+// linkColor is NSColor.linkColor, for the repository hyperlink.
+func linkColor() *appkit.Color {
+	return appkit.ColorFromID(purego.ID(purego.GetClass("NSColor")).Send(purego.RegisterName("linkColor")))
+}
+
+// The About window is built once and reused (kept alive by these package vars so
+// the Go wrappers aren't finalized); reopening refreshes the dynamic info.
+var (
+	aboutWindow    *appkit.Window
+	aboutInfoField *appkit.TextField
+)
+
+// presentAbout shows weave's custom About window: the "guestweave" wordmark in
+// the brand font, a divider rule, a two-column info grid, and a repository link.
+// (The standard macOS About panel can't rebrand its title font, so this is a
+// custom window.) Must run on the main thread.
+func presentAbout() {
+	const (
+		contentW = 400.0
+		padH     = 32.0
+		innerW   = contentW - 2*padH
+		padTop   = 26.0
+		padBot   = 22.0
+	)
+
+	if aboutWindow != nil {
+		aboutInfoField.WithAttributedStringValue(aboutInfoDocument())
+		aboutWindow.MakeKeyAndOrderFront(nil)
+		return
+	}
+
+	wordFont := brandFont(30)
+	if wordFont == nil {
+		wordFont = aboutFont("systemFontOfSize:", 30)
+	}
+	wordmark := aboutField(appkit.TextAlignmentCenter)
+	wordmark.WithAttributedStringValue(attrRun("guestweave", fontAttrs(wordFont)))
+
+	version := aboutField(appkit.TextAlignmentCenter)
+	version.WithAttributedStringValue(attrRun(weaveVersion(), textAttrs(aboutFont("systemFontOfSize:", 11), secondaryColor())))
+
+	divider := appkit.NewBox().WithBoxType(appkit.BoxSeparator)
+
+	info := aboutField(appkit.TextAlignmentLeft)
+	info.WithAttributedStringValue(aboutInfoDocument())
+	info.WithPreferredMaxLayoutWidth(innerW)
+	info.WithFrame(rect(0, 0, innerW, 16))
+	obj.ID(info).Send(purego.RegisterName("sizeToFit"))
+	hInfo := info.Frame().Size.Height
+
+	// Repository hyperlink: link color + underline so it reads (and behaves) as a
+	// clickable link. A bare NSLinkAttributeName renders as plain text in an
+	// NSTextField, unlike the standard About panel which styles links itself.
+	link := aboutField(appkit.TextAlignmentCenter)
+	linkAttrs := textAttrs(aboutFont("systemFontOfSize:", 11), linkColor())
+	linkAttrs.Set(appkit.NSLinkAttributeName(), objcutil.NSStr(repoURL))
+	linkAttrs.Set(appkit.NSUnderlineStyleAttributeName(), foundation.NewNumberWithInt(int(appkit.UnderlineStyleSingle)))
+	link.WithAttributedStringValue(foundation.NewAttributedStringWithStringAttributes(repoURL, linkAttrs))
+
+	const (
+		hWord = 38.0
+		hVer  = 16.0
+		hDiv  = 1.0
+		hLink = 16.0
+	)
+	totalH := padTop + hWord + 2 + hVer + 16 + hDiv + 16 + hInfo + 18 + hLink + padBot
+
+	// Place top-down (AppKit's origin is bottom-left).
+	y := totalH - padTop
+	y -= hWord
+	wordmark.WithFrame(rect(padH, y, innerW, hWord))
+	y -= 2 + hVer
+	version.WithFrame(rect(padH, y, innerW, hVer))
+	y -= 16 + hDiv
+	divider.WithFrame(rect(padH, y, innerW, hDiv))
+	y -= 16 + hInfo
+	info.WithFrame(rect(padH, y, innerW, hInfo))
+	y -= 18 + hLink
+	link.WithFrame(rect(padH, y, innerW, hLink))
+
+	win := appkit.NewWindowWithContentRectStyleMaskBackingDefer(
+		rect(0, 0, contentW, totalH),
+		appkit.WindowStyleMaskTitled|appkit.WindowStyleMaskClosable,
+		appkit.BackingStoreBuffered, false)
+	win.WithReleasedWhenClosed(false)
+	win.WithTitle("")
+
+	content := win.ContentView()
+	for _, tf := range []*appkit.TextField{wordmark, version, info, link} {
+		content.AddSubview(appkit.ViewFromID(obj.ID(tf)))
+	}
+	content.AddSubview(appkit.ViewFromID(obj.ID(divider)))
+
+	win.Center()
+	win.MakeKeyAndOrderFront(nil)
+	aboutWindow = win
+	aboutInfoField = info
+}
+
+// aboutField builds a read-only, selectable, multi-line, borderless text field
+// used for each piece of the About window.
+func aboutField(align appkit.TextAlignment) *appkit.TextField {
+	tf := appkit.TextFieldFromID(objcutil.AllocClass("NSTextField").Send(purego.RegisterName("init")))
+	tf.WithSelectable(true)
+	tf.WithEditable(false)
+	tf.WithBordered(false)
+	tf.WithDrawsBackground(false)
+	tf.WithUsesSingleLineMode(false)
+	tf.WithMaximumNumberOfLines(0)
+	tf.WithAlignment(align)
+	return tf
+}
+
+func rect(x, y, w, h float64) corefoundation.CGRect {
+	return corefoundation.CGRect{Origin: corefoundation.CGPoint{X: x, Y: y}, Size: corefoundation.CGSize{Width: w, Height: h}}
 }
 
 func weaveVersion() string {
