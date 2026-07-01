@@ -132,9 +132,29 @@ Make a local, runnable copy from a source VM or a (local/remote) image.
 | `--concurrency <n>` | 4 | Parallel layer downloads |
 | `--deduplicate` | false | Deduplicate disk blocks on clone |
 | `--prune-limit <n>` | 100 | Cache-prune limit during clone |
+| `--regenerate-random-mac` | false | Assign the clone a new random MAC instead of copying the source's |
+| `--regenerate-random-serial` | false | Assign the clone a new macOS machine identifier (ECID / hardware serial) instead of copying the source's |
+
+**Identity is copied verbatim by default.** A clone is an exact copy — it keeps
+the source's MAC address and (for macOS guests) its hardware serial. Both
+regenerations are **opt-in and independent**:
+
+- `--regenerate-random-mac` — mint a new random MAC for the clone. Use this
+  whenever the clone and its source may run at the same time, or share a network:
+  two VMs with the same MAC will conflict.
+- `--regenerate-random-serial` — mint a new macOS machine identifier (the ECID
+  behind the guest's hardware serial). macOS guests on Apple Silicon only (a
+  no-op for Linux). Use this when the clone must appear as a distinct Mac
+  (e.g. for MDM enrolment or licensing).
+
+Regenerating either identity clears any suspended state on the clone, since a new
+identity cannot resume the source's saved run. The same opt-in regeneration is
+available on [`set`](#set) for an existing stopped VM.
 
 ```sh
-weave clone ghcr.io/cirruslabs/ubuntu:latest my-linux
+weave clone ghcr.io/cirruslabs/ubuntu:latest my-linux        # exact copy
+weave clone base-macos dev-macos \
+    --regenerate-random-mac --regenerate-random-serial        # distinct identity
 ```
 
 ### list

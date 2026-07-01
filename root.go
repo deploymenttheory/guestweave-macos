@@ -80,8 +80,8 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		fs.StringVar(&command.Registry, "registry", "", "")
 		concurrency := fs.Uint("concurrency", 4, "")
 		fs.BoolVar(&command.Deduplicate, "deduplicate", false, "")
-		fs.BoolVar(&command.RandomMAC, "random-mac", false, "")
-		fs.BoolVar(&command.RandomSerial, "random-serial", false, "")
+		fs.BoolVar(&command.RegenerateRandomMAC, "regenerate-random-mac", false, "")
+		fs.BoolVar(&command.RegenerateRandomSerial, "regenerate-random-serial", false, "")
 		pruneLimit := fs.Uint("prune-limit", 100, "")
 		positionals, err := weavecommand.ParseInterleaved(fs, rest)
 		if err != nil {
@@ -90,7 +90,7 @@ func parseRootCommand(args []string) (name string, runner commandRunner, err err
 		command.Concurrency = *concurrency
 		command.PruneLimit = *pruneLimit
 		if len(positionals) != 2 {
-			return name, nil, weaveerrors.ErrGeneric("usage: weave clone [--registry <profile>] [--random-mac] [--random-serial] <source-name> <new-name>")
+			return name, nil, weaveerrors.ErrGeneric("usage: weave clone [--registry <profile>] [--regenerate-random-mac] [--regenerate-random-serial] <source-name> <new-name>")
 		}
 		command.SourceName, command.NewName = positionals[0], positionals[1]
 		return name, command, command.Validate()

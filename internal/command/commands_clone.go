@@ -20,15 +20,19 @@ import (
 
 // CloneCommand ports the Clone command.
 type CloneCommand struct {
-	SourceName   string
-	NewName      string
-	Registry     string // registry profile name for a remote source
-	Insecure     bool
-	Concurrency  uint
-	Deduplicate  bool
-	PruneLimit   uint
-	RandomMAC    bool // force a fresh MAC on the clone (default: only on collision)
-	RandomSerial bool // give the clone a fresh macOS machine identifier (ECID)
+	SourceName  string
+	NewName     string
+	Registry    string // registry profile name for a remote source
+	Insecure    bool
+	Concurrency uint
+	Deduplicate bool
+	PruneLimit  uint
+	// RegenerateRandomMAC gives the clone a fresh random MAC address instead of
+	// copying the source's. Opt-in: without it the clone keeps the source MAC.
+	RegenerateRandomMAC bool
+	// RegenerateRandomSerial gives the clone a fresh macOS machine identifier
+	// (ECID / hardware serial) instead of copying the source's. Opt-in.
+	RegenerateRandomSerial bool
 }
 
 func (c *CloneCommand) Validate() error {
@@ -111,33 +115,17 @@ func (c *CloneCommand) Run(ctx context.Context) error {
 		return err
 	}
 
-	sourceMAC, err := sourceVM.MACAddress()
-	if err != nil {
-		cleanup()
-		return err
-	}
-	hasCollision, err := localStorage.HasVMsWithMACAddress(sourceMAC)
-	if err != nil {
-		cleanup()
-		return err
-	}
-	sourceState, err := sourceVM.State()
-	if err != nil {
-		cleanup()
-		return err
-	}
-	// Regenerate the MAC on a collision, or unconditionally when --random-mac is
-	// passed. (A collision-driven regen is skipped for a suspended source to
-	// preserve resumability; an explicit --random-mac overrides that.)
-	generateMAC := (hasCollision && sourceState != vmdirectory.VMDirectoryStateSuspended) || c.RandomMAC
-
-	if err := sourceVM.Clone(tmpVMDir, generateMAC); err != nil {
+	// Identity is copied verbatim by default; each regeneration is opt-in. Note
+	// that a copied MAC/serial collides with the source when both VMs run, so
+	// pass the flags when the clone must be a distinct machine.
+	if err := sourceVM.Clone(tmpVMDir, c.RegenerateRandomMAC); err != nil {
 		cleanup()
 		return err
 	}
 
-	// Give the clone a fresh hardware serial when requested (macOS guests only).
-	if c.RandomSerial {
+	// Give the clone a fresh macOS hardware serial when requested (macOS guests
+	// only; a no-op for Linux).
+	if c.RegenerateRandomSerial {
 		if _, err := tmpVMDir.RegenerateSerial(); err != nil {
 			cleanup()
 			return err
