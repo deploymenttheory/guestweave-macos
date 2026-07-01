@@ -19,7 +19,6 @@ import (
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
@@ -343,19 +342,10 @@ var menuTargetClass = sync.OnceValue(func() purego.Class {
 	return class
 })
 
-// showAboutPanel shows the standard macOS About panel for weave: the panel draws
-// the app icon, name, and version, and aboutCredits supplies a typeset summary
-// of global/host/runtime facts as the credits. Per-VM configuration lives in VM
-// Info, not here.
+// showAboutPanel shows weave's custom, brand-typeset About window (see
+// presentAbout). Per-VM configuration lives in VM Info, not here.
 func showAboutPanel() {
-	app := appkit.SharedApplication()
-
-	options := foundation.NewMutableDictionary()
-	options.Set(appkit.NSAboutPanelOptionApplicationName(), objcutil.NSStr("guestweave"))
-	options.Set(appkit.NSAboutPanelOptionApplicationVersion(), objcutil.NSStr(weaveVersion()))
-	options.Set(appkit.NSAboutPanelOptionCredits(), aboutCredits())
-
-	obj.ID(app).Send(purego.RegisterName("orderFrontStandardAboutPanelWithOptions:"), obj.ID(options))
+	presentAbout()
 }
 
 // RunHeadless enters the AppKit run loop without bringing up a window, waiting
