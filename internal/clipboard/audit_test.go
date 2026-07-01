@@ -5,7 +5,7 @@ package clipboard
 import (
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
 )
 
 func TestTransferRecord(t *testing.T) {

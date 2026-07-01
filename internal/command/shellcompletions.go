@@ -7,8 +7,8 @@ package command
 import (
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // normalizeName escapes colons, which are misinterpreted by Zsh completion.

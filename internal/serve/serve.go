@@ -9,8 +9,8 @@ package serve
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/httpapi"
-	"github.com/deploymenttheory/weave/internal/mcp"
+	"github.com/deploymenttheory/guestweave/internal/httpapi"
+	"github.com/deploymenttheory/guestweave/internal/mcp"
 )
 
 // ServeCommand ports the serve command.

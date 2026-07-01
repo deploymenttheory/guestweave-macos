@@ -20,12 +20,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/clipboard"
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/screenviewer"
+	"github.com/deploymenttheory/guestweave/internal/clipboard"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/screenviewer"
 
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"

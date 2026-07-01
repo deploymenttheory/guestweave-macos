@@ -19,9 +19,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
-	"github.com/deploymenttheory/weave/internal/vmservice"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/vmservice"
 )
 
 // handleExecWS runs the ?cmd= command interactively over SSH (default

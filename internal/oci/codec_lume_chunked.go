@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"sync"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/logging"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/logging"
 )
 
 type lumeChunkedCodec struct{}

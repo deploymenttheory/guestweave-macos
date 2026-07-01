@@ -8,7 +8,7 @@ import (
 
 	otelslog "go.opentelemetry.io/contrib/bridges/otelslog"
 
-	"github.com/deploymenttheory/weave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/logging"
 )
 
 // WireLogBridge installs an OTel log sink on the weave logging package so

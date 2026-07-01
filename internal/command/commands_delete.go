@@ -6,7 +6,7 @@ package command
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // DeleteCommand ports the Delete command.

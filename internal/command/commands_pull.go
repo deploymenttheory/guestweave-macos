@@ -9,11 +9,11 @@ import (
 	"context"
 	"fmt"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/registry"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/registry"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // PullCommand ports the Pull command.

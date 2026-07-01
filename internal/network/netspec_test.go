@@ -5,7 +5,7 @@ package network
 import (
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 )
 
 func TestParseNICDevice(t *testing.T) {

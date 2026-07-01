@@ -16,11 +16,11 @@
 package network
 
 import (
-	vmnet "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vmnet"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
+	vmnet "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vmnet"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 )
 
 // buildVmnetNIC constructs a vmnet-direct NIC.

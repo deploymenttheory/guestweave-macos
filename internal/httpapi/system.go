@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/deploymenttheory/weave/internal/ci"
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	"github.com/deploymenttheory/weave/internal/httpapi/schema"
+	"github.com/deploymenttheory/guestweave/internal/ci"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"github.com/deploymenttheory/guestweave/internal/httpapi/schema"
 )
 
 // handleOpenAPI serves the embedded OpenAPI document.

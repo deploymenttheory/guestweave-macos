@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/fsutil"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
 )
 
 const deduplicatedBytesXattr = "run.weave.deduplicated-bytes"

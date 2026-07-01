@@ -13,9 +13,9 @@ import (
 	"time"
 
 	vtpm2 "github.com/deploymenttheory/go-sdk-vtpm2/emulator"
-	"github.com/deploymenttheory/weave/internal/backend"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/backend"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 const (

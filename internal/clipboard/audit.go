@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
-	"github.com/deploymenttheory/weave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/logging"
 )
 
 // Audit directions and decisions.

@@ -1,7 +1,7 @@
 // Port of tart's CI/CI.swift: build version information. The CIRRUS_TAG
 // template substitution becomes an ldflags-settable variable:
 //
-//	go build -ldflags "-X github.com/deploymenttheory/weave/internal/ci.ciRawVersion=v1.2.3"
+//	go build -ldflags "-X github.com/deploymenttheory/guestweave/internal/ci.ciRawVersion=v1.2.3"
 //go:build darwin
 
 package ci

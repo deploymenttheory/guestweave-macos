@@ -22,10 +22,10 @@ import (
 	"syscall"
 	"unsafe"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/fsutil"
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"

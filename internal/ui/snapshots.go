@@ -13,13 +13,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
+	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
-	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 )
 
 // nsAlertFirstButtonReturn is the modal response of an NSAlert's first button;

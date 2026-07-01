@@ -8,10 +8,10 @@ import (
 	"encoding/base64"
 	"runtime"
 
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"

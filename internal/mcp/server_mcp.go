@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/ci"
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/logging"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
-	"github.com/deploymenttheory/weave/internal/vmservice"
+	"github.com/deploymenttheory/guestweave/internal/ci"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/vmservice"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

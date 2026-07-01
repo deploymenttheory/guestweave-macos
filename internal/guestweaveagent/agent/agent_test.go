@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
 )
 
 // echoModule echoes the request meta back in its response.

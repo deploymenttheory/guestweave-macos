@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
 )
 
 // darwinBackend drives a macOS *guest* pasteboard for text and files.

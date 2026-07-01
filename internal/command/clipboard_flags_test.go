@@ -5,7 +5,7 @@ package command
 import (
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
 )
 
 func TestClipboardFlagValuesOverrideEmpty(t *testing.T) {

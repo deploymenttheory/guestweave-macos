@@ -14,9 +14,9 @@ package command
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/clipboardctl"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/clipboardctl"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // ClipboardCommand carries the raw subcommand arguments; dispatch happens in Run.

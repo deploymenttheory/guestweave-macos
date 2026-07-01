@@ -12,8 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 
 	"gopkg.in/yaml.v3"
 )

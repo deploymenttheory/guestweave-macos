@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 )
 
 const (

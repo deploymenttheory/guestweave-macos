@@ -7,10 +7,10 @@ package vmservice
 import (
 	"context"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // ResolveVMIP resolves a VM's IP using the given strategy, waiting up to wait

@@ -1,4 +1,4 @@
-module github.com/deploymenttheory/weave
+module github.com/deploymenttheory/guestweave
 
 go 1.26.2
 

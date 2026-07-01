@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // Media types of the lume chunked-gzip format (lume HEAD's pushOCI/pullOCI).

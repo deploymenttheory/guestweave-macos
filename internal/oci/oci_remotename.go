@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // ReferenceType mirrors Reference.ReferenceType; Tag sorts before Digest.

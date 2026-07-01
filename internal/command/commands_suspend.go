@@ -8,8 +8,8 @@ import (
 	"context"
 	"syscall"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // SuspendCommand ports the Suspend command (macOS 14+).

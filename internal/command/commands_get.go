@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 type getVMInfo struct {

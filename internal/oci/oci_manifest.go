@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 )
 
 // OCI manifest and OCI config media types.

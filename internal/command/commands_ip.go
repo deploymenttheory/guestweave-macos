@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // IPCommand ports the IP command.

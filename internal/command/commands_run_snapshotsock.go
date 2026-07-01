@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 const snapshotSocketName = "snapshot.sock"

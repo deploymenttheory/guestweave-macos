@@ -6,7 +6,7 @@ package command
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/credentials"
+	"github.com/deploymenttheory/guestweave/internal/credentials"
 )
 
 // LogoutCommand ports the Logout command.

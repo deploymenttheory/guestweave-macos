@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/fsutil"
-	"github.com/deploymenttheory/weave/internal/prune"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
+	"github.com/deploymenttheory/guestweave/internal/prune"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 // VMStorageLocal ports tart's VMStorageLocal class.

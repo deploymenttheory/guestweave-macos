@@ -15,10 +15,10 @@
 package vmstorage
 
 import (
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/prune"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/prune"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"

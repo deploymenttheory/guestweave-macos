@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // ExportCommand ports the Export command.

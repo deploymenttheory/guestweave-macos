@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
 )
 
 // fakeBackend is an in-memory clipboard for exercising the module's wire

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
 )
 
 func TestSendServeRoundTrip(t *testing.T) {

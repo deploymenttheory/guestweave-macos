@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // convention (admin/admin) rather than lume's lume/lume.

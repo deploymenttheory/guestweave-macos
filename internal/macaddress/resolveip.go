@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // IPResolutionStrategy mirrors the enum of the same name.

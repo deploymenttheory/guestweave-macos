@@ -12,7 +12,7 @@ import (
 	"os/exec"
 	"strings"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"

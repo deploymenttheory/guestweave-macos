@@ -12,8 +12,8 @@
 package network
 
 import (
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 )
 
 // Profile names the supported scenario presets.
