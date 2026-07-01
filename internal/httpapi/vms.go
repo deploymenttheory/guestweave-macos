@@ -12,10 +12,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/vmservice"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/vmservice"
 )
 
 func (s *APIServer) handleListVMs(w http.ResponseWriter, r *http.Request) {

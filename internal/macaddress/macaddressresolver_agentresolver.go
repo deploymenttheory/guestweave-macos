@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/deploymenttheory/weave/internal/agentrpc"
+	"github.com/deploymenttheory/guestweave/internal/agentrpc"
 )
 
 // AgentResolverResolveIP ports AgentResolver.ResolveIP(_:). Connection

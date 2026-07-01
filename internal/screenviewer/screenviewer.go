@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 
 // ScreenServer holds the latest captured frame and streams it as MJPEG.

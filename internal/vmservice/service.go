@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // CollectVMInfos returns the structured listing for local and/or OCI VMs.

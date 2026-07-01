@@ -5,7 +5,7 @@ package vmconfig
 import (
 	"testing"
 
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )

@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
 )
 
 // linuxBackend drives the guest clipboard through the standard CLI tools:

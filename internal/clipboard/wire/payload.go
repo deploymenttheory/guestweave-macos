@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
 )
 
 // Module is the agent module name the clipboard registers under.

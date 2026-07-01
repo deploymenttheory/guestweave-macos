@@ -14,12 +14,12 @@ import (
 	"os"
 	"path/filepath"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/qemu"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/winimage"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/qemu"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/winimage"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )

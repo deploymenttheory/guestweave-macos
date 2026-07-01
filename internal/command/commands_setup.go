@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/passphrase"
-	"github.com/deploymenttheory/weave/internal/screenviewer"
-	"github.com/deploymenttheory/weave/internal/unattended"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/passphrase"
+	"github.com/deploymenttheory/guestweave/internal/screenviewer"
+	"github.com/deploymenttheory/guestweave/internal/unattended"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 
 // SetupCommand ports the setup command.

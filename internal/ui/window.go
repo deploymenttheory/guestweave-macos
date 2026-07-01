@@ -12,14 +12,13 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	weavevm "github.com/deploymenttheory/weave/internal/vm"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
-	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
@@ -343,19 +342,16 @@ var menuTargetClass = sync.OnceValue(func() purego.Class {
 	return class
 })
 
-// showAboutPanel shows the standard macOS About panel for weave: the panel draws
-// the app icon, name, and version, and aboutCredits supplies a typeset summary
-// of global/host/runtime facts as the credits. Per-VM configuration lives in VM
-// Info, not here.
+// showAboutPanel shows weave's About dialog. The standard macOS About panel
+// draws the app name in the system font and can't be rebranded, so this is a
+// custom dialog whose accessory carries the "guestweave" wordmark in the brand
+// font (Plus Jakarta Sans) plus global/host/runtime facts (see aboutDocument).
+// Per-VM configuration lives in VM Info, not here.
 func showAboutPanel() {
-	app := appkit.SharedApplication()
-
-	options := foundation.NewMutableDictionary()
-	options.Set(appkit.NSAboutPanelOptionApplicationName(), objcutil.NSStr("guestweave"))
-	options.Set(appkit.NSAboutPanelOptionApplicationVersion(), objcutil.NSStr(weaveVersion()))
-	options.Set(appkit.NSAboutPanelOptionCredits(), aboutCredits())
-
-	obj.ID(app).Send(purego.RegisterName("orderFrontStandardAboutPanelWithOptions:"), obj.ID(options))
+	alert := appkit.NewAlert()
+	alert.WithMessageText("")
+	alert.WithAccessoryView(aboutAccessoryField())
+	alert.RunModal()
 }
 
 // RunHeadless enters the AppKit run loop without bringing up a window, waiting

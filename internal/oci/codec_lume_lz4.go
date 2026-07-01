@@ -11,7 +11,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/deploymenttheory/weave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/logging"
 )
 
 type lumeLZ4Codec struct{}

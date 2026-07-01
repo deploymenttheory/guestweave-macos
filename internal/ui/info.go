@@ -11,18 +11,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/ci"
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/branding"
+	"github.com/deploymenttheory/guestweave/internal/ci"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	corefoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/corefoundation"
+	coretext "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/coretext"
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
 // processStart is set at package init (process start) and drives the About
@@ -204,14 +207,22 @@ func runtimeOptions() string {
 
 const repoURL = "https://github.com/deploymenttheory/guestweave-macos"
 
-// aboutCredits builds the styled credits string for the standard macOS About
-// panel: bold section headers, monospaced column-aligned rows, and a clickable
-// repository link. Returned as an NSAttributedString for the panel's credits
-// option (the app name and version are shown by the panel itself).
-func aboutCredits() *foundation.MutableAttributedString {
+// aboutDocument builds the styled content for the About dialog: the "guestweave"
+// wordmark in the brand font (Plus Jakarta Sans), the version, then bold section
+// headers with monospaced column-aligned rows and a clickable repository link.
+func aboutDocument() *foundation.MutableAttributedString {
 	doc := foundation.NewMutableAttributedString()
 	header := fontAttrs(aboutFont("boldSystemFontOfSize:", 13))
 	body := fontAttrs(aboutFont("userFixedPitchFontOfSize:", 11))
+
+	// Brand wordmark (lowercase), in Plus Jakarta Sans; falls back to the bold
+	// system font if the embedded face can't be loaded.
+	wordmark := brandFont(30)
+	if wordmark == nil {
+		wordmark = aboutFont("systemFontOfSize:", 30)
+	}
+	doc.AppendAttributedString(attrRun("guestweave\n", fontAttrs(wordmark)))
+	doc.AppendAttributedString(attrRun(weaveVersion()+"\n\n", fontAttrs(aboutFont("systemFontOfSize:", 11))))
 
 	first := true
 	section := func(title string) {
@@ -227,7 +238,6 @@ func aboutCredits() *foundation.MutableAttributedString {
 		}
 	}
 
-	// (The panel header already shows the app name and version.)
 	section("Runtime")
 	row("Uptime", time.Since(processStart).Round(time.Second).String())
 
@@ -273,6 +283,45 @@ func fontAttrs(font *appkit.Font) *foundation.MutableDictionary {
 func aboutFont(selector string, size float64) *appkit.Font {
 	id := purego.ID(purego.GetClass("NSFont")).Send(purego.RegisterName(selector), size)
 	return appkit.FontFromID(id)
+}
+
+// brandFont loads the embedded Plus Jakarta Sans face as an in-memory NSFont for
+// the wordmark. It builds a CoreText font descriptor from the raw bytes and makes
+// an NSFont from it — the face is never registered with the font manager, so it
+// is available only to this process for drawing and is not installed into the
+// system or user font library. Returns nil if the face can't be loaded.
+func brandFont(size float64) *appkit.Font {
+	if len(branding.PlusJakartaSansMedium) == 0 {
+		return nil
+	}
+	data := objcutil.BytesToNSData(branding.PlusJakartaSansMedium)
+	descriptor := coretext.CTFontManagerCreateFontDescriptorFromData(data)
+	if descriptor == nil {
+		return nil
+	}
+	id := purego.ID(purego.GetClass("NSFont")).Send(
+		purego.RegisterName("fontWithDescriptor:size:"), obj.ID(descriptor), size)
+	if id == 0 {
+		return nil
+	}
+	return appkit.FontFromID(id)
+}
+
+// aboutAccessoryField renders aboutDocument into a read-only, selectable text
+// field for use as the About dialog's accessory view (copy-pasteable).
+func aboutAccessoryField() *appkit.TextField {
+	const width = 340.0
+	id := objcutil.AllocClass("NSTextField").Send(purego.RegisterName("init"))
+	tf := appkit.TextFieldFromID(id)
+	tf.WithSelectable(true)
+	tf.WithEditable(false)
+	tf.WithBordered(false)
+	tf.WithDrawsBackground(false)
+	id.Send(purego.RegisterName("setAttributedStringValue:"), obj.ID(aboutDocument()))
+	tf.WithPreferredMaxLayoutWidth(width)
+	tf.WithFrame(corefoundation.CGRect{Size: corefoundation.CGSize{Width: width, Height: 16}})
+	id.Send(purego.RegisterName("sizeToFit"))
+	return tf
 }
 
 func weaveVersion() string {

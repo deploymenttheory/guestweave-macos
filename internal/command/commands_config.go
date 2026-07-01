@@ -26,11 +26,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavenetwork "github.com/deploymenttheory/weave/internal/network"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavenetwork "github.com/deploymenttheory/guestweave/internal/network"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 )
 
 // ConfigCommand carries the raw subcommand arguments; dispatch happens in

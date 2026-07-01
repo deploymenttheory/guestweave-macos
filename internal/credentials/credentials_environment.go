@@ -3,7 +3,7 @@
 
 package credentials
 
-import "github.com/deploymenttheory/weave/internal/objcutil"
+import "github.com/deploymenttheory/guestweave/internal/objcutil"
 
 // EnvironmentCredentialsProvider reads WEAVE_REGISTRY_* environment variables.
 type EnvironmentCredentialsProvider struct{}

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/passphrase"
-	weavevm "github.com/deploymenttheory/weave/internal/vm"
+	"github.com/deploymenttheory/guestweave/internal/passphrase"
+	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"

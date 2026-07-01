@@ -13,8 +13,8 @@ package backend
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 // StartOptions are engine-agnostic run-time options resolved from CLI flags.

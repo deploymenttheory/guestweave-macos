@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
 )
 
 // RunHealthCheck probes the VM at ip per the check definition.

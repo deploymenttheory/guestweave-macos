@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/clipboard"
+	"github.com/deploymenttheory/guestweave/internal/clipboard"
 )
 
 const (

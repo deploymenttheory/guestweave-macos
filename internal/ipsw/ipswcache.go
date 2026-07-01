@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/prune"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	"github.com/deploymenttheory/guestweave/internal/prune"
 )
 
 // IPSWCache ports tart's IPSWCache class.

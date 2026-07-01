@@ -12,8 +12,8 @@
 package serial
 
 import (
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
 )
 
 // Serve discovers (when dev is empty) and opens the virtio serial device, puts it

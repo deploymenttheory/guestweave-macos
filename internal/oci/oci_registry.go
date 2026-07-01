@@ -20,13 +20,13 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/deploymenttheory/weave/internal/ci"
-	"github.com/deploymenttheory/weave/internal/credentials"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/fetcher"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/telemetry"
+	"github.com/deploymenttheory/guestweave/internal/ci"
+	"github.com/deploymenttheory/guestweave/internal/credentials"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/fetcher"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/telemetry"
 )
 
 // RegistryError ports tart's RegistryError enum.

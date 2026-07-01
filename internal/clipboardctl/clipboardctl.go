@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
 )
 
 // Request is a live clipboard-policy update sent by a client.

@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/deploymenttheory/weave/internal/terminal"
+	"github.com/deploymenttheory/guestweave/internal/terminal"
 )
 
 // IPSWCommand ports the ipsw command.

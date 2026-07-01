@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/clipboard"
+	"github.com/deploymenttheory/guestweave/internal/clipboard"
 )
 
 // guestChecks are the leaf cases exercised once a guest is running with SSH.

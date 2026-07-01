@@ -10,11 +10,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/oci"
-	"github.com/deploymenttheory/weave/internal/prune"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/oci"
+	"github.com/deploymenttheory/guestweave/internal/prune"
 )
 
 // PullFromRegistry ports VMDirectory.pullFromRegistry(registry:manifest:

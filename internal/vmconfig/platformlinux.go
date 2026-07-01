@@ -5,7 +5,7 @@ package vmconfig
 
 import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 )
 
 // LinuxPlatform ports tart's Linux struct (named to avoid clashing with the

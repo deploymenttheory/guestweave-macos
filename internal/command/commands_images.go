@@ -11,10 +11,10 @@ import (
 	"context"
 	"fmt"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveregistry "github.com/deploymenttheory/weave/internal/registry"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveregistry "github.com/deploymenttheory/guestweave/internal/registry"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // ImagesCommand lists the tags available for a remote repository.

@@ -12,8 +12,8 @@ import (
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 )
 
 // TestRoundTrip writes multiple representations to the real host pasteboard and

@@ -7,7 +7,7 @@ package diskimage
 import (
 	"strings"
 
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 )
 
 // DiskImageFormat mirrors tart's DiskImageFormat enum.

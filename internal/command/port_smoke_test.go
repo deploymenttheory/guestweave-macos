@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	"github.com/deploymenttheory/weave/internal/fetcher"
-	weavelock "github.com/deploymenttheory/weave/internal/lock"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/prune"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	"github.com/deploymenttheory/guestweave/internal/fetcher"
+	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/prune"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )

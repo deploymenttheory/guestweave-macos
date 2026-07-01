@@ -25,7 +25,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/deploymenttheory/weave/internal/ci"
+	"github.com/deploymenttheory/guestweave/internal/ci"
 )
 
 // OTel is the weave telemetry singleton. Access it via OTelShared().

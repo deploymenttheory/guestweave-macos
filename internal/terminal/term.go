@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // TermState ports tart's State struct: the terminal parameters captured

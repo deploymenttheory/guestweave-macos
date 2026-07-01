@@ -9,25 +9,25 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavelock "github.com/deploymenttheory/weave/internal/lock"
-	weavenetwork "github.com/deploymenttheory/weave/internal/network"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	"github.com/deploymenttheory/weave/internal/terminal"
-	weavevm "github.com/deploymenttheory/weave/internal/vm"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
+	weavenetwork "github.com/deploymenttheory/guestweave/internal/network"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/terminal"
+	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
 // CreateCommand ports the Create command.
 type CreateCommand struct {
-	Name       string
-	FromIPSW   string
-	Linux      bool
+	Name     string
+	FromIPSW string
+	Linux    bool
 	// FromWindows creates a Windows 11 ARM64 guest. The install media is
 	// downloaded from Microsoft's software-download site (latest official
 	// ARM64 ISO) and the VM runs on the QEMU backend. The value is used as a
@@ -43,8 +43,8 @@ type CreateCommand struct {
 	// UnattendFile is an optional path to an autounattend.xml to embed at the
 	// ISO root so Windows Setup runs unattended.
 	UnattendFile string
-	DiskSize       uint16
-	DiskFormat     diskimage.DiskImageFormat
+	DiskSize     uint16
+	DiskFormat   diskimage.DiskImageFormat
 	// NetProfile optionally persists a default network profile into the new
 	// VM's config (nat|internet-only|isolated|vm-lab|bridged). Empty leaves
 	// the VM on the implicit single NAT NIC, overridable at run time.

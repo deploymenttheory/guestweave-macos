@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/ci"
+	"github.com/deploymenttheory/guestweave/internal/ci"
 )
 
 // weaveArt is the wordmark rendered from Plus Jakarta Sans Regular (weight 400),

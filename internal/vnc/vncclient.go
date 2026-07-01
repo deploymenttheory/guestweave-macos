@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 const (

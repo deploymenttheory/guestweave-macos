@@ -6,7 +6,7 @@ package prune
 import (
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/fsutil"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
 )
 
 // AccessDate ports URL.accessDate(): a file's last access time.

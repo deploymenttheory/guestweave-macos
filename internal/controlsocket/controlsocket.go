@@ -16,10 +16,10 @@ import (
 	"sync"
 	"syscall"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 
-	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/oslog"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/oslog"
 )
 
 // VirtioSocketConnector is the slice of VM.connect(toPort:) that

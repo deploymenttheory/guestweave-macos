@@ -10,8 +10,8 @@ import (
 	"errors"
 	"os/exec"
 
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // ExportToArchive ports VMDirectory.exportToArchive(path:).

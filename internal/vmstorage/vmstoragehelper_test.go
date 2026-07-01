@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 // TestMissingVMWrapPIDLock verifies missingVMWrap converts a missing PID lock

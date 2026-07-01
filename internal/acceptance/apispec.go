@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/httpapi/schema"
+	"github.com/deploymenttheory/guestweave/internal/httpapi/schema"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"

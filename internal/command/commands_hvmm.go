@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/deploymenttheory/weave/internal/hvmm"
+	"github.com/deploymenttheory/guestweave/internal/hvmm"
 )
 
 // HvmmCommand drives weave's experimental Hypervisor.framework EL2 VMM backend

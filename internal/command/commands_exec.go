@@ -16,11 +16,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/deploymenttheory/weave/internal/agentrpc"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/terminal"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/agentrpc"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/terminal"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // ExecCommand ports the Exec command.
