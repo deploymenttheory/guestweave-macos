@@ -6,7 +6,7 @@ package oci
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/logging"
 )
 
 // Disk ports tart's Disk protocol. The static protocol requirements become

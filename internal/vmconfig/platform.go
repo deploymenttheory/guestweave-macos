@@ -7,7 +7,7 @@ package vmconfig
 
 import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 )
 
 // Platform ports tart's Platform protocol. It returns idiomatic provider

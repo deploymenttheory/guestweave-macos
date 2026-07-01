@@ -8,8 +8,8 @@ package vm
 import (
 	"fmt"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"

@@ -10,8 +10,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
-	"github.com/deploymenttheory/weave/internal/ci"
-	"github.com/deploymenttheory/weave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/ci"
+	"github.com/deploymenttheory/guestweave/internal/platform"
 )
 
 // buildResource assembles the weave-centric OTel resource attached to every

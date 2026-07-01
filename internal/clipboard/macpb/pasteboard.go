@@ -16,8 +16,8 @@ import (
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 
-	"github.com/deploymenttheory/weave/internal/clipboard/wire"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 )
 
 // FileURLType is the UTI for a single file reference on the pasteboard.

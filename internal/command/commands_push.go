@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"strings"
 
-	weaveregistry "github.com/deploymenttheory/weave/internal/registry"
+	weaveregistry "github.com/deploymenttheory/guestweave/internal/registry"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/oci"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/oci"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // PushCommand ports the Push command.

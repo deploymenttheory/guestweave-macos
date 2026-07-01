@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Guidance for Claude Code when working in this repo (`guestweave-macos`, Go module
-`github.com/deploymenttheory/weave`). darwin-only; requires macOS + the
+`github.com/deploymenttheory/guestweave`). darwin-only; requires macOS + the
 Virtualization framework.
 
 ## Building & running

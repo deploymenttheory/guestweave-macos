@@ -16,8 +16,8 @@ package network
 import (
 	"strings"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 )
 
 // ParseNICDevice parses a single --net-device spec into a NICConfig.

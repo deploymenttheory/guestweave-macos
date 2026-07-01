@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/credentials"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/oci"
+	"github.com/deploymenttheory/guestweave/internal/credentials"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/oci"
 )
 
 // LoginCommand ports the Login command.

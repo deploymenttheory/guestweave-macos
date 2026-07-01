@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 func testSpec(iso string) Spec {

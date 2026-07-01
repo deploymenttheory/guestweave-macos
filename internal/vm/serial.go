@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/deploymenttheory/weave/internal/terminal"
+	"github.com/deploymenttheory/guestweave/internal/terminal"
 )
 
 // darwin PTY ioctls (sys/ttycom.h); not exposed by package syscall.

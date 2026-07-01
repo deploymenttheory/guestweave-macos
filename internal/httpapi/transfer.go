@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // handleImport imports from a server-side .tvm path.

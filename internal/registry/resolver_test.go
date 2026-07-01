@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 )
 
 func testSettings() *weaveconfig.Settings {

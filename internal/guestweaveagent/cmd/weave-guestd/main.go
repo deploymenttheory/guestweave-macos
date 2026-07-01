@@ -15,10 +15,10 @@ package main
 import (
 	"os"
 
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
-	clipguest "github.com/deploymenttheory/weave/internal/guestweaveagent/modules/clipboard"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/serial"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agent"
+	clipguest "github.com/deploymenttheory/guestweave/internal/guestweaveagent/modules/clipboard"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/serial"
 )
 
 func main() {

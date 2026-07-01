@@ -9,10 +9,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavenetwork "github.com/deploymenttheory/weave/internal/network"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavenetwork "github.com/deploymenttheory/guestweave/internal/network"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 )
 
 func (s *APIServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {

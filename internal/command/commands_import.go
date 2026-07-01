@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavelock "github.com/deploymenttheory/weave/internal/lock"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // ImportCommand ports the Import command.

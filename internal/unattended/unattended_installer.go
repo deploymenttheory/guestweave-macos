@@ -21,16 +21,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/passphrase"
-	"github.com/deploymenttheory/weave/internal/screenviewer"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	"github.com/deploymenttheory/guestweave/internal/passphrase"
+	"github.com/deploymenttheory/guestweave/internal/screenviewer"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 
 // SetupOptions configures RunUnattendedSetup.

@@ -16,10 +16,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agentbin"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agentbin"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
 )
 
 // DefaultRemotePath is where the agent binary is deployed in the guest.

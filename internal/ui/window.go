@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	weavevm "github.com/deploymenttheory/weave/internal/vm"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"

@@ -30,8 +30,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deploymenttheory/weave/internal/ocr"
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	"github.com/deploymenttheory/guestweave/internal/ocr"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 
 func TestVNCScreenDiagnostic(t *testing.T) {

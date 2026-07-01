@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weavelock "github.com/deploymenttheory/weave/internal/lock"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
 )
 
 // Config mirrors tart's Config struct.

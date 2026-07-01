@@ -11,9 +11,9 @@ import (
 	"os"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/oci"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/oci"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/errkit"
 )

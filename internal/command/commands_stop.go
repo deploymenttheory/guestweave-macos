@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // StopCommand ports the Stop command.

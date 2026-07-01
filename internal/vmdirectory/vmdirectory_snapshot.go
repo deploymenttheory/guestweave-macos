@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/fsutil"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
 )
 
 // MaxSnapshots is the maximum number of disk snapshots retained per VM.

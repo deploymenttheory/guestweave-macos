@@ -7,7 +7,7 @@ package command
 import (
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
 )
 
 // clipboardFlagValues holds the raw clipboard-policy flag values shared by the

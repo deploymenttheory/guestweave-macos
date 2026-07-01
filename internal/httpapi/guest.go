@@ -16,11 +16,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	"github.com/deploymenttheory/weave/internal/oci"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
-	"github.com/deploymenttheory/weave/internal/vmservice"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	"github.com/deploymenttheory/guestweave/internal/oci"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/vmservice"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
 // handleExec runs a command in the guest over SSH (combined output + exit

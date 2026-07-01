@@ -13,10 +13,10 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )

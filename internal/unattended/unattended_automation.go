@@ -18,11 +18,11 @@ import (
 	"strings"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/ocr"
-	"github.com/deploymenttheory/weave/internal/screenviewer"
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/ocr"
+	"github.com/deploymenttheory/guestweave/internal/screenviewer"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 
 const automationPollInterval = 2 * time.Second

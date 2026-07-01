@@ -5,8 +5,8 @@ package qemu
 import (
 	"fmt"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
-	"github.com/deploymenttheory/weave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 const (

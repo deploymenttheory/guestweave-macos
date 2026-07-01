@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // bootCommandDefaultWaitTimeout mirrors BootCommandParser.defaultWaitTimeout.

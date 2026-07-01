@@ -28,9 +28,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/ssh"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/telemetry"
-	"github.com/deploymenttheory/weave/internal/terminal"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/telemetry"
+	"github.com/deploymenttheory/guestweave/internal/terminal"
 )
 
 const sshDialTimeout = 30 * time.Second

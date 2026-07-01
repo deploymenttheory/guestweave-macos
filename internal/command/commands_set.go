@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/vmconfig"
+	"github.com/deploymenttheory/guestweave/internal/vmconfig"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	"github.com/deploymenttheory/weave/internal/fsutil"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )

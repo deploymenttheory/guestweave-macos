@@ -16,7 +16,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 )
 
 const (

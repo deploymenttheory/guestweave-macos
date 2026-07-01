@@ -10,7 +10,7 @@ package registry
 import (
 	"context"
 
-	"github.com/deploymenttheory/weave/internal/oci"
+	"github.com/deploymenttheory/guestweave/internal/oci"
 )
 
 // ImageSource is the read side of a registry: everything a pull needs.

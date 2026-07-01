@@ -14,7 +14,7 @@
 //   - Transfer size limit → MaxContentBytes
 package clipboardpolicy
 
-import "github.com/deploymenttheory/weave/internal/clipboard/wire"
+import "github.com/deploymenttheory/guestweave/internal/clipboard/wire"
 
 // Direction is the permitted flow of clipboard data between host and guest.
 type Direction string

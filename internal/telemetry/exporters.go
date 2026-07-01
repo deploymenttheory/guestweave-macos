@@ -19,7 +19,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/deploymenttheory/weave/internal/ci"
+	"github.com/deploymenttheory/guestweave/internal/ci"
 )
 
 // sentryActive is set to true after a successful sentry.Init so that Flush

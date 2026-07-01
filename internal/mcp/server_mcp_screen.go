@@ -21,10 +21,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/ocr"
-	"github.com/deploymenttheory/weave/internal/unattended"
-	"github.com/deploymenttheory/weave/internal/vmstorage"
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	"github.com/deploymenttheory/guestweave/internal/ocr"
+	"github.com/deploymenttheory/guestweave/internal/unattended"
+	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

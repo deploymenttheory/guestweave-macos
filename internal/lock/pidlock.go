@@ -9,7 +9,7 @@ import (
 	"errors"
 	"syscall"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 )
 
 // PIDLock ports tart's PIDLock class.

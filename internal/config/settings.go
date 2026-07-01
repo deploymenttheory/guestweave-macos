@@ -18,9 +18,9 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/deploymenttheory/weave/internal/clipboardpolicy"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 
 	"gopkg.in/yaml.v3"
 )

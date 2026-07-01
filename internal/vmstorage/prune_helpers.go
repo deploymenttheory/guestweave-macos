@@ -10,11 +10,11 @@ import (
 	"os"
 	"sort"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/ipsw"
-	"github.com/deploymenttheory/weave/internal/prune"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	"github.com/deploymenttheory/guestweave/internal/ipsw"
+	"github.com/deploymenttheory/guestweave/internal/prune"
 )
 
 func PruneStoragesFor(entries string) ([]prune.PrunableStorage, error) {

@@ -18,12 +18,12 @@ import (
 	"syscall"
 	"time"
 
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/logging"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	"github.com/deploymenttheory/weave/internal/telemetry"
-	"github.com/deploymenttheory/weave/internal/terminal"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/logging"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/telemetry"
+	"github.com/deploymenttheory/guestweave/internal/terminal"
 
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/mainthread"
 	"go.opentelemetry.io/otel/attribute"

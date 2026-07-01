@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agentbin"
-	weavessh "github.com/deploymenttheory/weave/internal/ssh"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agentbin"
+	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
 )
 
 // residentLabel is the LaunchAgent / systemd unit identifier for the agent.

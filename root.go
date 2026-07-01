@@ -9,13 +9,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/deploymenttheory/weave/internal/ci"
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	"github.com/deploymenttheory/weave/internal/diskimage"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/macaddress"
-	weaveplatform "github.com/deploymenttheory/weave/internal/platform"
-	"github.com/deploymenttheory/weave/internal/serve"
+	"github.com/deploymenttheory/guestweave/internal/ci"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"github.com/deploymenttheory/guestweave/internal/diskimage"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/macaddress"
+	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
+	"github.com/deploymenttheory/guestweave/internal/serve"
 )
 
 // commandRunner is the common surface of all ported commands.

@@ -8,7 +8,7 @@
 package unattended
 
 import (
-	weavevnc "github.com/deploymenttheory/weave/internal/vnc"
+	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 
 // fKeysym maps F1..F12 (contiguous from 0xFFBE).

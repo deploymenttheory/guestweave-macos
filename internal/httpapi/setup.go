@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
 )
 
 func (s *APIServer) handleSetupVM(w http.ResponseWriter, r *http.Request) {

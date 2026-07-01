@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/deploymenttheory/weave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
 )
 
 // Logger ports tart's Logger protocol.

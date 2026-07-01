@@ -14,8 +14,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/agent"
-	"github.com/deploymenttheory/weave/internal/guestweaveagent/proto"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/agent"
+	"github.com/deploymenttheory/guestweave/internal/guestweaveagent/proto"
 )
 
 // Conn is the framed transport the clipboard engine drives — satisfied by both

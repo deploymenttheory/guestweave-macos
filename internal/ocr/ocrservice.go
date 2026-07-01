@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/vision"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"

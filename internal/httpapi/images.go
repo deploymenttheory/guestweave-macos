@@ -10,13 +10,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	weavecommand "github.com/deploymenttheory/weave/internal/command"
-	weaveconfig "github.com/deploymenttheory/weave/internal/config"
-	"github.com/deploymenttheory/weave/internal/credentials"
-	weaveerrors "github.com/deploymenttheory/weave/internal/errors"
-	"github.com/deploymenttheory/weave/internal/objcutil"
-	"github.com/deploymenttheory/weave/internal/oci"
-	weaveregistry "github.com/deploymenttheory/weave/internal/registry"
+	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+	"github.com/deploymenttheory/guestweave/internal/credentials"
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/objcutil"
+	"github.com/deploymenttheory/guestweave/internal/oci"
+	weaveregistry "github.com/deploymenttheory/guestweave/internal/registry"
 )
 
 func (s *APIServer) handleIPSW(w http.ResponseWriter, r *http.Request) {
