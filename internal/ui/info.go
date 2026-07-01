@@ -202,36 +202,77 @@ func runtimeOptions() string {
 
 // ── About / global ───────────────────────────────────────────────────────────
 
-func aboutText() string {
-	var b strings.Builder
-	line := func(label, value string) {
+const repoURL = "https://github.com/deploymenttheory/guestweave-macos"
+
+// aboutCredits builds the styled credits string for the standard macOS About
+// panel: bold section headers, monospaced column-aligned rows, and a clickable
+// repository link. Returned as an NSAttributedString for the panel's credits
+// option (the app name and version are shown by the panel itself).
+func aboutCredits() *foundation.MutableAttributedString {
+	doc := foundation.NewMutableAttributedString()
+	header := fontAttrs(aboutFont("boldSystemFontOfSize:", 13))
+	body := fontAttrs(aboutFont("userFixedPitchFontOfSize:", 11))
+
+	first := true
+	section := func(title string) {
+		if !first {
+			doc.AppendAttributedString(attrRun("\n", body))
+		}
+		first = false
+		doc.AppendAttributedString(attrRun(title+"\n", header))
+	}
+	row := func(label, value string) {
 		if value != "" {
-			fmt.Fprintf(&b, "%-14s %s\n", label+":", value)
+			doc.AppendAttributedString(attrRun(fmt.Sprintf("   %-13s%s\n", label, value), body))
 		}
 	}
 
-	b.WriteString("— weave —\n")
-	line("Version", weaveVersion())
-	line("Uptime", time.Since(processStart).Round(time.Second).String())
+	// (The panel header already shows the app name and version.)
+	section("Runtime")
+	row("Uptime", time.Since(processStart).Round(time.Second).String())
 
-	b.WriteString("\n— VMs —\n")
+	section("Virtual machines")
 	macRun, macTotal, linRun, linTotal := vmSlotStats()
-	line("macOS", fmt.Sprintf("%d running / %d total (host limit 2)", macRun, macTotal))
-	line("Linux", fmt.Sprintf("%d running / %d total (unlimited)", linRun, linTotal))
+	row("macOS", fmt.Sprintf("%d of %d running   (host limit 2)", macRun, macTotal))
+	row("Linux", fmt.Sprintf("%d of %d running   (unlimited)", linRun, linTotal))
 
-	b.WriteString("\n— Host —\n")
+	section("Host")
 	pi := foundation.NewProcessInfo()
-	line("macOS", pi.OperatingSystemVersionString())
-	line("Architecture", string(weaveplatform.CurrentArchitecture()))
-	line("Host memory", formatByteSize(int64(pi.PhysicalMemory())))
+	row("macOS", pi.OperatingSystemVersionString())
+	row("Chip", string(weaveplatform.CurrentArchitecture()))
+	row("Memory", formatByteSize(int64(pi.PhysicalMemory())))
 
-	b.WriteString("\n— Storage —\n")
+	section("Storage")
 	if cfg, err := weaveconfig.NewConfig(); err == nil {
-		line("Home", cfg.WeaveHomeDir)
+		row("Home", cfg.WeaveHomeDir)
 	}
-	line("Repository", "https://github.com/deploymenttheory/guestweave-macos")
 
-	return strings.TrimRight(b.String(), "\n")
+	// Clickable repository link footer.
+	doc.AppendAttributedString(attrRun("\n", body))
+	link := fontAttrs(aboutFont("userFixedPitchFontOfSize:", 11))
+	link.Set(appkit.NSLinkAttributeName(), objcutil.NSStr(repoURL))
+	doc.AppendAttributedString(foundation.NewAttributedStringWithStringAttributes(repoURL, link))
+
+	return doc
+}
+
+// attrRun builds one styled run for the credits string.
+func attrRun(s string, attrs *foundation.MutableDictionary) *foundation.AttributedString {
+	return foundation.NewAttributedStringWithStringAttributes(s, attrs)
+}
+
+// fontAttrs returns an attributes dictionary applying font.
+func fontAttrs(font *appkit.Font) *foundation.MutableDictionary {
+	d := foundation.NewMutableDictionary()
+	d.Set(appkit.NSFontAttributeName(), font)
+	return d
+}
+
+// aboutFont resolves an NSFont via a class selector taking a single size (e.g.
+// "boldSystemFontOfSize:" or "userFixedPitchFontOfSize:").
+func aboutFont(selector string, size float64) *appkit.Font {
+	id := purego.ID(purego.GetClass("NSFont")).Send(purego.RegisterName(selector), size)
+	return appkit.FontFromID(id)
 }
 
 func weaveVersion() string {
