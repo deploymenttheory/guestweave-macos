@@ -6,7 +6,6 @@ package run
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
@@ -17,7 +16,7 @@ import (
 
 func (c *Session) suspendVM(vmDir *layout.VMDirectory, cancelRun context.CancelFunc) {
 	if !weaveplatform.MacOSAtLeast(14) {
-		fmt.Println(
+		c.Reporter.Linef("%v",
 			weaveerrors.ErrSuspendFailed(
 				"this functionality is only supported on macOS 14 (Sonoma) or newer",
 			),
@@ -33,23 +32,23 @@ func (c *Session) suspendVM(vmDir *layout.VMDirectory, cancelRun context.CancelF
 		// devices, or its guest has no save/restore-compatible device set. The
 		// VM has not been paused yet, so report the failure and leave it running
 		// instead of tearing it down.
-		fmt.Println(weaveerrors.ErrSuspendFailed(validateErr.Error()))
+		c.Reporter.Linef("%v", weaveerrors.ErrSuspendFailed(validateErr.Error()))
 		return
 	}
 
-	fmt.Println("pausing VM to take a snapshot...")
+	c.Reporter.Linef("pausing VM to take a snapshot...")
 	if err := c.vm.SendErrorCompletion("pauseWithCompletionHandler:"); err != nil {
-		fmt.Println(weaveerrors.ErrSuspendFailed(err.Error()))
+		c.Reporter.Linef("%v", weaveerrors.ErrSuspendFailed(err.Error()))
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
 	}
-	fmt.Println("creating a snapshot...")
+	c.Reporter.Linef("creating a snapshot...")
 	if err := c.vm.SaveMachineStateTo(vmDir.StateURL()); err != nil {
-		fmt.Println(weaveerrors.ErrSuspendFailed(err.Error()))
+		c.Reporter.Linef("%v", weaveerrors.ErrSuspendFailed(err.Error()))
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
 	}
 
-	fmt.Println("snapshot created successfully! shutting down the VM...")
+	c.Reporter.Linef("snapshot created successfully! shutting down the VM...")
 	cancelRun()
 }

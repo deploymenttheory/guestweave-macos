@@ -44,6 +44,7 @@ This command owns the process's main thread and blocks until the VM stops.`,
 				opts.NoGraphics = true
 			}
 			opts.ClipboardOverride = clipboard.Override()
+			opts.Reporter = runReporter{}
 			opts.Name = args[0]
 			if err := opts.Validate(); err != nil {
 				return err

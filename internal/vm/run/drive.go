@@ -8,7 +8,6 @@ package run
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -24,7 +23,6 @@ import (
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/screenviewer"
 	"github.com/deploymenttheory/guestweave/internal/telemetry"
-	"github.com/deploymenttheory/guestweave/internal/ui"
 	"github.com/deploymenttheory/guestweave/internal/unattended"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
@@ -80,7 +78,7 @@ func (c *Session) driveVM(
 	vmConfig *vmconfig.VMConfig,
 ) {
 	fail := func(err error) {
-		fmt.Fprintln(os.Stderr, err)
+		c.Reporter.Errorf("%v", err)
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
 	}
@@ -102,7 +100,7 @@ func (c *Session) driveVM(
 		// or the RAM state staged by a full-state snapshot revert.
 		resume := false
 		if weaveplatform.MacOSAtLeast(14) && fsutil.Exists(vmDir.StateURL()) {
-			fmt.Println("restoring VM state from a snapshot...")
+			c.Reporter.Linef("restoring VM state from a snapshot...")
 			if err := c.vm.RestoreMachineStateFrom(vmDir.StateURL()); err != nil {
 				cancelVM()
 				fail(err)
@@ -114,7 +112,7 @@ func (c *Session) driveVM(
 				return
 			}
 			resume = true
-			fmt.Println("resuming VM...")
+			c.Reporter.Linef("resuming VM...")
 		}
 
 		if err := c.vm.Start(c.Recovery, resume); err != nil {
@@ -156,7 +154,7 @@ func (c *Session) driveVM(
 						c.ClipboardUser, c.ClipboardPassword, c.guestGOOS, c.guestGOARCH)
 					// The engine reports a live health snapshot each sync cycle to
 					// the Control ▸ Clipboard Status panel.
-					engine.SetReporter(ui.SetClipboardHealth)
+					engine.SetReporter(c.Reporter.ClipboardHealth)
 					// The resident guest agent is reached over the dedicated virtio
 					// serial channel built in buildVMInstance; hand the engine its
 					// host ends. SSH (creds below) is used only to install the agent.
@@ -177,48 +175,9 @@ func (c *Session) driveVM(
 					fail(err)
 					return
 				}
-
-				// Surface the URL to the run window's Connect ▸ Open VNC Viewer and
-				// View ▸ Toggle Screen Share menu items.
-				ui.SetVNCURL(vncURL)
-
-				// Record the VNC endpoint so other processes (the MCP screen tools)
-				// can connect to drive or view this VM by name; clear it on exit.
-				endpointPath := vmDir.VNCEndpointPath()
-				_ = os.WriteFile(endpointPath, []byte(vncURL), 0o600)
-				defer os.Remove(endpointPath)
-
-				_, onCI := objcutil.EnvironmentValue("CI")
-				if c.NoGraphics || onCI || c.ShowScreen {
-					fmt.Printf("VNC server is running at %s\n", vncURL)
-				} else {
-					fmt.Printf("Opening %s...\n", vncURL)
-					ui.OpenURL(vncURL)
-				}
-
-				// View-only screen viewer: a dedicated VNC client continuously
-				// captures the screen and serves it as MJPEG to a browser, with no
-				// path for the operator to send input into the guest.
-				if c.ShowScreen {
-					if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
-						if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
-							if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
-								go screenviewer.StreamVNCToViewer(
-									ctx,
-									match[2],
-									viewerPort,
-									match[1],
-									server,
-								)
-								fmt.Printf(
-									"View-only screen: open %s in a browser to watch (no input reaches the VM).\n",
-									server.URL(),
-								)
-								screenviewer.OpenInBrowser(server.URL())
-							}
-						}
-					}
-				}
+				c.publishVNC(ctx, vmDir, vncURL)
+				// Clear the published endpoint on exit.
+				defer os.Remove(vmDir.VNCEndpointPath())
 			}
 
 			if weaveplatform.MacOSAtLeast(14) {
@@ -251,9 +210,9 @@ func (c *Session) driveVM(
 		// In-process revert: the VM is stopped. Restore the snapshot's disk and
 		// firmware (staging its RAM state, if any), rebuild the VM, and re-point
 		// the window's view — all without exiting the process.
-		fmt.Printf("reverting to snapshot %q...\n", ref)
+		c.Reporter.Linef("reverting to snapshot %q...", ref)
 		if _, err := snapshot.Revert(vmDir, ref); err != nil {
-			fmt.Fprintln(os.Stderr, weaveerrors.ErrGeneric("revert failed: %v", err))
+			c.Reporter.Errorf("%v", weaveerrors.ErrGeneric("revert failed: %v", err))
 			break
 		}
 		// Rebuild from the already-loaded vmConfig so config.json is never
@@ -267,7 +226,7 @@ func (c *Session) driveVM(
 		}
 		c.vm = newVM
 		controlsocket.SetConnector(c.vm)
-		ui.SwapVM(c.vm)
+		c.Reporter.VMSwapped(c.vm)
 	}
 
 	if vncImpl != nil {
@@ -279,4 +238,38 @@ func (c *Session) driveVM(
 
 	telemetry.OTelShared().Flush()
 	os.Exit(0)
+}
+
+// publishVNC records the endpoint file and surfaces the VNC URL — the run
+// window's Connect ▸ Open VNC Viewer / View ▸ Toggle Screen Share menu items,
+// stdout or the system viewer — optionally starting the view-only MJPEG
+// screen server. Shared by driveVM and the Windows QEMU path. The endpoint
+// file lets other processes (the MCP screen tools) connect to drive or view
+// this VM by name; driveVM clears it on exit.
+func (c *Session) publishVNC(ctx context.Context, vmDir *layout.VMDirectory, vncURL string) {
+	c.Reporter.VNCURLPublished(vncURL)
+	_ = os.WriteFile(vmDir.VNCEndpointPath(), []byte(vncURL), 0o600)
+
+	_, onCI := objcutil.EnvironmentValue("CI")
+	if c.NoGraphics || onCI || c.ShowScreen {
+		c.Reporter.Linef("VNC server is running at %s", vncURL)
+	} else {
+		c.Reporter.Linef("Opening %s...", vncURL)
+		c.Reporter.OpenURL(vncURL)
+	}
+
+	// View-only screen viewer: a dedicated VNC client continuously captures
+	// the screen and serves it as MJPEG to a browser, with no path for the
+	// operator to send input into the guest.
+	if c.ShowScreen {
+		if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
+			if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
+				if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
+					go screenviewer.StreamVNCToViewer(ctx, match[2], viewerPort, match[1], server)
+					c.Reporter.Linef("View-only screen: open %s in a browser to watch (no input reaches the VM).", server.URL())
+					screenviewer.OpenInBrowser(server.URL())
+				}
+			}
+		}
+	}
 }

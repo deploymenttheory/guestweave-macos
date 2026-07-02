@@ -13,7 +13,6 @@ package run
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -85,6 +84,11 @@ type Options struct {
 	NoPointer         bool
 	NoKeyboard        bool
 	ShowScreen        bool // serve a view-only browser viewer of the VM screen
+
+	// Reporter receives the workflow's observable events (status lines, VNC
+	// URL, clipboard health, UI hooks). The CLI supplies the default
+	// stdout/ui implementation; nil falls back to a no-op.
+	Reporter Reporter
 }
 
 // Session is one run of a VM: the Options plus every piece of runtime state
@@ -129,6 +133,9 @@ type Session struct {
 // the AppKit loop is entered the process exits from within (os.Exit), as the
 // workflow always has.
 func Run(opts Options) error {
+	if opts.Reporter == nil {
+		opts.Reporter = nopReporter{}
+	}
 	s := &Session{Options: opts}
 	return s.runMainThread()
 }
@@ -344,8 +351,8 @@ func (c *Session) runMainThread() error {
 		}
 		mac, err := entry.VMDir.MACAddress()
 		if err == nil && mac == vmDirMAC && entry.Name != vmDir.Name() {
-			fmt.Println("There is already a running VM with the same MAC address!")
-			fmt.Println("Resetting VM to assign a new MAC address...")
+			c.Reporter.Linef("There is already a running VM with the same MAC address!")
+			c.Reporter.Linef("Resetting VM to assign a new MAC address...")
 			if err := vmDir.RegenerateMACAddress(); err != nil {
 				return err
 			}
@@ -403,7 +410,7 @@ func (c *Session) runMainThread() error {
 	// in place, no relaunch). Disabled for VNC runs, whose server is bound to the
 	// original VM instance; those fall back to the relaunch path.
 	c.inProcessRevertReady = !(c.VNC || c.VNCExperimental)
-	ui.RevertFunc = c.TriggerRevert
+	c.Reporter.BindRevertHandler(c.TriggerRevert)
 
 	// "weave stop" support.
 	sigint := make(chan os.Signal, 1)
@@ -428,12 +435,12 @@ func (c *Session) runMainThread() error {
 	signal.Notify(sigusr2, syscall.SIGUSR2)
 	go func() {
 		for range sigusr2 {
-			fmt.Println("Requesting guest OS to stop...")
+			c.Reporter.Linef("Requesting guest OS to stop...")
 			_ = c.vm.RequestStop()
 		}
 	}()
 
-	ui.SetRunInfo(c.buildRunInfo())
+	c.Reporter.RunInfoResolved(c.buildRunInfo())
 
 	useVNCWithoutGraphics := (c.VNC || c.VNCExperimental) && !c.Graphics
 	if c.NoGraphics || useVNCWithoutGraphics {

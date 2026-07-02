@@ -2,7 +2,7 @@
 // Server/Server.swift + Handlers.swift onto net/http + chi), served under
 // /weave/*. It exposes the same VM lifecycle as the CLI; handlers are thin
 // adapters over the internal/command command structs and the shared
-// internal/vmservice layer. The MCP server lives separately in internal/mcp.
+// internal/vm/service layer. The MCP server lives separately in internal/mcp.
 //go:build darwin
 
 package httpapi

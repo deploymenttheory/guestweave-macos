@@ -1,6 +1,6 @@
 // VM lifecycle handlers: list, get, create, clone, update, delete, run, stop,
 // suspend, rename. Each is a thin adapter over an internal/command struct or
-// the shared internal/vmservice layer.
+// the shared internal/vm/service layer.
 //go:build darwin
 
 package httpapi

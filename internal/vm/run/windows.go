@@ -10,7 +10,6 @@ package run
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -22,10 +21,7 @@ import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
-	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/qemu"
-	"github.com/deploymenttheory/guestweave/internal/screenviewer"
-	"github.com/deploymenttheory/guestweave/internal/ui"
 	"github.com/deploymenttheory/guestweave/internal/unattended"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
@@ -92,7 +88,7 @@ func (c *Session) runWindows(vmDir *layout.VMDirectory, vmConfig *vmconfig.VMCon
 	signal.Notify(sigint, syscall.SIGINT)
 	go func() {
 		<-sigint
-		fmt.Println("Stopping Windows VM...")
+		c.Reporter.Linef("Stopping Windows VM...")
 		cancelRun()
 	}()
 
@@ -137,22 +133,22 @@ func (c *Session) runWindows(vmDir *layout.VMDirectory, vmConfig *vmconfig.VMCon
 func (c *Session) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
 	cfg, err := unattended.LoadUnattendedConfig("windows-uefi")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "windows uefi automation: load preset: %v\n", err)
+		c.Reporter.Errorf("windows uefi automation: load preset: %v", err)
 		return
 	}
 	commands, err := unattended.ParseBootCommands(cfg.BootCommands)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "windows uefi automation: parse preset: %v\n", err)
+		c.Reporter.Errorf("windows uefi automation: parse preset: %v", err)
 		return
 	}
 	host, portStr, err := net.SplitHostPort(endpoint)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "windows uefi automation: bad VNC endpoint %q: %v\n", endpoint, err)
+		c.Reporter.Errorf("windows uefi automation: bad VNC endpoint %q: %v", endpoint, err)
 		return
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "windows uefi automation: bad VNC port %q: %v\n", portStr, err)
+		c.Reporter.Errorf("windows uefi automation: bad VNC port %q: %v", portStr, err)
 		return
 	}
 
@@ -173,7 +169,7 @@ func (c *Session) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
 		}
 	}
 	if vnc == nil {
-		fmt.Fprintf(os.Stderr, "windows uefi automation: connect VNC %s: %v\n", endpoint, err)
+		c.Reporter.Errorf("windows uefi automation: connect VNC %s: %v", endpoint, err)
 		return
 	}
 	defer vnc.Close()
@@ -186,15 +182,15 @@ func (c *Session) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
 		}
 	}
 
-	fmt.Println("Automating Windows UEFI boot (press-any-key) over OCR...")
+	c.Reporter.Linef("Automating Windows UEFI boot (press-any-key) over OCR...")
 	automation := unattended.NewAutomation(vnc, false, "")
 	if err := automation.ExecuteAll(ctx, commands); err != nil {
 		if ctx.Err() == nil {
-			fmt.Fprintf(os.Stderr, "windows uefi automation: %v\n", err)
+			c.Reporter.Errorf("windows uefi automation: %v", err)
 		}
 		return
 	}
-	fmt.Println("Windows Setup reached.")
+	c.Reporter.Linef("Windows Setup reached.")
 }
 
 // presentWindowsVNC reuses weave's VNC viewer plumbing for the QEMU VNC server:
@@ -204,30 +200,8 @@ func (c *Session) presentWindowsVNC(ctx context.Context, vmDir *layout.VMDirecto
 	vncImpl := weavevnc.NewQEMUVNC(endpoint)
 	vncURL, err := vncImpl.WaitForURL(ctx, false)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		c.Reporter.Errorf("%v", err)
 		return
 	}
-
-	ui.SetVNCURL(vncURL)
-	_ = os.WriteFile(vmDir.VNCEndpointPath(), []byte(vncURL), 0o600)
-
-	_, onCI := objcutil.EnvironmentValue("CI")
-	if c.NoGraphics || onCI || c.ShowScreen {
-		fmt.Printf("VNC server is running at %s\n", vncURL)
-	} else {
-		fmt.Printf("Opening %s...\n", vncURL)
-		ui.OpenURL(vncURL)
-	}
-
-	if c.ShowScreen {
-		if match := unattended.VNCURLPattern.FindStringSubmatch(vncURL); match != nil {
-			if viewerPort, convErr := strconv.Atoi(match[3]); convErr == nil {
-				if server, srvErr := screenviewer.NewScreenServer(); srvErr == nil {
-					go screenviewer.StreamVNCToViewer(ctx, match[2], viewerPort, match[1], server)
-					fmt.Printf("View-only screen: open %s in a browser to watch (no input reaches the VM).\n", server.URL())
-					screenviewer.OpenInBrowser(server.URL())
-				}
-			}
-		}
-	}
+	c.publishVNC(ctx, vmDir, vncURL)
 }
