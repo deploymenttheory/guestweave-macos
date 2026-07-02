@@ -17,17 +17,13 @@ import (
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 func openLocalVMDir(name string) (*layout.VMDirectory, error) {
-	storage, err := vmstorage.NewVMStorageLocal()
-	if err != nil {
-		return nil, err
-	}
-	return storage.Open(name)
+	return vmstorage.OpenLocal(name)
 }
 
 // CreateSnapshot creates a named disk snapshot of vmName. Trylock atomically

@@ -29,7 +29,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/screenviewer"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
 

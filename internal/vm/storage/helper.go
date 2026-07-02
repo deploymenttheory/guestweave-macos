@@ -4,7 +4,7 @@
 // errors.go.
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"errors"
@@ -18,9 +18,9 @@ import (
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/errkit"
 )
 
-// VMStorageHelperOpen ports VMStorageHelper.open(_:): dispatches to the OCI
-// or local storage depending on whether name parses as a RemoteName.
-func VMStorageHelperOpen(name string) (*layout.VMDirectory, error) {
+// Open ports VMStorageHelper.open(_:): dispatches to the OCI or local
+// storage depending on whether name parses as a RemoteName.
+func Open(name string) (*layout.VMDirectory, error) {
 	return missingVMWrap(name, func() (*layout.VMDirectory, error) {
 		if remoteName, err := oci.NewRemoteName(name); err == nil {
 			storage, err := NewVMStorageOCI()
@@ -38,8 +38,8 @@ func VMStorageHelperOpen(name string) (*layout.VMDirectory, error) {
 	})
 }
 
-// VMStorageHelperDelete ports VMStorageHelper.delete(_:).
-func VMStorageHelperDelete(name string) error {
+// Remove ports VMStorageHelper.delete(_:).
+func Remove(name string) error {
 	_, err := missingVMWrap(name, func() (*layout.VMDirectory, error) {
 		if remoteName, err := oci.NewRemoteName(name); err == nil {
 			storage, err := NewVMStorageOCI()
@@ -92,4 +92,17 @@ func isFileNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) ||
 		errors.Is(err, errCocoaFileNoSuchFile) ||
 		errors.Is(err, errCocoaFileReadNoSuchFile)
+}
+
+// OpenLocal opens a local VM directory by name, mapping missing-file and
+// PID-lock failures to VMDoesNotExist — the shared entry point replacing the
+// NewVMStorageLocal().Open(name) boilerplate.
+func OpenLocal(name string) (*layout.VMDirectory, error) {
+	return missingVMWrap(name, func() (*layout.VMDirectory, error) {
+		s, err := NewVMStorageLocal()
+		if err != nil {
+			return nil, err
+		}
+		return s.Open(name)
+	})
 }

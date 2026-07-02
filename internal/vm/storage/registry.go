@@ -2,7 +2,7 @@
 // to an OCI registry.
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"context"

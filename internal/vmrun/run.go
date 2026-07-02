@@ -50,7 +50,7 @@ import (
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 	"github.com/deploymenttheory/guestweave/internal/winimage"
 )

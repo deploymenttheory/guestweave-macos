@@ -1,7 +1,7 @@
 // Port of tart's VMStorageLocal.swift: the ~/.weave/vms local VM store.
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"os"

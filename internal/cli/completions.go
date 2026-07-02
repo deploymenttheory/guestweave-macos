@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 	"github.com/spf13/cobra"
 )
 

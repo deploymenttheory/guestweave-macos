@@ -23,7 +23,7 @@ import (
 
 	"github.com/deploymenttheory/guestweave/internal/ocr"
 	"github.com/deploymenttheory/guestweave/internal/unattended"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"

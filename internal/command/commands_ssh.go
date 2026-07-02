@@ -20,7 +20,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // convention (admin/admin) rather than lume's lume/lume.
@@ -35,11 +35,7 @@ type SSHCommand struct {
 }
 
 func (c *SSHCommand) Run(ctx context.Context) error {
-	storage, err := vmstorage.NewVMStorageLocal()
-	if err != nil {
-		return err
-	}
-	vmDir, err := storage.Open(c.Name)
+	vmDir, err := vmstorage.OpenLocal(c.Name)
 	if err != nil {
 		return err
 	}

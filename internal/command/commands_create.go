@@ -18,7 +18,7 @@ import (
 	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )

@@ -4,7 +4,7 @@
 // the oci package stays independent of the config schema.
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"encoding/base64"

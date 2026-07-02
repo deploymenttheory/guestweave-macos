@@ -17,7 +17,7 @@ import (
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // CollectVMInfos returns the structured listing for local and/or OCI VMs.
@@ -84,11 +84,7 @@ type VMDetails struct {
 // CollectVMDetails returns details for one local VM, including a
 // best-effort IP lookup when the VM is running.
 func CollectVMDetails(ctx context.Context, name string) (VMDetails, error) {
-	storage, err := vmstorage.NewVMStorageLocal()
-	if err != nil {
-		return VMDetails{}, err
-	}
-	vmDir, err := storage.Open(name)
+	vmDir, err := vmstorage.OpenLocal(name)
 	if err != nil {
 		return VMDetails{}, err
 	}
@@ -167,11 +163,7 @@ func SpawnDetachedRun(name string, extraArgs []string) error {
 func WaitForVMRunning(ctx context.Context, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		storage, err := vmstorage.NewVMStorageLocal()
-		if err != nil {
-			return err
-		}
-		vmDir, err := storage.Open(name)
+		vmDir, err := vmstorage.OpenLocal(name)
 		if err != nil {
 			return err
 		}

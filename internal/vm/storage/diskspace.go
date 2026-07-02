@@ -12,7 +12,7 @@
 // accounts for purgeable space that statfs(2) cannot see.
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
@@ -24,9 +24,9 @@ import (
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 )
 
-// AvailableCapacityBytes returns the volume capacity available for a
+// availableCapacityBytes returns the volume capacity available for a
 // user-initiated write at path, queried through the framework.
-func AvailableCapacityBytes(path string) (uint64, error) {
+func availableCapacityBytes(path string) (uint64, error) {
 	url := foundation.NewURLFileURLWithPathIsDirectory(path, true)
 
 	availableKey := foundation.NSURLVolumeAvailableCapacityKey()
@@ -73,7 +73,7 @@ func EnsureDiskSpace(requiredBytes uint64, initiator prune.Prunable) error {
 		return err
 	}
 
-	available, err := AvailableCapacityBytes(cachePath)
+	available, err := availableCapacityBytes(cachePath)
 	if err != nil {
 		return err
 	}

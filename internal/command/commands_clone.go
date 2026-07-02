@@ -15,7 +15,7 @@ import (
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // CloneCommand ports the Clone command.
@@ -75,7 +75,7 @@ func (c *CloneCommand) Run(ctx context.Context) error {
 		}
 	}
 
-	sourceVM, err := vmstorage.VMStorageHelperOpen(sourceName)
+	sourceVM, err := vmstorage.Open(sourceName)
 	if err != nil {
 		return err
 	}

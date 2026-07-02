@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/deploymenttheory/guestweave/internal/oci"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // FQNCommand ports the FQN command.

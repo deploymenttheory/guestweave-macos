@@ -10,7 +10,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // ResolveVMIP resolves a VM's IP using the given strategy, waiting up to wait
@@ -21,11 +21,7 @@ func ResolveVMIP(
 	resolver macaddress.IPResolutionStrategy,
 	wait uint16,
 ) (string, bool, error) {
-	storage, err := vmstorage.NewVMStorageLocal()
-	if err != nil {
-		return "", false, err
-	}
-	vmDir, err := storage.Open(name)
+	vmDir, err := vmstorage.OpenLocal(name)
 	if err != nil {
 		return "", false, err
 	}

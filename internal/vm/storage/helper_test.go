@@ -1,6 +1,6 @@
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"errors"

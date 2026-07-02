@@ -14,7 +14,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	"github.com/deploymenttheory/guestweave/internal/oci"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // PushCommand ports the Push command.
@@ -34,7 +34,7 @@ func (c *PushCommand) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	localVMDir, err := vmstorage.VMStorageHelperOpen(c.LocalName)
+	localVMDir, err := vmstorage.Open(c.LocalName)
 	if err != nil {
 		return err
 	}

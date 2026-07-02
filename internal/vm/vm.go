@@ -28,7 +28,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/deploymenttheory/guestweave/internal/telemetry"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 
 	"github.com/deploymenttheory/guestweave/internal/controlsocket"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"

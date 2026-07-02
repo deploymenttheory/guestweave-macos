@@ -3,7 +3,7 @@
 // they construct every cache storage, so they live with the storages).
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"fmt"
@@ -48,12 +48,12 @@ func ReclaimIfNeeded(requiredBytes uint64, initiator prune.Prunable) error {
 	}
 
 	// Figure out how much disk space is available (framework-queried; see
-	// AvailableCapacityBytes).
+	// availableCapacityBytes).
 	config, err := weaveconfig.NewConfig()
 	if err != nil {
 		return err
 	}
-	volumeAvailableCapacityCalculated, err := AvailableCapacityBytes(config.WeaveCacheDir)
+	volumeAvailableCapacityCalculated, err := availableCapacityBytes(config.WeaveCacheDir)
 	if err != nil {
 		return err
 	}

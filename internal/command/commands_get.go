@@ -11,7 +11,7 @@ import (
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // GetVMInfo is the get command's result row.
@@ -34,11 +34,7 @@ type GetCommand struct {
 
 // Info collects the VM's configuration and on-disk state.
 func (c *GetCommand) Info(ctx context.Context) (GetVMInfo, error) {
-	storage, err := vmstorage.NewVMStorageLocal()
-	if err != nil {
-		return GetVMInfo{}, err
-	}
-	vmDir, err := storage.Open(c.Name)
+	vmDir, err := vmstorage.OpenLocal(c.Name)
 	if err != nil {
 		return GetVMInfo{}, err
 	}

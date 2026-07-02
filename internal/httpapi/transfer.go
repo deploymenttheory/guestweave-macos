@@ -16,7 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // handleImport imports from a server-side .tvm path.
@@ -146,7 +146,7 @@ func (s *APIServer) handleExportDownload(w http.ResponseWriter, r *http.Request)
 	defer os.RemoveAll(dir)
 	archivePath := filepath.Join(dir, name+".tvm")
 
-	vmDir, err := vmstorage.VMStorageHelperOpen(name)
+	vmDir, err := vmstorage.Open(name)
 	if err != nil {
 		writeError(w, err)
 		return

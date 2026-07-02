@@ -14,7 +14,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // ImportCommand ports the Import command.

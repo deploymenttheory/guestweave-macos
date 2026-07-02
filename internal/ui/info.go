@@ -18,7 +18,7 @@ import (
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"

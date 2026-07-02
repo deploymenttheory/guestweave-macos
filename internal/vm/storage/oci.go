@@ -4,7 +4,7 @@
 // binding requires an error-handler block).
 //go:build darwin
 
-package vmstorage
+package storage
 
 import (
 	"context"
