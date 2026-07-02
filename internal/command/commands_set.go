@@ -31,7 +31,7 @@ type SetCommand struct {
 	RandomSerial bool
 	Disk         string
 	DiskSize     *uint16
-	Clipboard    clipboardFlagValues // persisted onto the VM's clipboard policy
+	Clipboard    ClipboardFlagValues // persisted onto the VM's clipboard policy
 }
 
 func (c *SetCommand) Run(ctx context.Context) error {
@@ -82,7 +82,7 @@ func (c *SetCommand) Run(ctx context.Context) error {
 
 	// Persist any clipboard-policy flags onto the VM's stored policy, layering
 	// the override on the existing per-VM policy (or the built-in default).
-	if override := c.Clipboard.override(); !override.IsZero() {
+	if override := c.Clipboard.Override(); !override.IsZero() {
 		base := clipboardpolicy.Default()
 		if vmConfig.ClipboardPolicy != nil {
 			base = *vmConfig.ClipboardPolicy

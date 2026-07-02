@@ -116,7 +116,7 @@ with `--no-clipboard` (or a disabled policy) has no engine to update.
 
 ## Audit log
 
-With `auditLog` on (via any of the `*-audit` flags) or the `WEAVE_CLIP_AUDIT=1`
+With `auditLog` on (via any of the `*-audit` flags) or the `GUESTWEAVE_CLIPBOARD_AUDIT=1`
 environment variable, the engine writes one JSON record per applied transfer,
 per policy rejection (e.g. oversize), and per live policy change to
 `~/.weave/logs/weave.clipboard-audit.log` (also emitted to OpenTelemetry):
@@ -126,7 +126,7 @@ per policy rejection (e.g. oversize), and per live policy change to
 {"time":"2026-06-30T19:40:01Z","vm":"my-vm","direction":"g2h","decision":"blocked","reason":"oversize","files":[{"name":"big.zip","size":83886080}],"bytes":83886080}
 ```
 
-Set `WEAVE_CLIP_DEBUG=1` instead for verbose, human-readable per-cycle sync
+Set `GUESTWEAVE_CLIPBOARD_DEBUG=1` instead for verbose, human-readable per-cycle sync
 tracing on stderr (development, not an audit source).
 
 ## HTTP API

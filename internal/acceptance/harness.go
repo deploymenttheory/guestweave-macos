@@ -1,5 +1,5 @@
 // Acceptance-test harness for weave: drives the real, code-signed binary
-// against an isolated $WEAVE_HOME and settings directory and provides the
+// against an isolated $GUESTWEAVE_STORAGE_HOME and settings directory and provides the
 // themed-suite test model. Suites (parent) hold cases (children); cases run
 // in order and may build on the VMs created by earlier cases in the same
 // suite.
@@ -22,7 +22,7 @@ import (
 // Harness owns the binary under test and the isolated environment.
 type Harness struct {
 	Bin        string // path to the signed weave binary
-	WeaveHome  string // isolated $WEAVE_HOME
+	WeaveHome  string // isolated $GUESTWEAVE_STORAGE_HOME
 	ConfigHome string // isolated $XDG_CONFIG_HOME
 	IPSW       string // cached restore image path (may be empty)
 	RepoRoot   string
@@ -41,7 +41,7 @@ type runResult struct {
 func (h *Harness) env(extra ...string) []string {
 	env := append([]string{}, os.Environ()...)
 	env = append(env,
-		"WEAVE_HOME="+h.WeaveHome,
+		"GUESTWEAVE_STORAGE_HOME="+h.WeaveHome,
 		"XDG_CONFIG_HOME="+h.ConfigHome,
 	)
 	return append(env, extra...)

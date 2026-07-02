@@ -23,7 +23,7 @@ import (
 // CollectVMInfos returns the structured listing for local and/or OCI VMs.
 // source is "", "local" or "oci"; dates are RFC 3339.
 func CollectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
-	command := &weavecommand.ListCommand{Source: source, Format: weavecommand.FormatJSON}
+	command := &weavecommand.ListCommand{Source: source, ISO8601Dates: true}
 
 	var infos []weavecommand.ListVMInfo
 	if source == "" || source == "local" {

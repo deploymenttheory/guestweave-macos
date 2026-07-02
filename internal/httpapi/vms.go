@@ -211,34 +211,6 @@ type setClipboardPolicyRequest struct {
 	Persist      bool   `json:"persist,omitempty"`
 }
 
-func (req setClipboardPolicyRequest) toArgs(name string) []string {
-	args := []string{"set", name}
-	addValue := func(value, flag string) {
-		if value != "" {
-			args = append(args, flag, value)
-		}
-	}
-	addValue(req.Enabled, "--enabled")
-	addValue(req.Direction, "--direction")
-	addValue(req.Formats, "--formats")
-	addValue(req.Files, "--files")
-	addValue(req.AllowedTypes, "--allowed-types")
-	addValue(req.Audit, "--audit")
-	if req.SessionMbps != 0 {
-		args = append(args, "--session-mbps", strconv.Itoa(req.SessionMbps))
-	}
-	if req.BandwidthPct != 0 {
-		args = append(args, "--bandwidth-pct", strconv.Itoa(req.BandwidthPct))
-	}
-	if req.MaxBytes != 0 {
-		args = append(args, "--max-bytes", strconv.FormatInt(req.MaxBytes, 10))
-	}
-	if req.Persist {
-		args = append(args, "--persist")
-	}
-	return args
-}
-
 // handleSetClipboardPolicy pushes a live clipboard-policy update onto a running
 // VM (POST /vms/{name}/clipboard), sharing the `weave clipboard set` path.
 func (s *APIServer) handleSetClipboardPolicy(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +219,21 @@ func (s *APIServer) handleSetClipboardPolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	name := chi.URLParam(r, "name")
-	command := &weavecommand.ClipboardCommand{Args: request.toArgs(name)}
+	command := &weavecommand.ClipboardSetCommand{
+		Name: name,
+		Values: weavecommand.ClipboardFlagValues{
+			Enabled:      request.Enabled,
+			Direction:    request.Direction,
+			Formats:      request.Formats,
+			Files:        request.Files,
+			AllowedTypes: request.AllowedTypes,
+			Audit:        request.Audit,
+			SessionMbps:  request.SessionMbps,
+			BandwidthPct: request.BandwidthPct,
+			MaxBytes:     request.MaxBytes,
+		},
+		Persist: request.Persist,
+	}
 	if err := command.Run(r.Context()); err != nil {
 		writeError(w, err)
 		return

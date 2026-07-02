@@ -4,9 +4,13 @@
 // $XDG_CONFIG_HOME/weave/config.yaml (default ~/.config/weave/config.yaml).
 //
 // Resolution order for the VM home directory (see NewConfig in config.go):
-// WEAVE_HOME environment variable wins, then Settings.DefaultStorage, then
-// ~/.weave. A broken settings file is non-fatal everywhere except in the
-// config command itself: commands warn and fall back to ~/.weave.
+// the GUESTWEAVE_STORAGE_HOME environment variable wins, then
+// Settings.DefaultStorage, then ~/.weave. A broken settings file is non-fatal
+// everywhere except in the config command itself: commands warn and fall
+// back to ~/.weave.
+//
+// The same file also carries the viper-managed flat keys (qemu:, hvmm:,
+// prune:, clipboard:, storage:) — see viper.go. Save() preserves them.
 //go:build darwin
 
 package config
@@ -142,7 +146,16 @@ func settingsOrWarn() *Settings {
 	return settings
 }
 
-// Save atomically writes the settings file with 0600 permissions.
+// settingsOwnedKeys are the top-level yaml keys marshalled from Settings.
+// Save overwrites exactly these, preserving any other keys in the file (the
+// viper-managed areas like qemu:, hvmm:, prune:, clipboard:, storage:).
+var settingsOwnedKeys = []string{
+	"defaultStorage", "storageLocations", "cacheDir", "registry",
+	"registries", "defaultClipboardPolicy", "logging",
+}
+
+// Save atomically writes the settings file with 0600 permissions, merging
+// over any non-Settings keys already present.
 func (s *Settings) Save() error {
 	path, err := settingsPath()
 	if err != nil {
@@ -152,7 +165,29 @@ func (s *Settings) Save() error {
 		return weaveerrors.ErrDirectoryCreationFailed(filepath.Dir(path))
 	}
 
-	data, err := yaml.Marshal(s)
+	merged := map[string]any{}
+	if existing, err := os.ReadFile(path); err == nil {
+		// Best-effort: an unparseable file is replaced wholesale rather than
+		// blocking the save (it is the config command that fixes it).
+		_ = yaml.Unmarshal(existing, &merged)
+	}
+	for _, key := range settingsOwnedKeys {
+		delete(merged, key)
+	}
+
+	ownData, err := yaml.Marshal(s)
+	if err != nil {
+		return err
+	}
+	own := map[string]any{}
+	if err := yaml.Unmarshal(ownData, &own); err != nil {
+		return err
+	}
+	for key, value := range own {
+		merged[key] = value
+	}
+
+	data, err := yaml.Marshal(merged)
 	if err != nil {
 		return err
 	}
@@ -161,7 +196,12 @@ func (s *Settings) Save() error {
 	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	// Keep the viper view consistent within long-lived processes (serve).
+	reloadConfigFile()
+	return nil
 }
 
 // ResolveStorageLocation resolves a storage location name (or absolute

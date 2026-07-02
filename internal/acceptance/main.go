@@ -1,5 +1,5 @@
 // Command acceptance drives the code-signed weave binary through themed
-// end-to-end suites against an isolated $WEAVE_HOME and settings directory.
+// end-to-end suites against an isolated $GUESTWEAVE_STORAGE_HOME and settings directory.
 //
 // Usage:
 //

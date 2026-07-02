@@ -1,6 +1,7 @@
 // Port of tart's Config.swift: resolves the weave home tree (honouring
-// WEAVE_HOME), creates the cache and tmp directories, and garbage-collects
-// stale tmp entries. Paths are plain strings managed with os/path/filepath.
+// GUESTWEAVE_STORAGE_HOME), creates the cache and tmp directories, and
+// garbage-collects stale tmp entries. Paths are plain strings managed with
+// os/path/filepath.
 //go:build darwin
 
 package config
@@ -24,9 +25,9 @@ type Config struct {
 func NewConfig() (*Config, error) {
 	var weaveHomeDir string
 
-	// Resolution order: WEAVE_HOME env var, then the settings file's default
-	// storage location, then ~/.weave.
-	if customWeaveHome := os.Getenv("WEAVE_HOME"); customWeaveHome != "" {
+	// Resolution order: the storage.home key (GUESTWEAVE_STORAGE_HOME), then
+	// the settings file's default storage location, then ~/.weave.
+	if customWeaveHome := StorageHome(); customWeaveHome != "" {
 		weaveHomeDir = customWeaveHome
 		if err := validateWeaveHome(weaveHomeDir); err != nil {
 			return nil, err
@@ -113,7 +114,7 @@ func (c *Config) GC() error {
 func validateWeaveHome(path string) error {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return weaveerrors.ErrGeneric(
-			"WEAVE_HOME is invalid: %s does not exist, yet we can't create it: %v", path, err)
+			"GUESTWEAVE_STORAGE_HOME is invalid: %s does not exist, yet we can't create it: %v", path, err)
 	}
 	return nil
 }

@@ -5,7 +5,7 @@
 // directly by the client and never touch this socket.
 //go:build darwin
 
-package command
+package vmrun
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func snapshotSocketPath(vmDir *vmdirectory.VMDirectory) string {
 // serveSnapshotSocket binds the snapshot socket and handles requests until ctx
 // is cancelled. Best-effort: if binding fails, running-VM snapshots are simply
 // unavailable (the client falls back to reporting the VM is busy).
-func serveSnapshotSocket(ctx context.Context, vmDir *vmdirectory.VMDirectory) {
+func (c *Session) serveSnapshotSocket(ctx context.Context, vmDir *vmdirectory.VMDirectory) {
 	path := snapshotSocketPath(vmDir)
 	_ = os.Remove(path)
 	listener, err := net.Listen("unix", path)
@@ -58,11 +58,11 @@ func serveSnapshotSocket(ctx context.Context, vmDir *vmdirectory.VMDirectory) {
 		if err != nil {
 			return
 		}
-		go handleSnapshotConn(vmDir, conn)
+		go c.handleSnapshotConn(vmDir, conn)
 	}
 }
 
-func handleSnapshotConn(vmDir *vmdirectory.VMDirectory, conn net.Conn) {
+func (c *Session) handleSnapshotConn(vmDir *vmdirectory.VMDirectory, conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Minute))
 
@@ -74,11 +74,11 @@ func handleSnapshotConn(vmDir *vmdirectory.VMDirectory, conn net.Conn) {
 
 	switch req.Command {
 	case "create":
-		if vm == nil {
+		if c.vm == nil {
 			writeSnapshotResponse(conn, snapshotSocketResponse{Error: "the VM is not running"})
 			return
 		}
-		snap, err := vm.CreateSnapshotPaused(vmDir, req.Name, req.Description)
+		snap, err := c.vm.CreateSnapshotPaused(vmDir, req.Name, req.Description)
 		if err != nil {
 			writeSnapshotResponse(conn, snapshotSocketResponse{Error: err.Error()})
 			return
@@ -87,7 +87,7 @@ func handleSnapshotConn(vmDir *vmdirectory.VMDirectory, conn net.Conn) {
 	case "revert":
 		// req.Name carries the snapshot ref. Trigger an in-process revert; the
 		// run loop rebuilds the VM and re-points the window in place.
-		if !triggerInProcessRevert(req.Name) {
+		if !c.TriggerRevert(req.Name) {
 			writeSnapshotResponse(conn, snapshotSocketResponse{
 				Error: "in-process revert is unavailable for this run (e.g. VNC); stop the VM and revert instead"})
 			return
@@ -108,11 +108,11 @@ func writeSnapshotResponse(conn net.Conn, resp snapshotSocketResponse) {
 
 // requestSnapshotOverSocket asks the run process to snapshot a running VM. The
 // returned error distinguishes "no run process listening" (so the caller can
-// report the VM as not running) via errSnapshotSocketUnavailable.
-func requestSnapshotOverSocket(vmDir *vmdirectory.VMDirectory, name, description string) (vmdirectory.Snapshot, error) {
+// report the VM as not running) via ErrSnapshotSocketUnavailable.
+func RequestSnapshotOverSocket(vmDir *vmdirectory.VMDirectory, name, description string) (vmdirectory.Snapshot, error) {
 	conn, err := net.DialTimeout("unix", snapshotSocketPath(vmDir), 5*time.Second)
 	if err != nil {
-		return vmdirectory.Snapshot{}, errSnapshotSocketUnavailable
+		return vmdirectory.Snapshot{}, ErrSnapshotSocketUnavailable
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Minute))
@@ -137,10 +137,10 @@ func requestSnapshotOverSocket(vmDir *vmdirectory.VMDirectory, name, description
 
 // requestRevertOverSocket asks the run process to revert a running VM in place.
 // Returns errSnapshotSocketUnavailable when no run process is listening.
-func requestRevertOverSocket(vmDir *vmdirectory.VMDirectory, ref string) error {
+func RequestRevertOverSocket(vmDir *vmdirectory.VMDirectory, ref string) error {
 	conn, err := net.DialTimeout("unix", snapshotSocketPath(vmDir), 5*time.Second)
 	if err != nil {
-		return errSnapshotSocketUnavailable
+		return ErrSnapshotSocketUnavailable
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
@@ -160,4 +160,4 @@ func requestRevertOverSocket(vmDir *vmdirectory.VMDirectory, ref string) error {
 
 // errSnapshotSocketUnavailable means no run process is listening on the VM's
 // snapshot socket (the VM is not running, or is too old to serve it).
-var errSnapshotSocketUnavailable = weaveerrors.ErrGeneric("no run process is serving the VM")
+var ErrSnapshotSocketUnavailable = weaveerrors.ErrGeneric("no run process is serving the VM")

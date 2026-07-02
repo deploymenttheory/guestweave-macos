@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
+
 	"github.com/deploymenttheory/guestweave/internal/clipboard/macpb"
 	"github.com/deploymenttheory/guestweave/internal/clipboard/wire"
 	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
@@ -45,12 +47,14 @@ const (
 	errorLogThreshold = 3
 )
 
-// clipDebug enables verbose per-cycle sync tracing to stderr when WEAVE_CLIP_DEBUG
-// is set. Used to diagnose host⇄guest conflict/ordering issues.
-var clipDebug = os.Getenv("WEAVE_CLIP_DEBUG") != ""
+// clipDebug reports whether verbose per-cycle sync tracing to stderr is
+// enabled (GUESTWEAVE_CLIPBOARD_DEBUG). Used to diagnose host⇄guest
+// conflict/ordering issues. Read lazily — the config layer initialises after
+// package init.
+func clipDebug() bool { return weaveconfig.ClipboardDebug() }
 
 func dbg(format string, a ...any) {
-	if clipDebug {
+	if clipDebug() {
 		fmt.Fprintf(os.Stderr, "[clipdbg] "+format+"\n", a...)
 	}
 }
@@ -251,7 +255,7 @@ func (e *Engine) recomputeDerived() {
 	e.allowedSet = e.policy.AllowedCanonical()
 	e.allowedList = sortedCanonicals(e.allowedSet)
 	e.limiter = newLimiter(e.policy.BytesPerSec())
-	e.auditOn = e.policy.AuditLog || os.Getenv("WEAVE_CLIP_AUDIT") != ""
+	e.auditOn = e.policy.AuditLog || weaveconfig.ClipboardAudit()
 }
 
 // SetPolicy requests a live policy change. The new policy is queued and applied

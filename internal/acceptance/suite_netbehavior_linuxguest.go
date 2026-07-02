@@ -151,10 +151,10 @@ func netBehaviorLinuxSuite() *Suite {
 	suite := &Suite{
 		Name: "netbehavior-linux",
 		Setup: func(h *Harness) error {
-			// The harness isolates WEAVE_HOME, but the multi-GB guest image is
+			// The harness isolates GUESTWEAVE_STORAGE_HOME, but the multi-GB guest image is
 			// cached under the real ~/.weave. Share the OCI cache read-side
 			// into the isolated home (cloned VMs still land in the isolated
-			// WEAVE_HOME/vms) so we reuse the pulled image instead of
+			// GUESTWEAVE_STORAGE_HOME/vms) so we reuse the pulled image instead of
 			// re-downloading it.
 			if err := shareOCICache(h); err != nil {
 				return err
@@ -411,7 +411,7 @@ func assertReachable(t *T, matrix reachability, name string, want bool) {
 }
 
 // realOCICacheDir is the user's real OCI image cache (weave pulls land here
-// when WEAVE_HOME is unset). The harness isolates WEAVE_HOME, so the suite
+// when GUESTWEAVE_STORAGE_HOME is unset). The harness isolates the home, so the suite
 // bridges to this directory rather than re-pulling.
 //
 // When running under sudo the effective home is /var/root, not the invoking
@@ -446,7 +446,7 @@ func imageAvailable(image string) bool {
 	return err == nil && info.IsDir()
 }
 
-// shareOCICache symlinks the real OCI cache into the isolated WEAVE_HOME so
+// shareOCICache symlinks the real OCI cache into the isolated home so
 // cloned VMs reuse the already-pulled image. It is a no-op when the real cache
 // is absent (the availability check then skips the suite) or already linked.
 func shareOCICache(h *Harness) error {

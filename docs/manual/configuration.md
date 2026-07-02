@@ -83,9 +83,9 @@ settings at startup, so changes apply to **new** invocations.
 ## Storage locations
 
 `defaultStorage` chooses where VMs live (the "home" tree). It is resolved in this
-order (see also `WEAVE_HOME`):
+order (see also `GUESTWEAVE_STORAGE_HOME`):
 
-1. `WEAVE_HOME` environment variable, if set.
+1. `GUESTWEAVE_STORAGE_HOME` environment variable, if set.
 2. `defaultStorage` from settings (a `storageLocations` name or absolute path).
 3. `~/.weave`.
 
@@ -122,11 +122,39 @@ configuration surface, enforcement details, the audit log, and the HTTP API.
 
 ## Environment variables
 
+Every first-party variable follows one convention: `GUESTWEAVE_<AREA>_<SETTING>`
+maps 1:1 to the config key `<area>.<setting>`, which is also settable in
+`config.yaml` under an `area:` block. Precedence: environment variable →
+config file → built-in default.
+
+| Variable | Config key | Effect |
+|----------|------------|--------|
+| `GUESTWEAVE_STORAGE_HOME` | `storage.home` | Override the home tree (VMs, cache, tmp, logs) |
+| `GUESTWEAVE_PRUNE_AUTO` | `prune.auto` | Automatic cache pruning under disk pressure (default `true`) |
+| `GUESTWEAVE_CLIPBOARD_DEBUG` | `clipboard.debug` | Verbose per-cycle clipboard sync tracing to stderr |
+| `GUESTWEAVE_CLIPBOARD_AUDIT` | `clipboard.audit` | Force-enable the clipboard transfer audit log |
+| `GUESTWEAVE_QEMU_SYSTEM_AARCH64` | `qemu.system_aarch64` | Path to `qemu-system-aarch64` (Windows guests) |
+| `GUESTWEAVE_QEMU_IMG` | `qemu.img` | Path to `qemu-img` |
+| `GUESTWEAVE_QEMU_FIRMWARE_CODE` | `qemu.firmware_code` | Path to the edk2 ARM UEFI firmware |
+| `GUESTWEAVE_QEMU_FIRMWARE_VARS` | `qemu.firmware_vars` | Path to the edk2 ARM UEFI vars template |
+| `GUESTWEAVE_HVMM_FIRMWARE` | `hvmm.firmware` | Firmware image for the experimental `hvmm` backend |
+| `GUESTWEAVE_HVMM_FRAMEBUFFER` | `hvmm.framebuffer` | PNG snapshot path for the hvmm framebuffer |
+| `GUESTWEAVE_HVMM_DISK` | `hvmm.disk` | virtio-blk disk image for the hvmm backend |
+| `GUESTWEAVE_HVMM_NVME` | `hvmm.nvme` | NVMe disk image for the hvmm backend |
+| `GUESTWEAVE_HVMM_ENTRY_EL1` | `hvmm.entry_el1` | Diagnostic: enter hvmm firmware at EL1 |
+| `GUESTWEAVE_HVMM_WATCHDOG_MS` | `hvmm.watchdog_ms` | hvmm vCPU liveness watchdog interval in ms |
+| `GUESTWEAVE_REGISTRY_HOSTNAME` / `_USERNAME` / `_PASSWORD` | — | Registry credentials (environment-only; never file-settable) |
+
+Boolean variables use `true`/`false`/`1`/`0`. External conventions are honoured
+as-is and are not part of the `GUESTWEAVE_` namespace:
+
 | Variable | Effect |
 |----------|--------|
-| `WEAVE_HOME` | Override the home tree (VMs, cache, tmp, logs) |
 | `XDG_CONFIG_HOME` | Override the settings-file directory (`…/weave/config.yaml`) |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | Honoured for registry/IPSW HTTP (Go-native; macOS system proxy is **not** consulted) |
 | `CI` | Suppresses opening the VNC viewer automatically on `run --vnc` |
+| `NO_COLOR` | Disables coloured terminal output |
+| `ANTHROPIC_API_KEY` | Default API key for `weave setup --mode agent` |
+| `OTEL_*` / `SENTRY_*` | OpenTelemetry / Sentry exporter configuration ([Logging](logging.md)) |
 
 See also [Logging](logging.md) and [Networking](networking.md).

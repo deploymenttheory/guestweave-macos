@@ -62,7 +62,10 @@ func (c *ExecCommand) Run(ctx context.Context) error {
 		_ = os.Chdir(dir)
 	}
 
-	conn, err := grpc.NewClient("unix://"+filepath.Base(controlSocketPath),
+	// "unix:path" is the relative-path gRPC target form; "unix://path" would
+	// parse "path" as a URI authority, which newer grpc-go rejects with
+	// "invalid (non-empty) authority".
+	conn, err := grpc.NewClient("unix:"+filepath.Base(controlSocketPath),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return weaveerrors.ErrGeneric(

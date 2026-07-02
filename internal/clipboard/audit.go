@@ -1,7 +1,7 @@
 // Structured clipboard transfer auditing: one JSON record per applied transfer
 // or policy rejection, written to the clipboard audit log (and OTel) when the
-// policy's AuditLog is on or WEAVE_CLIP_AUDIT is set. This is the enterprise
-// "who moved what across the boundary" trail, distinct from WEAVE_CLIP_DEBUG.
+// policy's AuditLog is on or GUESTWEAVE_CLIPBOARD_AUDIT is set. This is the enterprise
+// "who moved what across the boundary" trail, distinct from GUESTWEAVE_CLIPBOARD_DEBUG.
 //go:build darwin
 
 package clipboard

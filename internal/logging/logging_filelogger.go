@@ -1,6 +1,6 @@
 // File logger backing the logs command (port of lume's daemon log files).
 // Lines are appended to weave.info.log / weave.error.log under
-// $WEAVE_HOME/logs (so WEAVE_HOME relocates the logs too), with a size-capped
+// $GUESTWEAVE_STORAGE_HOME/logs (so GUESTWEAVE_STORAGE_HOME relocates the logs too), with a size-capped
 // rotation governed by the `logging` settings block (config.LogMaxSizeBytes /
 // LogKeepRotated): once a file exceeds the cap it is renamed to .old (keeping
 // one generation) or truncated in place. Logging failures are silent — logging

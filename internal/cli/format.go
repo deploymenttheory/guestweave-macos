@@ -1,9 +1,11 @@
-// Port of tart's Formatter/Format.swift. Swift's TextTable + Mirror
-// reflection becomes a small reflect-based plain-table renderer; the JSON
-// branch matches JSONEncoder's .prettyPrinted output.
+// Output formatting for get/list (port of tart's Formatter/Format.swift).
+// Swift's TextTable + Mirror reflection becomes a small reflect-based
+// plain-table renderer; the JSON branch matches JSONEncoder's .prettyPrinted
+// output. Rendering is a CLI concern: the command layer returns data and
+// this file turns it into text or JSON.
 //go:build darwin
 
-package command
+package cli
 
 import (
 	"encoding/json"
@@ -28,11 +30,6 @@ func ParseFormat(argument string) (Format, bool) {
 	default:
 		return "", false
 	}
-}
-
-// FormatAllValueStrings mirrors Format.allValueStrings.
-func FormatAllValueStrings() []string {
-	return []string{string(FormatText), string(FormatJSON)}
 }
 
 // RenderSingle ports Format.renderSingle(_:).

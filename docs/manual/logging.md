@@ -5,7 +5,7 @@ never breaks a command — failures to write are silent.
 
 ## Log files
 
-Under `<home>/logs` (follows `WEAVE_HOME`; default `~/.weave/logs`):
+Under `<home>/logs` (follows `GUESTWEAVE_STORAGE_HOME`; default `~/.weave/logs`):
 
 | File | Contents |
 |------|----------|
@@ -16,7 +16,7 @@ Under `<home>/logs` (follows `WEAVE_HOME`; default `~/.weave/logs`):
 
 The info/error lines are `YYYY-MM-DD HH:MM:SS.mmm [pid] message`. The clipboard
 audit log is one JSON object per line (enable it with a clipboard `*-audit` flag
-or `WEAVE_CLIP_AUDIT=1` — see [Clipboard](clipboard.md#audit-log)).
+or `GUESTWEAVE_CLIPBOARD_AUDIT=1` — see [Clipboard](clipboard.md#audit-log)).
 
 ## Viewing logs
 
