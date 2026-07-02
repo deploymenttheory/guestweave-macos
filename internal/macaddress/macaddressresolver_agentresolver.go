@@ -23,8 +23,10 @@ import (
 // caller can fall back to the DHCP and ARP strategies, mirroring the Swift
 // original's GRPCConnectionPoolError handling.
 func AgentResolverResolveIP(controlSocketPath string) (netip.Addr, bool, error) {
-	// Create a gRPC channel connected to the VM's control socket.
-	conn, err := grpc.NewClient("unix://"+controlSocketPath,
+	// Create a gRPC channel connected to the VM's control socket. "unix:path"
+	// is the relative-path gRPC target form; "unix://path" would parse "path"
+	// as a URI authority, which newer grpc-go rejects.
+	conn, err := grpc.NewClient("unix:"+controlSocketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 			var dialer net.Dialer

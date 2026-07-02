@@ -7,8 +7,9 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"strconv"
 	"time"
+
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 
 	hv "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/hypervisor"
 )
@@ -28,7 +29,7 @@ const (
 	bootEcamSize   uint64 = 0x1000_0000
 	bootVirtioBase uint64 = 0x0a00_0000 // first virtio-mmio slot (DTB virtio nodes)
 	bootVirtioSize uint64 = 0x200
-	cpsrEL2hMasked uint64 = 0x3c9        // M=EL2h (0x9) | DAIF (0x3c0) — firmware enters at EL2
+	cpsrEL2hMasked uint64 = 0x3c9       // M=EL2h (0x9) | DAIF (0x3c0) — firmware enters at EL2
 	mpidrCPU0      uint64 = 0x8000_0000 // MPIDR_EL1 for CPU 0: RES1 bit, affinity 0.0.0.0
 )
 
@@ -40,7 +41,7 @@ type Platform struct {
 	uart      *pl011
 	fwcfg     *fwcfg
 	flash     *cfiFlash
-	virtioblk *virtioBlk // nil unless a disk image is attached
+	virtioblk *virtioBlk      // nil unless a disk image is attached
 	nvme      *nvmeController // nil unless an NVMe disk image is attached
 	out       io.Writer
 	exits     int
@@ -161,7 +162,7 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	entryCPSR, mode := cpsrEL2hMasked, "EL2h"
 	if step {
 		entryCPSR, mode = cpsrEL1hMasked, "EL1h, single-step trace"
-	} else if os.Getenv("WEAVE_ENTRY_EL1") != "" {
+	} else if weaveconfig.HVMMEntryEL1() {
 		entryCPSR, mode = cpsrEL1hMasked, "EL1h" // diagnostic: virtual-timer IRQ targets EL1
 	}
 	m, vcpu, err := setupGuest(out, fwPath, entryCPSR)
@@ -177,10 +178,8 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 		// sampled. The physical-timer firmware's interrupts are delivered by the
 		// Apple vGIC without host involvement, so this no longer paces the timer.
 		vcpu.Watchdog = 2 * time.Second
-		if s := os.Getenv("WEAVE_WATCHDOG_MS"); s != "" {
-			if ms, err := strconv.Atoi(s); err == nil {
-				vcpu.Watchdog = time.Duration(ms) * time.Millisecond
-			}
+		if ms := weaveconfig.HVMMWatchdogMS(); ms > 0 {
+			vcpu.Watchdog = time.Duration(ms) * time.Millisecond
 		}
 	}
 	fmt.Fprintf(out, "✓ vCPU %d entering firmware at PC=0x%08x (%s)\n\n--- firmware output ---\n", vcpu.ID(), bootFlashBase, mode)
@@ -190,7 +189,7 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 	p := &Platform{uart: uart, out: out, maxExits: maxExits, unknown: map[uint64]int{}}
 	// fw_cfg with DMA (needed for ramfb's config write) + a ramfb framebuffer.
 	p.fwcfg = newFwCfg(m, newRamfb(m, out))
-	if disk := os.Getenv("WEAVE_HVMM_DISK"); disk != "" {
+	if disk := weaveconfig.HVMMDisk(); disk != "" {
 		data, derr := os.ReadFile(disk)
 		if derr != nil {
 			return fmt.Errorf("read disk %q: %w", disk, derr)
@@ -198,7 +197,7 @@ func Boot(out io.Writer, fwPath string, maxExits int, step bool) error {
 		p.virtioblk = newVirtioBlk(m, data)
 		fmt.Fprintf(out, "[disk] virtio-blk %s (%d MiB) at 0x%08x\n", disk, len(data)>>20, bootVirtioBase)
 	}
-	if disk := os.Getenv("WEAVE_HVMM_NVME"); disk != "" {
+	if disk := weaveconfig.HVMMNVMe(); disk != "" {
 		data, derr := os.ReadFile(disk)
 		if derr != nil {
 			return fmt.Errorf("read nvme disk %q: %w", disk, derr)

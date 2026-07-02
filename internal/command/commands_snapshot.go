@@ -18,6 +18,7 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vmrun"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
@@ -52,7 +53,7 @@ func CreateSnapshot(vmName, name, description string) (vmdirectory.Snapshot, err
 		defer func() { _ = lock.Unlock() }()
 		return vmDir.CreateSnapshot(vmdirectory.SnapshotCreateOptions{Name: name, Description: description})
 	}
-	return requestSnapshotOverSocket(vmDir, name, description)
+	return vmrun.RequestSnapshotOverSocket(vmDir, name, description)
 }
 
 // ListSnapshots returns vmName's disk snapshots.
@@ -89,8 +90,8 @@ func RevertSnapshot(vmName, ref string) error {
 
 	// Running VM: ask the run process to revert in place (rebuild + re-point the
 	// window). Fall back to "stop first" if it can't be reverted in-process.
-	if err := requestRevertOverSocket(vmDir, ref); err != nil {
-		if err == errSnapshotSocketUnavailable {
+	if err := vmrun.RequestRevertOverSocket(vmDir, ref); err != nil {
+		if err == vmrun.ErrSnapshotSocketUnavailable {
 			return weaveerrors.ErrGeneric("the VM is running; stop it before reverting a snapshot")
 		}
 		return err

@@ -2,13 +2,18 @@
 
 Every guestweave subcommand. Invoke as `weave <command> [flags] [args]`
 (the in-tool usage prints them as `weave <command>`). Run `weave --help`
-for the live list.
+for the live list, `weave <command> --help` (or `weave help <command>`) for
+per-command help with every flag, and `weave completion <shell>` to generate
+bash/zsh/fish shell completions (with live VM-name completion).
 
 Conventions: `<name>` is a local VM name; `<remote-name>` is a registry
-reference like `ghcr.io/org/image:tag`. Flags must precede positional arguments
-unless noted.
+reference like `ghcr.io/org/image:tag`. Long flags use standard double-dash
+syntax (`--no-graphics`; single-dash long flags are not accepted); short
+flags combine (`-it`). Flags and positional arguments can be intermixed,
+except for `exec`/`ssh` where everything after the VM name is passed to the
+guest verbatim.
 
-- [Lifecycle](#lifecycle): create, run, stop, suspend, delete, rename, clone, list, get, set, fqn
+- [Lifecycle](#lifecycle): create, run, stop, suspend, snapshot, delete, rename, clone, list, get, set, fqn
 - [Images & registry](#images--registry): pull, push, images, login, logout, import, export, prune, ipsw
 - [Guest access](#guest-access): ssh, exec, ip
 - [Diagnostics & config](#diagnostics--config): logs, config
@@ -106,6 +111,23 @@ Save a running VM's state and stop it (macOS 14+; the VM must have been run with
 
 ```sh
 weave suspend my-vm
+```
+
+### snapshot
+Named, point-in-time disk snapshots. `create` works on a running VM (the run
+process pauses, clones and resumes it live) or a stopped one; `revert` on a
+running VM rebuilds it in place when possible.
+
+```
+snapshot create <vm> <name> [-d|--description <text>]
+snapshot list <vm>            (alias: ls)
+snapshot revert <vm> <name>   (alias: restore)
+snapshot delete <vm> <name>   (alias: rm)
+```
+
+```sh
+weave snapshot create my-vm clean-install -d "fresh install"
+weave snapshot revert my-vm clean-install
 ```
 
 ### delete
@@ -389,7 +411,7 @@ Get or set persisted settings. See [Configuration](configuration.md).
 config get
 config storage <list|add <name> <path>|remove <name>|default <name>>
 config cache dir [path]
-config registry <status|ghcr [--registry H] [--organization O]>
+config registry <status|list|add <name> --organization O [--host H]|remove <name>|default <name>|ghcr [--registry H] [--organization O]>
 config network interfaces
 config logging [maxSizeMB [N] | keepRotated [true|false]]
 config clipboard [--direction ... --formats ... --files ... | reset]

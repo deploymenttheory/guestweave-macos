@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 )
 
 // stockFirmware is the Homebrew-installed edk2 build. It uses the ARM *virtual*
@@ -21,14 +23,14 @@ const stockFirmware = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 const physTimerFirmware = "edk2-aarch64-code-phytimer.fd"
 
 // ResolveFirmware picks the firmware image to boot, preferring the physical-timer
-// build that works at EL2 (FB21649319). Order: explicit path → WEAVE_HVMM_FIRMWARE
+// build that works at EL2 (FB21649319). Order: explicit path → GUESTWEAVE_HVMM_FIRMWARE
 // → the committed physical-timer firmware (resolved relative to this source tree)
 // → the stock virtual-timer firmware as a fallback.
 func ResolveFirmware(explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if p := os.Getenv("WEAVE_HVMM_FIRMWARE"); p != "" {
+	if p := weaveconfig.HVMMFirmware(); p != "" {
 		return p
 	}
 	if _, src, _, ok := runtime.Caller(0); ok {

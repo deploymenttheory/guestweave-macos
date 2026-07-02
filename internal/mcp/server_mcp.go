@@ -44,7 +44,7 @@ Typical workflows:
    images use admin/admin).
 5. Stop it with weave_stop_vm and remove it with weave_delete_vm.
 
-VM state lives under ~/.weave (or WEAVE_HOME). VMs must be stopped before
+VM state lives under ~/.weave (or GUESTWEAVE_STORAGE_HOME). VMs must be stopped before
 their configuration is changed or they are deleted.`
 
 func textResult(format string, args ...any) *mcp.CallToolResult {

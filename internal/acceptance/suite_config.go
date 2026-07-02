@@ -44,14 +44,14 @@ func configSuite() *Suite {
 				t.assertContains(yaml, "defaultStorage: fast", "persisted default")
 				t.assertContains(yaml, "storageLocations:", "persisted locations")
 			}},
-			{"WEAVE_HOME overrides the default storage", func(t *T, h *Harness) {
+			{"GUESTWEAVE_STORAGE_HOME overrides the default storage", func(t *T, h *Harness) {
 				override := filepath.Join(h.WeaveHome, "override-home")
 				if err := os.MkdirAll(override, 0o755); err != nil {
 					t.Fatalf("mkdir: %v", err)
 				}
-				result := h.RunEnv([]string{"WEAVE_HOME=" + override}, "config", "get")
+				result := h.RunEnv([]string{"GUESTWEAVE_STORAGE_HOME=" + override}, "config", "get")
 				t.assertExit(result, 0)
-				t.assertContains(result.Stdout, override, "WEAVE_HOME precedence")
+				t.assertContains(result.Stdout, override, "GUESTWEAVE_STORAGE_HOME precedence")
 			}},
 			{"registry ghcr sets the organization", func(t *T, h *Harness) {
 				t.assertExit(h.Run("config", "registry", "ghcr", "--organization", "acme"), 0)

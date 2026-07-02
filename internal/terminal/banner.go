@@ -7,7 +7,6 @@ package terminal
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/deploymenttheory/guestweave/internal/ci"
 )
@@ -41,11 +40,4 @@ func PrintBanner(w io.Writer) {
 			fmt.Fprintln(w, blue("  "+line))
 		}
 	}
-}
-
-// PrintBannerWithUsage prints the banner followed by the subcommand list.
-func PrintBannerWithUsage(w io.Writer, subcommands []string) {
-	PrintBanner(w)
-	fmt.Fprintf(w, "\nUsage: weave <subcommand> [options]\n\nSubcommands:\n  %s\n",
-		strings.Join(subcommands, ", "))
 }

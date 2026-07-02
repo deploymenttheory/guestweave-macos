@@ -43,7 +43,7 @@ func PruneStoragesFor(entries string) ([]prune.PrunableStorage, error) {
 // ReclaimIfNeeded ports Prune.reclaimIfNeeded(_:_:): frees cache space
 // when the volume cannot accommodate requiredBytes.
 func ReclaimIfNeeded(requiredBytes uint64, initiator prune.Prunable) error {
-	if _, ok := os.LookupEnv("WEAVE_NO_AUTO_PRUNE"); ok {
+	if !weaveconfig.PruneAuto() {
 		return nil
 	}
 

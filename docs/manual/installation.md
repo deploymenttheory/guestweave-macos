@@ -78,9 +78,9 @@ window menus).
 
 | Path | Purpose | Override |
 |------|---------|----------|
-| `~/.weave` | home tree: VMs, cache, tmp, logs | `WEAVE_HOME` env var, or a default storage location in settings |
+| `~/.weave` | home tree: VMs, cache, tmp, logs | `GUESTWEAVE_STORAGE_HOME` env var, or a default storage location in settings |
 | `~/.weave/cache` | OCI image + IPSW cache | `cacheDir` in settings |
-| `~/.weave/logs` | `weave.info.log` / `weave.error.log` | follows `WEAVE_HOME` |
+| `~/.weave/logs` | `weave.info.log` / `weave.error.log` | follows `GUESTWEAVE_STORAGE_HOME` |
 | `~/.config/weave/config.yaml` | settings file | `XDG_CONFIG_HOME` |
 
 See [Configuration](configuration.md) for the settings schema and environment

@@ -11,13 +11,15 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 )
 
 // ramfb is a QEMU "ramfb" display: a simple linear framebuffer whose location,
 // format, and geometry the guest sets by writing a 28-byte config to the
 // etc/ramfb fw_cfg file. edk2's QemuRamfbDxe turns it into a UEFI GOP, and
 // Windows ARM64's inbox BasicDisplay driver renders into it — no GPU model. weave
-// snapshots the framebuffer to a PNG (WEAVE_HVMM_FB, default /tmp/weave-fb.png)
+// snapshots the framebuffer to a PNG (GUESTWEAVE_HVMM_FRAMEBUFFER, default /tmp/weave-fb.png)
 // for headless verification; a live AppKit window can come later.
 type ramfb struct {
 	mem *Machine
@@ -57,7 +59,7 @@ func (r *ramfb) setConfig(b []byte) {
 }
 
 func (r *ramfb) renderLoop() {
-	path := os.Getenv("WEAVE_HVMM_FB")
+	path := weaveconfig.HVMMFramebuffer()
 	if path == "" {
 		path = "/tmp/weave-fb.png"
 	}

@@ -9,13 +9,13 @@ import (
 )
 
 func TestClipboardFlagValuesOverrideEmpty(t *testing.T) {
-	if !(clipboardFlagValues{}).override().IsZero() {
+	if !(ClipboardFlagValues{}).Override().IsZero() {
 		t.Error("empty flag values should produce a zero override")
 	}
 }
 
 func TestClipboardFlagValuesOverrideMapping(t *testing.T) {
-	v := clipboardFlagValues{
+	v := ClipboardFlagValues{
 		Enabled:      "on",
 		Direction:    "hostToGuest",
 		Formats:      "text,image",
@@ -25,7 +25,7 @@ func TestClipboardFlagValuesOverrideMapping(t *testing.T) {
 		BandwidthPct: 25,
 		MaxBytes:     2048,
 	}
-	o := v.override()
+	o := v.Override()
 	if o.IsZero() {
 		t.Fatal("override should not be zero")
 	}
@@ -63,7 +63,7 @@ func TestClipboardFlagValuesPartialOverrideInherits(t *testing.T) {
 		Formats:      clipboardpolicy.Formats{PlainText: true, RichText: true, Image: true},
 		FileTransfer: true,
 	}
-	o := clipboardFlagValues{Direction: "guestToHost"}.override()
+	o := ClipboardFlagValues{Direction: "guestToHost"}.Override()
 	p := o.Apply(base)
 	if p.Direction != clipboardpolicy.DirectionGuestToHost {
 		t.Errorf("direction = %s, want guestToHost", p.Direction)

@@ -6,7 +6,7 @@
 // main run path and instead drives the backend lifecycle directly, reusing the
 // existing VNC viewer plumbing (the same vnc:// URL handling driveVM uses).
 
-package command
+package vmrun
 
 import (
 	"context"
@@ -38,7 +38,7 @@ const windowsStopTimeout = 30 * time.Second
 
 // runWindows boots a Windows guest on the QEMU backend and blocks until it
 // stops (or the operator interrupts via SIGINT / `weave stop`).
-func (c *RunCommand) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) error {
+func (c *Session) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) error {
 	if vmConfig.Windows == nil {
 		return weaveerrors.ErrGeneric("VM %q is missing its Windows configuration", c.Name)
 	}
@@ -134,7 +134,7 @@ func (c *RunCommand) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconf
 // "windows-uefi" OCR preset, which presses past bootmgr's optical-boot prompt so
 // Windows Setup / WinPE starts without a human at the console. Errors are
 // non-fatal and only logged — the operator can always drive the prompt over VNC.
-func (c *RunCommand) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
+func (c *Session) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
 	cfg, err := unattended.LoadUnattendedConfig("windows-uefi")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "windows uefi automation: load preset: %v\n", err)
@@ -200,7 +200,7 @@ func (c *RunCommand) driveWindowsUEFISetup(ctx context.Context, endpoint string)
 // presentWindowsVNC reuses weave's VNC viewer plumbing for the QEMU VNC server:
 // it records the endpoint, opens the system viewer, and optionally starts the
 // view-only MJPEG screen server — mirroring driveVM's vncImpl block.
-func (c *RunCommand) presentWindowsVNC(ctx context.Context, vmDir *vmdirectory.VMDirectory, endpoint string) {
+func (c *Session) presentWindowsVNC(ctx context.Context, vmDir *vmdirectory.VMDirectory, endpoint string) {
 	vncImpl := weavevnc.NewQEMUVNC(endpoint)
 	vncURL, err := vncImpl.WaitForURL(ctx, false)
 	if err != nil {

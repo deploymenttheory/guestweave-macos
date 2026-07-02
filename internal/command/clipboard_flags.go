@@ -1,5 +1,6 @@
-// Shared clipboard-policy flag plumbing for the run, set, and config commands:
-// the raw CLI flag values and their translation into a clipboardpolicy.Override.
+// Shared clipboard-policy flag plumbing for the run, set, clipboard, and
+// config commands: the raw CLI flag values and their translation into a
+// clipboardpolicy.Override.
 //go:build darwin
 
 package command
@@ -10,9 +11,10 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
 )
 
-// clipboardFlagValues holds the raw clipboard-policy flag values shared by the
-// run, set, and config commands. Empty string / zero means "flag not supplied".
-type clipboardFlagValues struct {
+// ClipboardFlagValues holds the raw clipboard-policy flag values shared by the
+// run, set, clipboard, and config commands (and the HTTP API). Empty string /
+// zero means "flag not supplied".
+type ClipboardFlagValues struct {
 	Enabled      string // on|off
 	Direction    string // disabled|bidirectional|hostToGuest|guestToHost
 	Formats      string // csv of text,rich,image
@@ -24,9 +26,9 @@ type clipboardFlagValues struct {
 	MaxBytes     int64
 }
 
-// override translates the supplied flags into a clipboardpolicy.Override; unset
+// Override translates the supplied flags into a clipboardpolicy.Override; unset
 // flags leave the corresponding field nil so they inherit the underlying policy.
-func (v clipboardFlagValues) override() clipboardpolicy.Override {
+func (v ClipboardFlagValues) Override() clipboardpolicy.Override {
 	o := clipboardpolicy.Override{}
 	if v.Enabled != "" {
 		enabled := isOn(v.Enabled)
@@ -77,4 +79,23 @@ func parseCSVList(csv string) []string {
 		}
 	}
 	return out
+}
+
+func parseCSVSet(csv string) map[string]bool {
+	set := map[string]bool{}
+	for field := range strings.SplitSeq(csv, ",") {
+		if field = strings.TrimSpace(field); field != "" {
+			set[strings.ToLower(field)] = true
+		}
+	}
+	return set
+}
+
+func isOn(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "true", "1", "yes", "enable", "enabled":
+		return true
+	default:
+		return false
+	}
 }

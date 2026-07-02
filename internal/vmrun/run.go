@@ -1,10 +1,11 @@
-// Port of tart's Commands/Run.swift: boots a VM, optionally with a UI
-// window, VNC, additional disks, directory shares and custom networking.
-// The SwiftUI MainApp becomes a plain AppKit window hosting a
-// VZVirtualMachineView; menus are reduced to the essentials.
+// Package vmrun owns the run workflow (a port of tart's Commands/Run.swift):
+// it boots a VM, optionally with a UI window, VNC, additional disks,
+// directory shares and custom networking, and serves the sockets other weave
+// commands use to talk to the running VM. The CLI layer parses flags into an
+// Options and hands the process's main thread to Run.
 //go:build darwin
 
-package command
+package vmrun
 
 import (
 	"context"
@@ -52,9 +53,6 @@ import (
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 	"github.com/deploymenttheory/guestweave/internal/winimage"
 )
-
-// vm ports tart's global `var vm: VM?` from Run.swift.
-var vm *weavevm.VM
 
 // parseDiskImageSynchronizationMode ports the VZDiskImageSynchronizationMode
 // init(_ description:) extension.
@@ -112,8 +110,11 @@ func parseDiskImageCachingMode(description string) (idvirt.DiskImageCachingMode,
 	}
 }
 
-// RunCommand ports the Run command.
-type RunCommand struct {
+// Options carries the run parameters resolved by the CLI layer. String
+// fields hold the operator's flag values verbatim; the clipboard policy
+// override arrives pre-translated (clipboardpolicy.Override) so this package
+// stays independent of the CLI flag grammar.
+type Options struct {
 	Name              string
 	NoGraphics        bool
 	Serial            bool
@@ -124,18 +125,46 @@ type RunCommand struct {
 	Clipboard         bool
 	ClipboardUser     string
 	ClipboardPassword string
-	// Enterprise clipboard policy overrides (empty/zero = inherit from the VM
-	// config, then the settings default, then the built-in default).
-	ClipboardDirection    string // disabled|bidirectional|hostToGuest|guestToHost
-	ClipboardFormats      string // csv of text,rich,image
-	ClipboardFiles        string // on|off
-	ClipboardAllowedTypes string // csv of canonical types, e.g. "text/html,text/plain"
-	ClipboardAudit        string // on|off — structured transfer audit log
-	ClipboardSessionMbps  int
-	ClipboardBandwidthPct int
-	ClipboardMaxBytes     int64
+	// ClipboardOverride layers the CLI's enterprise clipboard-policy flags
+	// over the per-VM config, the settings default and the built-in default.
+	ClipboardOverride clipboardpolicy.Override
 
-	// Resolved in RunMainThread, consumed in driveVM.
+	Recovery          bool
+	VNC               bool
+	VNCExperimental   bool
+	VNCPassword       string
+	Disk              []string
+	RosettaTag        string
+	Dir               []string
+	SharedDir         []string
+	USBStorage        []string
+	Nested            bool
+	NetProfile        string
+	NetDevice         []string
+	NetBridged        []string
+	NetSoftnet        bool
+	NetSoftnetAllow   string
+	NetSoftnetBlock   string
+	NetSoftnetExpose  string
+	NetHost           bool
+	RootDiskOpts      string
+	Suspendable       bool
+	CaptureSystemKeys bool
+	NoTrackpad        bool
+	NoPointer         bool
+	NoKeyboard        bool
+	ShowScreen        bool // serve a view-only browser viewer of the VM screen
+}
+
+// Session is one run of a VM: the Options plus every piece of runtime state
+// the workflow used to keep in RunCommand fields and package globals.
+type Session struct {
+	Options
+
+	// vm ports tart's global `var vm: VM?` from Run.swift.
+	vm *weavevm.VM
+
+	// Resolved in runMainThread, consumed in driveVM.
 	clipboardPolicy clipboardpolicy.Policy
 	clipboardRun    bool
 	clipboardEngine *clipboard.Engine // retained for live policy updates
@@ -151,40 +180,30 @@ type RunCommand struct {
 	clipSerialHostW     *os.File
 	clipSerialVMReadFD  int // framework reads this (host→guest); raw/blocking
 	clipSerialVMWriteFD int // framework writes guest output here (guest→host)
-	Recovery            bool
-	VNC                 bool
-	VNCExperimental     bool
-	VNCPassword         string
-	Disk                []string
-	RosettaTag          string
-	Dir                 []string
-	SharedDir           []string
-	USBStorage          []string
-	Nested              bool
-	NetProfile          string
-	NetDevice           []string
-	NetBridged          []string
-	NetSoftnet          bool
-	NetSoftnetAllow     string
-	NetSoftnetBlock     string
-	NetSoftnetExpose    string
-	NetHost             bool
-	RootDiskOpts        string
-	Suspendable         bool
-	CaptureSystemKeys   bool
-	NoTrackpad          bool
-	NoPointer           bool
-	NoKeyboard          bool
-	ShowScreen          bool // serve a view-only browser viewer of the VM screen
 
 	// primaryBridged records whether the resolved primary NIC is bridged, so
 	// the VNC layer resolves the guest IP via ARP rather than DHCP. Set during
-	// RunMainThread.
+	// runMainThread.
 	primaryBridged bool
+
+	// In-process snapshot revert coordination (see TriggerRevert).
+	revertMu             sync.Mutex
+	currentVMCancel      context.CancelFunc
+	pendingRevertRef     string
+	inProcessRevertReady bool
+}
+
+// Run executes the run workflow on the calling goroutine, which must be the
+// process's locked main thread. It returns only on pre-flight errors; once
+// the AppKit loop is entered the process exits from within (os.Exit), as the
+// workflow always has.
+func Run(opts Options) error {
+	s := &Session{Options: opts}
+	return s.runMainThread()
 }
 
 // Validate ports Run.validate().
-func (c *RunCommand) Validate() error {
+func (c *Options) Validate() error {
 	if c.VNC && c.VNCExperimental {
 		return weaveerrors.ErrGeneric("--vnc and --vnc-experimental are mutually exclusive")
 	}
@@ -331,9 +350,9 @@ func (c *RunCommand) Validate() error {
 	return nil
 }
 
-// RunMainThread ports Run.runOnMainThread(); the caller must be on the
+// runMainThread ports Run.runOnMainThread(); the caller must be on the
 // process's main thread (it ends in NSApplication.run()).
-func (c *RunCommand) RunMainThread() error {
+func (c *Session) runMainThread() error {
 	localStorage, err := vmstorage.NewVMStorageLocal()
 	if err != nil {
 		return err
@@ -403,20 +422,20 @@ func (c *RunCommand) RunMainThread() error {
 		}
 	}
 
-	vm, err = c.buildVMInstance(vmDir, vmConfig)
+	c.vm, err = c.buildVMInstance(vmDir, vmConfig)
 	if err != nil {
 		return err
 	}
 	// Publish the VM for control socket clients (the monolith's package
 	// global; the controlsocket package now receives it explicitly).
-	controlsocket.SetConnector(vm)
+	controlsocket.SetConnector(c.vm)
 
 	var vncImpl weavevnc.VNC
 	switch {
 	case c.VNC:
 		vncImpl = weavevnc.NewScreenSharingVNC(vmConfig)
 	case c.VNCExperimental:
-		vncImpl = weavevnc.NewFullFledgedVNC(vm, c.VNCPassword)
+		vncImpl = weavevnc.NewFullFledgedVNC(c.vm, c.VNCPassword)
 	}
 
 	// Lock the VM. More specifically, lock "config.json", because we can't
@@ -447,13 +466,13 @@ func (c *RunCommand) RunMainThread() error {
 	// Serve disk-snapshot requests for this running VM (`weave snapshot create`,
 	// the REST API): the run process owns the VZ handle, so it performs the
 	// pause/clone/resume.
-	go serveSnapshotSocket(runCtx, vmDir)
+	go c.serveSnapshotSocket(runCtx, vmDir)
 
 	// Enable in-process snapshot revert (rebuild the VM and re-point the window
 	// in place, no relaunch). Disabled for VNC runs, whose server is bound to the
 	// original VM instance; those fall back to the relaunch path.
-	inProcessRevertReady = !(c.VNC || c.VNCExperimental)
-	ui.RevertFunc = triggerInProcessRevert
+	c.inProcessRevertReady = !(c.VNC || c.VNCExperimental)
+	ui.RevertFunc = c.TriggerRevert
 
 	// "weave stop" support.
 	sigint := make(chan os.Signal, 1)
@@ -479,7 +498,7 @@ func (c *RunCommand) RunMainThread() error {
 	go func() {
 		for range sigusr2 {
 			fmt.Println("Requesting guest OS to stop...")
-			_ = vm.RequestStop()
+			_ = c.vm.RequestStop()
 		}
 	}()
 
@@ -492,7 +511,7 @@ func (c *RunCommand) RunMainThread() error {
 		ui.RunHeadless()
 	} else {
 		(&ui.Window{
-			VM:                vm,
+			VM:                c.vm,
 			CaptureSystemKeys: c.CaptureSystemKeys,
 			Suspendable:       c.Suspendable,
 			VMDir:             vmDir.BaseURL,
@@ -507,7 +526,7 @@ func (c *RunCommand) RunMainThread() error {
 // is used both for the initial run and to rebuild the VM for an in-process
 // snapshot revert — the attachments are single-use, so each instance gets its
 // own freshly-resolved set.
-func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) (*weavevm.VM, error) {
+func (c *Session) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) (*weavevm.VM, error) {
 	var serialPorts []idvirt.SerialPortConfigurationProvider
 	if c.Serial {
 		ttyFD := weavevm.CreatePTY()
@@ -609,27 +628,19 @@ func (c *RunCommand) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *v
 	})
 }
 
-// In-process snapshot revert coordination. triggerInProcessRevert records the
-// target snapshot and cancels the current VM's context so driveVM's run loop
-// rebuilds the VM in place (same process and window) instead of exiting.
-var (
-	revertMu             sync.Mutex
-	currentVMCancel      context.CancelFunc
-	pendingRevertRef     string
-	inProcessRevertReady bool
-)
-
-// triggerInProcessRevert requests an in-process revert to ref. It returns false
-// when in-process revert isn't available (e.g. a VNC run, or no live VM yet), so
-// the caller can fall back to the relaunch path.
-func triggerInProcessRevert(ref string) bool {
-	revertMu.Lock()
-	defer revertMu.Unlock()
-	if !inProcessRevertReady || currentVMCancel == nil {
+// TriggerRevert requests an in-process revert to ref: it records the target
+// snapshot and cancels the current VM's context so driveVM's run loop
+// rebuilds the VM in place (same process and window) instead of exiting. It
+// returns false when in-process revert isn't available (e.g. a VNC run, or no
+// live VM yet), so the caller can fall back to the relaunch path.
+func (c *Session) TriggerRevert(ref string) bool {
+	c.revertMu.Lock()
+	defer c.revertMu.Unlock()
+	if !c.inProcessRevertReady || c.currentVMCancel == nil {
 		return false
 	}
-	pendingRevertRef = ref
-	currentVMCancel() // unblocks vm.Run; driveVM sees the pending ref and rebuilds
+	c.pendingRevertRef = ref
+	c.currentVMCancel() // unblocks vm.Run; driveVM sees the pending ref and rebuilds
 	return true
 }
 
@@ -637,7 +648,7 @@ func triggerInProcessRevert(ref string) bool {
 // snapshot if present, starts the VM, brings up VNC and the control socket,
 // then waits for the VM to finish. It loops to support in-process snapshot
 // revert, rebuilding the VM and re-pointing the window's view without exiting.
-func (c *RunCommand) driveVM(
+func (c *Session) driveVM(
 	ctx context.Context,
 	localStorage *vmstorage.VMStorageLocal,
 	vmDir *vmdirectory.VMDirectory,
@@ -659,16 +670,16 @@ func (c *RunCommand) driveVM(
 		// Per-iteration cancellation: an in-process revert cancels vmCtx to
 		// unblock vm.Run and rebuild the VM, without tearing down the process.
 		vmCtx, cancelVM := context.WithCancel(ctx)
-		revertMu.Lock()
-		currentVMCancel = cancelVM
-		revertMu.Unlock()
+		c.revertMu.Lock()
+		c.currentVMCancel = cancelVM
+		c.revertMu.Unlock()
 
 		// Restore from a staged state file: the initial resume of a suspended VM,
 		// or the RAM state staged by a full-state snapshot revert.
 		resume := false
 		if weaveplatform.MacOSAtLeast(14) && fsutil.Exists(vmDir.StateURL()) {
 			fmt.Println("restoring VM state from a snapshot...")
-			if err := vm.RestoreMachineStateFrom(vmDir.StateURL()); err != nil {
+			if err := c.vm.RestoreMachineStateFrom(vmDir.StateURL()); err != nil {
 				cancelVM()
 				fail(err)
 				return
@@ -682,7 +693,7 @@ func (c *RunCommand) driveVM(
 			fmt.Println("resuming VM...")
 		}
 
-		if err := vm.Start(c.Recovery, resume); err != nil {
+		if err := c.vm.Start(c.Recovery, resume); err != nil {
 			cancelVM()
 			var objcErr *objcerrors.ObjCError
 			if errors.As(err, &objcErr) && objcErr.Domain == "VZErrorDomain" &&
@@ -794,7 +805,7 @@ func (c *RunCommand) driveVM(
 			}
 		}
 
-		if err := vm.Run(vmCtx); err != nil {
+		if err := c.vm.Run(vmCtx); err != nil {
 			cancelVM()
 			fail(err)
 			return
@@ -802,11 +813,11 @@ func (c *RunCommand) driveVM(
 
 		// vm.Run returned: the guest stopped, the process is shutting down, or an
 		// in-process revert was requested. Claim any pending revert atomically.
-		revertMu.Lock()
-		ref := pendingRevertRef
-		pendingRevertRef = ""
-		currentVMCancel = nil
-		revertMu.Unlock()
+		c.revertMu.Lock()
+		ref := c.pendingRevertRef
+		c.pendingRevertRef = ""
+		c.currentVMCancel = nil
+		c.revertMu.Unlock()
 		cancelVM()
 
 		if ref == "" {
@@ -830,9 +841,9 @@ func (c *RunCommand) driveVM(
 			fail(err)
 			return
 		}
-		vm = newVM
-		controlsocket.SetConnector(vm)
-		ui.SwapVM(vm)
+		c.vm = newVM
+		controlsocket.SetConnector(c.vm)
+		ui.SwapVM(c.vm)
 	}
 
 	if vncImpl != nil {
@@ -858,17 +869,8 @@ func (c *RunCommand) driveVM(
 // ClipboardPolicyEnabled). --no-clipboard, or a resolved policy that is disabled
 // (e.g. settings/per-VM with direction=disabled), turns the clipboard off
 // entirely — neither the engine nor SPICE runs.
-func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
-	override := clipboardFlagValues{
-		Direction:    c.ClipboardDirection,
-		Formats:      c.ClipboardFormats,
-		Files:        c.ClipboardFiles,
-		AllowedTypes: c.ClipboardAllowedTypes,
-		Audit:        c.ClipboardAudit,
-		SessionMbps:  c.ClipboardSessionMbps,
-		BandwidthPct: c.ClipboardBandwidthPct,
-		MaxBytes:     c.ClipboardMaxBytes,
-	}.override()
+func (c *Session) resolveClipboard(vmConfig *vmconfig.VMConfig) {
+	override := c.ClipboardOverride
 	if c.Clipboard {
 		enabled := true
 		override.Enabled = &enabled
@@ -892,7 +894,7 @@ func (c *RunCommand) resolveClipboard(vmConfig *vmconfig.VMConfig) {
 // layers its override onto the engine's current policy, applies it live, and —
 // when persist is set — writes the resulting policy to the VM config in place
 // (a rename would invalidate this process's fcntl run-lock on config.json).
-func (c *RunCommand) serveClipboardControl(ctx context.Context, vmDir *vmdirectory.VMDirectory, engine *clipboard.Engine) {
+func (c *Session) serveClipboardControl(ctx context.Context, vmDir *vmdirectory.VMDirectory, engine *clipboard.Engine) {
 	handler := func(req clipboardctl.Request) (clipboardpolicy.Policy, error) {
 		// An empty override is a pure query (weave clipboard get): return the
 		// current policy without touching the engine.
@@ -920,7 +922,7 @@ func (c *RunCommand) serveClipboardControl(ctx context.Context, vmDir *vmdirecto
 
 // buildRunInfo collects the applied launch-time options (those not persisted in
 // the VM config) for the UI's VM Info panel.
-func (c *RunCommand) buildRunInfo() ui.RunInfo {
+func (c *Session) buildRunInfo() ui.RunInfo {
 	return ui.RunInfo{
 		Network:     c.networkSummary(),
 		Clipboard:   c.clipboardSummary(),
@@ -940,7 +942,7 @@ func (c *RunCommand) buildRunInfo() ui.RunInfo {
 	}
 }
 
-func (c *RunCommand) networkSummary() string {
+func (c *Session) networkSummary() string {
 	switch {
 	case c.NetHost:
 		return "host"
@@ -957,7 +959,7 @@ func (c *RunCommand) networkSummary() string {
 	}
 }
 
-func (c *RunCommand) clipboardSummary() string {
+func (c *Session) clipboardSummary() string {
 	if !c.clipboardRun || !c.clipboardPolicy.Active() {
 		return "disabled"
 	}
@@ -971,26 +973,7 @@ func (c *RunCommand) clipboardSummary() string {
 	return strings.Join(parts, " · ")
 }
 
-func parseCSVSet(csv string) map[string]bool {
-	set := map[string]bool{}
-	for field := range strings.SplitSeq(csv, ",") {
-		if field = strings.TrimSpace(field); field != "" {
-			set[strings.ToLower(field)] = true
-		}
-	}
-	return set
-}
-
-func isOn(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "on", "true", "1", "yes", "enable", "enabled":
-		return true
-	default:
-		return false
-	}
-}
-
-func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context.CancelFunc) {
+func (c *Session) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context.CancelFunc) {
 	if !weaveplatform.MacOSAtLeast(14) {
 		fmt.Println(
 			weaveerrors.ErrSuspendFailed(
@@ -1001,7 +984,7 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 		os.Exit(1)
 	}
 
-	validateErr := vm.ValidateSaveRestoreSupport()
+	validateErr := c.vm.ValidateSaveRestoreSupport()
 	if validateErr != nil {
 		// The running configuration can't be saved — typically the VM was
 		// started without --suspendable, so it still carries USB input/entropy
@@ -1013,13 +996,13 @@ func (c *RunCommand) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context
 	}
 
 	fmt.Println("pausing VM to take a snapshot...")
-	if err := vm.SendErrorCompletion("pauseWithCompletionHandler:"); err != nil {
+	if err := c.vm.SendErrorCompletion("pauseWithCompletionHandler:"); err != nil {
 		fmt.Println(weaveerrors.ErrSuspendFailed(err.Error()))
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
 	}
 	fmt.Println("creating a snapshot...")
-	if err := vm.SaveMachineStateTo(vmDir.StateURL()); err != nil {
+	if err := c.vm.SaveMachineStateTo(vmDir.StateURL()); err != nil {
 		fmt.Println(weaveerrors.ErrSuspendFailed(err.Error()))
 		telemetry.OTelShared().Flush()
 		os.Exit(1)
@@ -1050,7 +1033,7 @@ func createSerialPortConfiguration(
 // fileHandleForReading goes to the guest, guest output appears on
 // fileHandleForWriting — the VM reads the host→guest pipe and writes the
 // guest→host pipe; the host writes the former and reads the latter.
-func (c *RunCommand) clipboardAgentSerialPort() (idvirt.SerialPortConfigurationProvider, error) {
+func (c *Session) clipboardAgentSerialPort() (idvirt.SerialPortConfigurationProvider, error) {
 	if c.clipSerialHostR == nil || c.clipSerialHostW == nil {
 		var h2g, g2h [2]int // [read, write]
 		if err := syscall.Pipe(h2g[:]); err != nil {
@@ -1078,7 +1061,7 @@ func isInteractiveSession() bool {
 // resolveNICs resolves the run's network topology into a concrete NIC list.
 // Precedence: --net-profile, then --net-device, then the legacy --net-* flags,
 // then the VM config's persisted NICs (a single NAT NIC for legacy configs).
-func (c *RunCommand) resolveNICs(vmConfig *vmconfig.VMConfig) ([]vmconfig.NICConfig, error) {
+func (c *Session) resolveNICs(vmConfig *vmconfig.VMConfig) ([]vmconfig.NICConfig, error) {
 	switch {
 	case c.NetProfile != "":
 		return weavenetwork.ExpandProfile(c.NetProfile, weavenetwork.ProfileOptions{
@@ -1155,7 +1138,7 @@ func firstOrEmpty(s []string) string {
 }
 
 // additionalDiskAttachments ports Run.additionalDiskAttachments().
-func (c *RunCommand) additionalDiskAttachments() ([]idvirt.StorageDeviceConfigurationProvider, error) {
+func (c *Session) additionalDiskAttachments() ([]idvirt.StorageDeviceConfigurationProvider, error) {
 	var configurations []idvirt.StorageDeviceConfigurationProvider
 	for _, disk := range c.Disk {
 		configuration, err := craftAdditionalDisk(disk)
@@ -1169,7 +1152,7 @@ func (c *RunCommand) additionalDiskAttachments() ([]idvirt.StorageDeviceConfigur
 
 // usbMassStorageDevices ports lume's --usb-storage: each image is attached
 // read-write as a USB mass storage device (macOS 13+).
-func (c *RunCommand) usbMassStorageDevices() ([]idvirt.StorageDeviceConfigurationProvider, error) {
+func (c *Session) usbMassStorageDevices() ([]idvirt.StorageDeviceConfigurationProvider, error) {
 	if len(c.USBStorage) == 0 {
 		return nil, nil
 	}
@@ -1478,7 +1461,7 @@ func parseSharedDirectoryShare(parseFrom string) (directoryShare, error) {
 
 // directoryShares ports Run.directoryShares(), extended with lume's
 // --shared-dir entries which funnel into the same sharing devices.
-func (c *RunCommand) directoryShares() ([]idvirt.DirectorySharingDeviceConfigurationProvider, error) {
+func (c *Session) directoryShares() ([]idvirt.DirectorySharingDeviceConfigurationProvider, error) {
 	if len(c.Dir) == 0 && len(c.SharedDir) == 0 {
 		return nil, nil
 	}
@@ -1652,7 +1635,7 @@ func (s directoryShare) createConfiguration() (*idvirt.SharedDirectory, error) {
 }
 
 // rosettaDirectoryShare ports Run.rosettaDirectoryShare().
-func (c *RunCommand) rosettaDirectoryShare() ([]idvirt.DirectorySharingDeviceConfigurationProvider, error) {
+func (c *Session) rosettaDirectoryShare() ([]idvirt.DirectorySharingDeviceConfigurationProvider, error) {
 	if c.RosettaTag == "" {
 		return nil, nil
 	}
@@ -1702,14 +1685,4 @@ func pathHasMode(path string, mode uint16) bool {
 func storageBase(a obj.Object) *idvirt.StorageDeviceAttachment {
 	base, _ := obj.As(a, "VZStorageDeviceAttachment", idvirt.StorageDeviceAttachmentFromID)
 	return base
-}
-
-// absoluteURLString returns the absolute string of an NSURL handed back as an
-// untyped object, or "" when it is not a URL.
-func absoluteURLString(o obj.Object) string {
-	u, ok := obj.As(o, "NSURL", foundation.URLFromID)
-	if !ok {
-		return ""
-	}
-	return u.AbsoluteString()
 }

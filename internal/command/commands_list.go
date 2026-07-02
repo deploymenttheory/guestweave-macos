@@ -1,4 +1,5 @@
-// Port of tart's Commands/List.swift.
+// Port of tart's Commands/List.swift. Rendering lives in the CLI layer; this
+// command returns the sorted VM inventory as data.
 //go:build darwin
 
 package command
@@ -27,8 +28,9 @@ type ListVMInfo struct {
 // ListCommand ports the List command.
 type ListCommand struct {
 	Source string // "", "local" or "oci"
-	Format Format
-	Quiet  bool
+	// ISO8601Dates renders access dates as RFC 3339 instead of relative
+	// wording (used for JSON output and the HTTP API).
+	ISO8601Dates bool
 }
 
 func (c *ListCommand) Validate() error {
@@ -38,23 +40,24 @@ func (c *ListCommand) Validate() error {
 	return nil
 }
 
-func (c *ListCommand) Run(ctx context.Context) error {
+// Infos collects the VM inventory from the selected sources.
+func (c *ListCommand) Infos(ctx context.Context) ([]ListVMInfo, error) {
 	var infos []ListVMInfo
 
 	if c.Source == "" || c.Source == "local" {
 		localStorage, err := vmstorage.NewVMStorageLocal()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		entries, err := localStorage.List()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		batch := make([]ListVMInfo, 0, len(entries))
 		for _, entry := range entries {
 			info, err := c.VMInfo("local", entry.Name, entry.VMDir)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			batch = append(batch, info)
 		}
@@ -64,35 +67,24 @@ func (c *ListCommand) Run(ctx context.Context) error {
 	if c.Source == "" || c.Source == "oci" {
 		ociStorage, err := vmstorage.NewVMStorageOCI()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		entries, err := ociStorage.List()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		batch := make([]ListVMInfo, 0, len(entries))
 		for _, entry := range entries {
 			info, err := c.VMInfo("OCI", entry.Name, entry.VMDir)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			batch = append(batch, info)
 		}
 		infos = append(infos, SortedInfos(batch)...)
 	}
 
-	if c.Quiet {
-		for _, info := range infos {
-			fmt.Println(info.Name)
-		}
-	} else {
-		anyInfos := make([]any, 0, len(infos))
-		for _, info := range infos {
-			anyInfos = append(anyInfos, info)
-		}
-		fmt.Println(c.Format.RenderList(anyInfos))
-	}
-	return nil
+	return infos, nil
 }
 
 func (c *ListCommand) VMInfo(source string, name string, vmDir *vmdirectory.VMDirectory) (ListVMInfo, error) {
@@ -136,7 +128,7 @@ func SortedInfos(infos []ListVMInfo) []ListVMInfo {
 // formatAccessDate mirrors List.formatAccessDate: relative wording for text
 // output, ISO 8601 for JSON.
 func (c *ListCommand) formatAccessDate(accessDate time.Time) string {
-	if c.Format == FormatJSON {
+	if c.ISO8601Dates {
 		return accessDate.UTC().Format(time.RFC3339)
 	}
 	return relativeDateString(accessDate)

@@ -1,5 +1,5 @@
 // Theme: the file logger and the logs command. Runs commands that emit log
-// lines into the isolated $WEAVE_HOME/logs, then reads them back.
+// lines into the isolated $GUESTWEAVE_STORAGE_HOME/logs, then reads them back.
 //go:build darwin
 
 package main

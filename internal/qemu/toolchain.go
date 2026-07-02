@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 )
 
 // Toolchain is the resolved set of QEMU artifacts needed to boot an ARM64 guest.
@@ -46,8 +48,8 @@ var firmwareVarsNames = []string{"edk2-aarch64-vars.fd", "edk2-arm-vars.fd", "AA
 
 // ResolveToolchain locates the QEMU toolchain. Resolution order:
 //
-//  1. Explicit env overrides (WEAVE_QEMU_SYSTEM_AARCH64, WEAVE_QEMU_IMG,
-//     WEAVE_QEMU_FIRMWARE_CODE, WEAVE_QEMU_FIRMWARE_VARS).
+//  1. Explicit overrides (GUESTWEAVE_QEMU_SYSTEM_AARCH64, GUESTWEAVE_QEMU_IMG,
+//     GUESTWEAVE_QEMU_FIRMWARE_CODE, GUESTWEAVE_QEMU_FIRMWARE_VARS).
 //  2. A system install on PATH / under a Homebrew prefix (e.g. `brew install
 //     qemu`), with firmware from the matching share/qemu directory.
 //
@@ -57,21 +59,21 @@ func ResolveToolchain(cacheDir string) (*Toolchain, error) {
 	tc := &Toolchain{Accel: accelerator()}
 
 	tc.SystemAARCH64 = firstExisting(
-		os.Getenv("WEAVE_QEMU_SYSTEM_AARCH64"),
+		weaveconfig.QEMUSystemAarch64(),
 		lookPath("qemu-system-aarch64"),
 		underHomebrew("bin", "qemu-system-aarch64"),
 	)
 	tc.Img = firstExisting(
-		os.Getenv("WEAVE_QEMU_IMG"),
+		weaveconfig.QEMUImg(),
 		lookPath("qemu-img"),
 		underHomebrew("bin", "qemu-img"),
 	)
 	tc.FirmwareCode = firstExisting(append(
-		[]string{os.Getenv("WEAVE_QEMU_FIRMWARE_CODE")},
+		[]string{weaveconfig.QEMUFirmwareCode()},
 		firmwareCandidates(firmwareCodeNames)...,
 	)...)
 	tc.FirmwareVarsTemplate = firstExisting(append(
-		[]string{os.Getenv("WEAVE_QEMU_FIRMWARE_VARS")},
+		[]string{weaveconfig.QEMUFirmwareVars()},
 		firmwareCandidates(firmwareVarsNames)...,
 	)...)
 
@@ -91,13 +93,13 @@ func ResolveToolchain(cacheDir string) (*Toolchain, error) {
 func (tc *Toolchain) validate() error {
 	switch {
 	case tc.SystemAARCH64 == "":
-		return missing("qemu-system-aarch64", "WEAVE_QEMU_SYSTEM_AARCH64")
+		return missing("qemu-system-aarch64", "GUESTWEAVE_QEMU_SYSTEM_AARCH64")
 	case tc.Img == "":
-		return missing("qemu-img", "WEAVE_QEMU_IMG")
+		return missing("qemu-img", "GUESTWEAVE_QEMU_IMG")
 	case tc.FirmwareCode == "":
-		return missing("the edk2 ARM UEFI firmware (edk2-aarch64-code.fd)", "WEAVE_QEMU_FIRMWARE_CODE")
+		return missing("the edk2 ARM UEFI firmware (edk2-aarch64-code.fd)", "GUESTWEAVE_QEMU_FIRMWARE_CODE")
 	case tc.FirmwareVarsTemplate == "":
-		return missing("the edk2 ARM UEFI vars template (edk2-arm-vars.fd)", "WEAVE_QEMU_FIRMWARE_VARS")
+		return missing("the edk2 ARM UEFI vars template (edk2-arm-vars.fd)", "GUESTWEAVE_QEMU_FIRMWARE_VARS")
 	}
 	return nil
 }
@@ -188,7 +190,7 @@ func ensureDownloaded(cacheDir string, tc *Toolchain) error {
 	return fmt.Errorf(
 		"qemu: no QEMU found and auto-download is not yet configured.\n"+
 			"Install QEMU with `brew install qemu`, or place a build under %s, "+
-			"or set WEAVE_QEMU_SYSTEM_AARCH64 / WEAVE_QEMU_IMG.", qemuDir)
+			"or set GUESTWEAVE_QEMU_SYSTEM_AARCH64 / GUESTWEAVE_QEMU_IMG.", qemuDir)
 }
 
 // CreateDisk creates an empty qcow2 system disk of sizeGiB at path using

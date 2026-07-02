@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 
+	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
+	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	"github.com/deploymenttheory/guestweave/internal/terminal"
 )
 
@@ -26,4 +28,14 @@ func (c *IPSWCommand) Run(ctx context.Context) error {
 	spinner.Stop()
 	fmt.Println(absoluteURLString(image.URL()))
 	return nil
+}
+
+// absoluteURLString returns the absolute string of an NSURL handed back as an
+// untyped object, or "" when it is not a URL.
+func absoluteURLString(o obj.Object) string {
+	u, ok := obj.As(o, "NSURL", foundation.URLFromID)
+	if !ok {
+		return ""
+	}
+	return u.AbsoluteString()
 }

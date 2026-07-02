@@ -46,14 +46,14 @@
 // registry client and its authentication (commands_images.go).
 //
 // File logging and the logs command: commands append to
-// $WEAVE_HOME/logs/weave.{info,error}.log (10MB rotation) and
+// $GUESTWEAVE_STORAGE_HOME/logs/weave.{info,error}.log (10MB rotation) and
 // "logs info|error|all [--lines N] [-f]" tails and follows them
 // (logging_filelogger.go, commands_logs.go).
 //
 // Settings file and the config command: a YAML settings file at
 // $XDG_CONFIG_HOME/weave/config.yaml holds named storage locations, the
 // default storage, a cache directory override and named registry profiles.
-// Home resolution order is WEAVE_HOME, then the settings default storage,
+// Home resolution order is GUESTWEAVE_STORAGE_HOME, then the settings default storage,
 // then ~/.weave. "config get|storage|cache|registry|network" manages it;
 // "config registry list|add|remove|default" maintains the profiles (e.g.
 // "config registry add cua --organization trycua") consumed by the pull,
@@ -100,7 +100,7 @@
 // VM creation: "create" builds a macOS VM by downloading and installing a
 // restore image — "--from-ipsw" accepts a URL, a local file path or
 // "latest" (which fetches the latest VZMacOSRestoreImage and caches it
-// under $WEAVE_HOME/cache/IPSWs) — or an empty Linux VM with "--linux".
+// under $GUESTWEAVE_STORAGE_HOME/cache/IPSWs) — or an empty Linux VM with "--linux".
 // "--disk-size" sets the disk in GB (default 50) and "--disk-format"
 // chooses raw or ASIF (commands_create.go, ipswcache.go, diskimageformat.go).
 //
@@ -131,9 +131,9 @@
 // OCI VMs ("--source") as text or JSON, with "--quiet" for names only
 // (vmconfig.go, commands_set.go, commands_get.go, commands_list.go).
 //
-// Storage layout: local VMs live under $WEAVE_HOME/vms, OCI images are cached
-// under $WEAVE_HOME/cache/OCIs with per-layer deduplication, and in-progress
-// work is staged under $WEAVE_HOME/tmp with flock-based cleanup. VMs are
+// Storage layout: local VMs live under $GUESTWEAVE_STORAGE_HOME/vms, OCI images are cached
+// under $GUESTWEAVE_STORAGE_HOME/cache/OCIs with per-layer deduplication, and in-progress
+// work is staged under $GUESTWEAVE_STORAGE_HOME/tmp with flock-based cleanup. VMs are
 // locked with fcntl on config.json so two processes cannot run the same VM,
 // and a PID lock distinguishes a missing VM from a running one
 // (vmstoragelocal.go, vmstorageoci.go, vmdirectory.go, filelock.go,

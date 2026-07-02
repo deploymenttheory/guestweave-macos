@@ -55,7 +55,7 @@ func AvailableCapacityBytes(path string) (uint64, error) {
 
 // EnsureDiskSpace verifies the volume hosting weave's cache directory can
 // hold requiredBytes before a download starts. Prunable cache entries are
-// reclaimed first (unless WEAVE_NO_AUTO_PRUNE is set); if space is still
+// reclaimed first (unless prune.auto / GUESTWEAVE_PRUNE_AUTO is off); if space is still
 // insufficient the download is refused up front.
 func EnsureDiskSpace(requiredBytes uint64, initiator prune.Prunable) error {
 	if requiredBytes == 0 {

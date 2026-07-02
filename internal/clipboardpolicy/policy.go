@@ -52,7 +52,7 @@ type Policy struct {
 	SessionMbps     int       `json:"sessionMbps,omitempty" yaml:"sessionMbps,omitempty"`
 	BandwidthPct    int       `json:"bandwidthPct,omitempty" yaml:"bandwidthPct,omitempty"`
 	// AuditLog enables a structured audit record per clipboard transfer and
-	// rejection, written to the clipboard audit log (the WEAVE_CLIP_AUDIT env
+	// rejection, written to the clipboard audit log (the GUESTWEAVE_CLIPBOARD_AUDIT env
 	// var forces it on regardless of this field).
 	AuditLog bool `json:"auditLog,omitempty" yaml:"auditLog,omitempty"`
 }
