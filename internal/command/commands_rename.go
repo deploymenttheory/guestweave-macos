@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // RenameCommand ports the Rename command.

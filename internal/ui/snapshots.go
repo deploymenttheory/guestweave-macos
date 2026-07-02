@@ -14,7 +14,8 @@ import (
 	"syscall"
 
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
@@ -27,8 +28,8 @@ import (
 const nsAlertFirstButtonReturn = 1000
 
 // activeVMDirectory wraps the running VM's bundle directory for snapshot calls.
-func activeVMDirectory() *vmdirectory.VMDirectory {
-	return vmdirectory.NewVMDirectory(activeVMDir)
+func activeVMDirectory() *layout.VMDirectory {
+	return layout.NewVMDirectory(activeVMDir)
 }
 
 // takeSnapshotFromMenu is the Control ▸ Snapshots ▸ Take Snapshot action. It
@@ -52,7 +53,7 @@ func takeSnapshotFromMenu() {
 
 	vmDir := activeVMDirectory()
 	go func() {
-		snapshot, err := activeVM.CreateSnapshotPaused(vmDir, name, strings.TrimSpace(description))
+		snap, err := activeVM.CreateSnapshotPaused(vmDir, name, strings.TrimSpace(description))
 		// The idiomatic AppKit bindings auto-dispatch onto the main thread
 		// (purego.Main), so these alerts are safe to call straight from this
 		// goroutine — no manual main-thread hop needed.
@@ -60,7 +61,7 @@ func takeSnapshotFromMenu() {
 			showError("Snapshot failed", err.Error())
 			return
 		}
-		showInfo("Snapshot created", fmt.Sprintf("Created snapshot %q.", snapshot.Name))
+		showInfo("Snapshot created", fmt.Sprintf("Created snapshot %q.", snap.Name))
 	}()
 }
 
@@ -69,7 +70,7 @@ func takeSnapshotFromMenu() {
 // stopped and a detached process reverts the disk then re-runs with the same
 // options (mirrors restartVM).
 func revertSnapshotFromMenu() {
-	snapshots, err := activeVMDirectory().ListSnapshots()
+	snapshots, err := snapshot.List(activeVMDirectory())
 	if err != nil {
 		showError("Snapshots", err.Error())
 		return
@@ -100,7 +101,7 @@ func revertSnapshotFromMenu() {
 // touches the live disk, so it is safe while the VM runs.
 func deleteSnapshotFromMenu() {
 	vmDir := activeVMDirectory()
-	snapshots, err := vmDir.ListSnapshots()
+	snapshots, err := snapshot.List(vmDir)
 	if err != nil {
 		showError("Snapshots", err.Error())
 		return
@@ -117,14 +118,14 @@ func deleteSnapshotFromMenu() {
 	if !confirm("Delete snapshot?", fmt.Sprintf("Permanently delete snapshot %q?", names[idx])) {
 		return
 	}
-	if err := vmDir.DeleteSnapshot(names[idx]); err != nil {
+	if err := snapshot.Delete(vmDir, names[idx]); err != nil {
 		showError("Delete failed", err.Error())
 		return
 	}
 	showInfo("Snapshot deleted", fmt.Sprintf("Deleted snapshot %q.", names[idx]))
 }
 
-func snapshotNames(snapshots []vmdirectory.Snapshot) []string {
+func snapshotNames(snapshots []snapshot.Snapshot) []string {
 	names := make([]string, len(snapshots))
 	for i, s := range snapshots {
 		names[i] = s.Name

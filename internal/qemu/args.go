@@ -5,8 +5,8 @@ package qemu
 import (
 	"fmt"
 
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 type Spec struct {
 	Toolchain *Toolchain
 	Config    *vmconfig.VMConfig
-	VMDir     *vmdirectory.VMDirectory
+	VMDir     *layout.VMDirectory
 
 	// InstallISO, when set, is attached as a second NVMe drive with bootindex 0
 	// so UEFI boots \efi\boot\bootaa64.efi from it before the system disk.

@@ -16,9 +16,9 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/terminal"
 	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
@@ -80,7 +80,7 @@ func (c *CreateCommand) Validate() error {
 }
 
 func (c *CreateCommand) Run(ctx context.Context) error {
-	tmpVMDir, err := vmdirectory.VMDirectoryTemporary()
+	tmpVMDir, err := layout.VMDirectoryTemporary()
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func (c *CreateCommand) Run(ctx context.Context) error {
 // config as a persisted NIC topology. The primary NIC inherits the config's
 // MAC; any secondary NICs get deterministic derived MACs. A no-op when no
 // profile was requested.
-func (c *CreateCommand) persistNetworkProfile(vmDir *vmdirectory.VMDirectory) error {
+func (c *CreateCommand) persistNetworkProfile(vmDir *layout.VMDirectory) error {
 	if c.NetProfile == "" {
 		return nil
 	}

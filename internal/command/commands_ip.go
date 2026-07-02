@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // IPCommand ports the IP command.
@@ -23,11 +23,7 @@ type IPCommand struct {
 }
 
 func (c *IPCommand) Run(ctx context.Context) error {
-	storage, err := vmstorage.NewVMStorageLocal()
-	if err != nil {
-		return err
-	}
-	vmDir, err := storage.Open(c.Name)
+	vmDir, err := vmstorage.OpenLocal(c.Name)
 	if err != nil {
 		return err
 	}

@@ -19,8 +19,8 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmservice"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmservice "github.com/deploymenttheory/guestweave/internal/vm/service"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // handleExec runs a command in the guest over SSH (combined output + exit

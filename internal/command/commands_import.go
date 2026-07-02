@@ -6,14 +6,15 @@ package command
 import (
 	"context"
 	"fmt"
+	"github.com/deploymenttheory/guestweave/internal/vm/archive"
 	"os"
 	"strings"
 
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // ImportCommand ports the Import command.
@@ -37,7 +38,7 @@ func (c *ImportCommand) Run(ctx context.Context) error {
 
 	// Create a temporary VM directory to which we will load the export file,
 	// and lock it to prevent garbage collection while we're running.
-	tmpVMDir, err := vmdirectory.VMDirectoryTemporary()
+	tmpVMDir, err := layout.VMDirectoryTemporary()
 	if err != nil {
 		return err
 	}
@@ -52,7 +53,7 @@ func (c *ImportCommand) Run(ctx context.Context) error {
 
 	// Populate the temporary VM directory with the export file contents.
 	fmt.Println("importing...")
-	if err := tmpVMDir.ImportFromArchive(c.Path); err != nil {
+	if err := archive.Import(tmpVMDir, c.Path); err != nil {
 		return err
 	}
 

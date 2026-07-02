@@ -17,7 +17,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/terminal"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"

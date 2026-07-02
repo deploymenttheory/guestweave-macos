@@ -7,10 +7,11 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/deploymenttheory/guestweave/internal/vm/archive"
 	"os"
 	"strings"
 
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // ExportCommand ports the Export command.
@@ -35,11 +36,11 @@ func (c *ExportCommand) Run(ctx context.Context) error {
 
 	fmt.Println("exporting...")
 
-	vmDir, err := vmstorage.VMStorageHelperOpen(c.Name)
+	vmDir, err := vmstorage.Open(c.Name)
 	if err != nil {
 		return err
 	}
-	return vmDir.ExportToArchive(correctedPath)
+	return archive.Export(vmDir, correctedPath)
 }
 
 func userWantsOverwrite(filename string) bool {

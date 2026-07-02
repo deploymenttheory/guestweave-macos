@@ -17,8 +17,8 @@ import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/qemu"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/winimage"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
@@ -34,7 +34,7 @@ const (
 
 // createWindows acquires Windows install media, creates the system disk and
 // writes the VM config into vmDir.
-func (c *CreateCommand) createWindows(ctx context.Context, vmDir *vmdirectory.VMDirectory) error {
+func (c *CreateCommand) createWindows(ctx context.Context, vmDir *layout.VMDirectory) error {
 	cfg, err := weaveconfig.NewConfig()
 	if err != nil {
 		return err

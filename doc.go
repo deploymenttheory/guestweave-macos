@@ -136,7 +136,7 @@
 // work is staged under $GUESTWEAVE_STORAGE_HOME/tmp with flock-based cleanup. VMs are
 // locked with fcntl on config.json so two processes cannot run the same VM,
 // and a PID lock distinguishes a missing VM from a running one
-// (vmstoragelocal.go, vmstorageoci.go, vmdirectory.go, filelock.go,
+// (vmstorage, vm/layout, filelock.go,
 // pidlock.go).
 //
 // Pruning and garbage collection: "prune" reclaims space from cached images

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	"github.com/deploymenttheory/guestweave/internal/diskimage"
 	"github.com/deploymenttheory/guestweave/internal/fetcher"
@@ -17,7 +17,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/prune"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
@@ -178,7 +178,7 @@ func TestVMConfigJSONRoundtrip(t *testing.T) {
 func TestVMDirectoryLifecycle(t *testing.T) {
 	t.Setenv("GUESTWEAVE_STORAGE_HOME", filepath.Join(t.TempDir(), "weavehome"))
 
-	dir, err := vmdirectory.VMDirectoryTemporary()
+	dir, err := layout.VMDirectoryTemporary()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestVMDirectoryLifecycle(t *testing.T) {
 		t.Fatal("expected initialized")
 	}
 	state, err := dir.State()
-	if err != nil || state != vmdirectory.VMDirectoryStateStopped {
+	if err != nil || state != layout.VMDirectoryStateStopped {
 		t.Fatalf("state = %v, %v", state, err)
 	}
 	size, err := dir.SizeBytes()

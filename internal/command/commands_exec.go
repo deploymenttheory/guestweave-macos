@@ -20,7 +20,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/terminal"
-	"github.com/deploymenttheory/guestweave/internal/vmstorage"
+	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
 // ExecCommand ports the Exec command.

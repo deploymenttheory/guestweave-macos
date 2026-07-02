@@ -4,7 +4,7 @@ package cli
 
 import (
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
-	"github.com/deploymenttheory/guestweave/internal/vmrun"
+	vmrun "github.com/deploymenttheory/guestweave/internal/vm/run"
 	"github.com/spf13/cobra"
 )
 
@@ -44,6 +44,7 @@ This command owns the process's main thread and blocks until the VM stops.`,
 				opts.NoGraphics = true
 			}
 			opts.ClipboardOverride = clipboard.Override()
+			opts.Reporter = runReporter{}
 			opts.Name = args[0]
 			if err := opts.Validate(); err != nil {
 				return err

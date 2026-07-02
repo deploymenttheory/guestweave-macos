@@ -9,7 +9,8 @@ import (
 	"fmt"
 
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
@@ -24,12 +25,12 @@ func (vm *VM) Resume() error { return vm.SendErrorCompletion("resumeWithCompleti
 // state) of a running VM: it pauses for a consistent capture, saves the machine
 // state, clones the disk, then resumes. The VM keeps running afterwards, and
 // reverting later resumes this exact moment rather than rebooting. (For a
-// stopped VM, call vmDir.CreateSnapshot directly — there is no RAM to capture.)
-func (vm *VM) CreateSnapshotPaused(vmDir *vmdirectory.VMDirectory, name, description string) (vmdirectory.Snapshot, error) {
+// stopped VM, call snapshot.Create directly — there is no RAM to capture.)
+func (vm *VM) CreateSnapshotPaused(vmDir *layout.VMDirectory, name, description string) (snapshot.Snapshot, error) {
 	if err := vm.Pause(); err != nil {
-		return vmdirectory.Snapshot{}, fmt.Errorf("failed to pause the VM: %w", err)
+		return snapshot.Snapshot{}, fmt.Errorf("failed to pause the VM: %w", err)
 	}
-	snap, createErr := vmDir.CreateSnapshot(vmdirectory.SnapshotCreateOptions{
+	snap, createErr := snapshot.Create(vmDir, snapshot.CreateOptions{
 		Name:               name,
 		Description:        description,
 		ExtraRequiredBytes: int64(vm.Config.MemorySize),
