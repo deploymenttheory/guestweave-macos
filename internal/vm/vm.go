@@ -16,7 +16,6 @@ package vm
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -34,16 +33,13 @@ import (
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	"github.com/deploymenttheory/guestweave/internal/ci"
-	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	"github.com/deploymenttheory/guestweave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/fetcher"
 	"github.com/deploymenttheory/guestweave/internal/fsutil"
 	"github.com/deploymenttheory/guestweave/internal/ipsw"
-	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	weavenetwork "github.com/deploymenttheory/guestweave/internal/network"
-	"github.com/deploymenttheory/guestweave/internal/oci"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/prune"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
@@ -60,17 +56,9 @@ import (
 
 // Error types ported from VM.swift.
 
-type UnsupportedRestoreImageError struct{}
+type unsupportedRestoreImageError struct{}
 
-func (UnsupportedRestoreImageError) Error() string { return "unsupported restore image" }
-
-type NoMainScreenFoundError struct{}
-
-func (NoMainScreenFoundError) Error() string { return "no main screen found" }
-
-type DownloadFailedError struct{}
-
-func (DownloadFailedError) Error() string { return "download failed" }
+func (unsupportedRestoreImageError) Error() string { return "unsupported restore image" }
 
 // UnsupportedOSError ports VM.swift's UnsupportedOSError.
 type UnsupportedOSError struct {
@@ -87,9 +75,9 @@ func (e *UnsupportedOSError) Error() string {
 	return fmt.Sprintf("error: %s %s only supported on hosts %s", e.What, e.Plural, e.Requires)
 }
 
-type UnsupportedArchitectureError struct{}
+type unsupportedArchitectureError struct{}
 
-func (UnsupportedArchitectureError) Error() string { return "unsupported architecture" }
+func (unsupportedArchitectureError) Error() string { return "unsupported architecture" }
 
 // VMOptions carries VM.init's defaulted parameters. Zero values match the
 // Swift defaults (audio and clipboard are inverted to keep that true).
@@ -242,8 +230,8 @@ var vmDelegateClass = sync.OnceValue(func() purego.Class {
 	return class
 })
 
-// NewVM ports VM.init(vmDir:…) for an existing VM directory.
-func NewVM(vmDir *layout.VMDirectory, options VMOptions) (*VM, error) {
+// newVM ports VM.init(vmDir:…) for an existing VM directory.
+func newVM(vmDir *layout.VMDirectory, options VMOptions) (*VM, error) {
 	config, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return nil, err
@@ -261,7 +249,7 @@ func NewVMWithConfig(vmDir *layout.VMDirectory, config *vmconfig.VMConfig, optio
 	options.normalize()
 
 	if config.Arch != weaveplatform.CurrentArchitecture() {
-		return nil, UnsupportedArchitectureError{}
+		return nil, unsupportedArchitectureError{}
 	}
 
 	topology, err := resolveTopology(config, options)
@@ -315,9 +303,14 @@ func (vm *VM) attachVirtualMachine(mainQueue bool) {
 	})
 }
 
-// VMRetrieveIPSW ports VM.retrieveIPSW(remoteURL:): returns a cached *.ipsw
+// retrieveIPSW ports VM.retrieveIPSW(remoteURL:): returns a cached *.ipsw
 // location, downloading and caching it when missing.
-func VMRetrieveIPSW(ctx context.Context, remoteURLString string) (string, error) {
+func retrieveIPSW(ctx context.Context, remoteURLString string) (string, error) {
+	cache, err := ipsw.NewIPSWCache()
+	if err != nil {
+		return "", err
+	}
+
 	// Check if we already have this IPSW in cache.
 	_, headResponse, err := fetcher.FetcherFetch(ctx, fetcher.FetchRequest{URL: remoteURLString, Method: "HEAD"}, false)
 	if err != nil {
@@ -325,10 +318,6 @@ func VMRetrieveIPSW(ctx context.Context, remoteURLString string) (string, error)
 	}
 
 	if hash := headResponse.Header.Get("x-amz-meta-digest-sha256"); hash != "" {
-		cache, err := ipsw.NewIPSWCache()
-		if err != nil {
-			return "", err
-		}
 		ipswLocation := cache.LocationFor("sha256:" + hash + ".ipsw")
 
 		if fsutil.Exists(ipswLocation) {
@@ -343,70 +332,10 @@ func VMRetrieveIPSW(ctx context.Context, remoteURLString string) (string, error)
 	// Download the IPSW.
 	logging.DefaultLogger().AppendNewLine(fmt.Sprintf("Fetching %s...", filepath.Base(remoteURLString)))
 
-	chunks, response, err := fetcher.FetcherFetch(ctx, fetcher.FetchRequest{URL: remoteURLString}, true)
-	if err != nil {
-		return "", err
-	}
-
-	config, err := weaveconfig.NewConfig()
-	if err != nil {
-		return "", err
-	}
-	temporaryLocation := filepath.Join(config.WeaveTmpDir, fsutil.UUID()+".ipsw")
-
-	// Refuse the download up front if the host volume cannot hold it
-	// (prunable cache entries reclaimed first).
-	if expectedLength := response.ContentLength; expectedLength > 0 {
-		if err := vmstorage.EnsureDiskSpace(uint64(expectedLength), nil); err != nil {
-			return "", err
-		}
-	}
-
-	progress := logging.NewDownloadProgress(response.ContentLength)
-	logging.NewProgressObserver(progress).Log(logging.DefaultLogger())
-
-	temporaryPath := temporaryLocation
-	temporaryFile, err := os.Create(temporaryPath)
-	if err != nil {
-		return "", err
-	}
-	defer temporaryFile.Close()
-
-	lock, err := weavelock.NewFileLock(temporaryLocation)
-	if err != nil {
-		return "", err
-	}
-	defer lock.Close()
-	if err := lock.Lock(); err != nil {
-		return "", err
-	}
-
-	digest := oci.NewDigest()
-	for chunk := range chunks {
-		if chunk.Err != nil {
-			return "", chunk.Err
-		}
-		if _, err := temporaryFile.Write(chunk.Data); err != nil {
-			return "", err
-		}
-		digest.Update(chunk.Data)
-		progress.Add(int64(len(chunk.Data)))
-	}
-	if err := temporaryFile.Close(); err != nil {
-		return "", err
-	}
-
-	cache, err := ipsw.NewIPSWCache()
-	if err != nil {
-		return "", err
-	}
-	finalLocation := cache.LocationFor(digest.Finalize() + ".ipsw")
-
-	// Swift uses FileManager.replaceItemAt; an atomic rename is equivalent.
-	if err := os.Rename(temporaryPath, finalLocation); err != nil {
-		return "", err
-	}
-	return finalLocation, nil
+	finalLocation, _, err := vmstorage.FetchToFile(ctx, remoteURLString,
+		func(digest string) string { return cache.LocationFor(digest + ".ipsw") },
+		vmstorage.FetchToFileOptions{AlwaysProgress: true})
+	return finalLocation, err
 }
 
 // InFinalState ports VM.inFinalState.
@@ -440,7 +369,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *layout.VMDirectory, ips
 
 	ipswPath := ipswLocation
 	if isRemoteIPSW(ipswLocation) {
-		downloaded, err := VMRetrieveIPSW(ctx, ipswLocation)
+		downloaded, err := retrieveIPSW(ctx, ipswLocation)
 		if err != nil {
 			return nil, err
 		}
@@ -462,7 +391,7 @@ func NewVMInstallingFromIPSW(ctx context.Context, vmDir *layout.VMDirectory, ips
 
 	requirements := image.MostFeaturefulSupportedConfiguration()
 	if requirements == nil {
-		return nil, UnsupportedRestoreImageError{}
+		return nil, unsupportedRestoreImageError{}
 	}
 
 	// Create NVRAM.
@@ -584,7 +513,7 @@ func VMLinux(vmDir *layout.VMDirectory, diskSizeGB uint16, diskFormat diskimage.
 		return nil, err
 	}
 
-	return NewVM(vmDir, VMOptions{})
+	return newVM(vmDir, VMOptions{})
 }
 
 // Start ports VM.start(recovery:resume:).

@@ -37,7 +37,7 @@ func (c *Session) suspendVM(vmDir *layout.VMDirectory, cancelRun context.CancelF
 	}
 
 	c.Reporter.Linef("pausing VM to take a snapshot...")
-	if err := c.vm.SendErrorCompletion("pauseWithCompletionHandler:"); err != nil {
+	if err := c.vm.Pause(); err != nil {
 		c.Reporter.Linef("%v", weaveerrors.ErrSuspendFailed(err.Error()))
 		telemetry.OTelShared().Flush()
 		os.Exit(1)

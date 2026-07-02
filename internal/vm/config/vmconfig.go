@@ -21,12 +21,12 @@ import (
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
 
-// LessThanMinimalResourcesError ports VMConfig.swift's class of the same name.
-type LessThanMinimalResourcesError struct {
+// lessThanMinimalResourcesError ports VMConfig.swift's class of the same name.
+type lessThanMinimalResourcesError struct {
 	UserExplanation string
 }
 
-func (e *LessThanMinimalResourcesError) Error() string {
+func (e *lessThanMinimalResourcesError) Error() string {
 	return "LessThanMinimalResourcesError: " + e.UserExplanation
 }
 
@@ -357,12 +357,12 @@ func (c *VMConfig) UnmarshalJSON(data []byte) error {
 // SetCPU ports VMConfig.setCPU(cpuCount:).
 func (c *VMConfig) SetCPU(cpuCount int) error {
 	if c.OS == weaveplatform.OSDarwin && cpuCount < c.CPUCountMin {
-		return &LessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
+		return &lessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
 			"VM should have %d CPU cores at minimum (requested %d)", c.CPUCountMin, cpuCount)}
 	}
 
 	if minimumAllowed := int(idvirt.MinimumAllowedCPUCount()); cpuCount < minimumAllowed {
-		return &LessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
+		return &lessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
 			"VM should have %d CPU cores at minimum (requested %d)", minimumAllowed, cpuCount)}
 	}
 
@@ -373,12 +373,12 @@ func (c *VMConfig) SetCPU(cpuCount int) error {
 // SetMemory ports VMConfig.setMemory(memorySize:).
 func (c *VMConfig) SetMemory(memorySize uint64) error {
 	if c.OS == weaveplatform.OSDarwin && memorySize < c.MemorySizeMin {
-		return &LessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
+		return &lessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
 			"VM should have %d bytes of memory at minimum (requested %d)", c.MemorySizeMin, memorySize)}
 	}
 
 	if minimumAllowed := idvirt.MinimumAllowedMemorySize(); memorySize < minimumAllowed {
-		return &LessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
+		return &lessThanMinimalResourcesError{UserExplanation: fmt.Sprintf(
 			"VM should have %d bytes of memory at minimum (requested %d)", minimumAllowed, memorySize)}
 	}
 

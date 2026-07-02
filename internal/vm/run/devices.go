@@ -22,10 +22,8 @@ import (
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/fetcher"
 	"github.com/deploymenttheory/guestweave/internal/fsutil"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
-	"github.com/deploymenttheory/guestweave/internal/logging"
 	weavenetwork "github.com/deploymenttheory/guestweave/internal/network"
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/oci"
@@ -706,51 +704,15 @@ func (s directoryShare) createConfiguration() (*idvirt.SharedDirectory, error) {
 
 	if _, err := os.Stat(cachePath); err != nil {
 		fmt.Printf("Downloading %s...\n", s.path)
-		chunks, response, err := fetcher.FetcherFetch(context.Background(),
-			fetcher.FetchRequest{URL: s.path}, true)
-		if err != nil {
-			return nil, err
-		}
-
 		// Known-size transfer: disk-space guard up front, then percentage
 		// progress (the spinner is only for indeterminate waits — see
 		// terminal/spinner.go).
-		var progress *logging.DownloadProgress
-		if expectedLength := response.ContentLength; expectedLength > 0 {
-			if err := vmstorage.EnsureDiskSpace(uint64(expectedLength), nil); err != nil {
-				return nil, err
-			}
-			progress = logging.NewDownloadProgress(expectedLength)
-			logging.NewProgressObserver(progress).Log(logging.DefaultLogger())
-		}
-
-		archive, err := os.Create(cachePath)
+		_, written, err := vmstorage.FetchToFile(context.Background(), s.path,
+			func(string) string { return cachePath }, vmstorage.FetchToFileOptions{})
 		if err != nil {
 			return nil, err
 		}
-		empty := true
-		for chunk := range chunks {
-			if chunk.Err != nil {
-				archive.Close()
-				_ = os.Remove(cachePath)
-				return nil, chunk.Err
-			}
-			if len(chunk.Data) > 0 {
-				empty = false
-			}
-			if _, err := archive.Write(chunk.Data); err != nil {
-				archive.Close()
-				_ = os.Remove(cachePath)
-				return nil, err
-			}
-			if progress != nil {
-				progress.Add(int64(len(chunk.Data)))
-			}
-		}
-		if err := archive.Close(); err != nil {
-			return nil, err
-		}
-		if empty {
+		if written == 0 {
 			_ = os.Remove(cachePath)
 			return nil, weaveerrors.ErrGeneric("Remote archive is empty!")
 		}
