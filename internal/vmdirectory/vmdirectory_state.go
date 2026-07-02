@@ -507,3 +507,17 @@ func (d *VMDirectory) components() []string {
 func ByteCountString(byteCount int64) string {
 	return fsutil.ByteCountString(byteCount)
 }
+
+// FirmwareFile returns the persistent firmware file to snapshot for this guest
+// and the basename it takes inside a snapshot payload directory. VZ guests
+// (macOS/Linux) use nvram.bin; Windows (QEMU) guests persist UEFI variables in
+// efi_vars.fd. Detection is by file existence, NOT by reading config.json:
+// config.json holds the run process's fcntl PID lock, and opening it from that
+// same process would release the lock (POSIX fcntl semantics), making weave
+// believe a running VM had stopped.
+func (d *VMDirectory) FirmwareFile() (path, name string) {
+	if fsutil.Exists(d.NvramURL()) {
+		return d.NvramURL(), "nvram.bin"
+	}
+	return d.EFIVarsURL(), "efi_vars.fd"
+}

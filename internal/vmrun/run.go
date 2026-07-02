@@ -48,6 +48,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/unattended"
 	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
@@ -466,7 +467,7 @@ func (c *Session) runMainThread() error {
 	// Serve disk-snapshot requests for this running VM (`weave snapshot create`,
 	// the REST API): the run process owns the VZ handle, so it performs the
 	// pause/clone/resume.
-	go c.serveSnapshotSocket(runCtx, vmDir)
+	go snapshot.Serve(runCtx, vmDir, liveSnapshotHandler{s: c, dir: vmDir})
 
 	// Enable in-process snapshot revert (rebuild the VM and re-point the window
 	// in place, no relaunch). Disabled for VNC runs, whose server is bound to the
@@ -642,6 +643,25 @@ func (c *Session) TriggerRevert(ref string) bool {
 	c.pendingRevertRef = ref
 	c.currentVMCancel() // unblocks vm.Run; driveVM sees the pending ref and rebuilds
 	return true
+}
+
+// liveSnapshotHandler adapts the Session to the snapshot socket's LiveHandler:
+// only the run process owns the VZ handle needed to pause → clone → resume or
+// revert in place.
+type liveSnapshotHandler struct {
+	s   *Session
+	dir *vmdirectory.VMDirectory
+}
+
+func (h liveSnapshotHandler) CreateLive(name, description string) (snapshot.Snapshot, error) {
+	if h.s.vm == nil {
+		return snapshot.Snapshot{}, weaveerrors.ErrGeneric("the VM is not running")
+	}
+	return h.s.vm.CreateSnapshotPaused(h.dir, name, description)
+}
+
+func (h liveSnapshotHandler) RevertInProcess(ref string) bool {
+	return h.s.TriggerRevert(ref)
 }
 
 // driveVM ports the inner Task of Run.runOnMainThread(): restores a
@@ -828,7 +848,7 @@ func (c *Session) driveVM(
 		// firmware (staging its RAM state, if any), rebuild the VM, and re-point
 		// the window's view — all without exiting the process.
 		fmt.Printf("reverting to snapshot %q...\n", ref)
-		if _, err := vmDir.RevertSnapshot(ref); err != nil {
+		if _, err := snapshot.Revert(vmDir, ref); err != nil {
 			fmt.Fprintln(os.Stderr, weaveerrors.ErrGeneric("revert failed: %v", err))
 			break
 		}

@@ -1,18 +1,20 @@
 //go:build darwin
 
-package vmdirectory
+package snapshot
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 // newTestVMDir lays down a minimal VM bundle (disk + nvram) for snapshot tests.
-func newTestVMDir(t *testing.T, diskContents string) *VMDirectory {
+func newTestVMDir(t *testing.T, diskContents string) *vmdirectory.VMDirectory {
 	t.Helper()
 	base := t.TempDir()
-	d := NewVMDirectory(base)
+	d := vmdirectory.NewVMDirectory(base)
 	if err := os.WriteFile(d.DiskURL(), []byte(diskContents), 0o644); err != nil {
 		t.Fatalf("write disk: %v", err)
 	}
@@ -25,14 +27,14 @@ func newTestVMDir(t *testing.T, diskContents string) *VMDirectory {
 func TestSnapshotCreateListDelete(t *testing.T) {
 	d := newTestVMDir(t, "disk-v1")
 
-	if snaps, err := d.ListSnapshots(); err != nil || len(snaps) != 0 {
+	if snaps, err := List(d); err != nil || len(snaps) != 0 {
 		t.Fatalf("expected no snapshots, got %v err=%v", snaps, err)
 	}
 
-	if _, err := d.CreateSnapshot(SnapshotCreateOptions{Name: "first", Description: "the first one"}); err != nil {
+	if _, err := Create(d, CreateOptions{Name: "first", Description: "the first one"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	snaps, err := d.ListSnapshots()
+	snaps, err := List(d)
 	if err != nil || len(snaps) != 1 {
 		t.Fatalf("expected 1 snapshot, got %v err=%v", snaps, err)
 	}
@@ -40,24 +42,24 @@ func TestSnapshotCreateListDelete(t *testing.T) {
 		t.Fatalf("unexpected snapshot metadata: %+v", snaps[0])
 	}
 
-	if _, err := os.Stat(filepath.Join(d.snapshotPayloadDir(snaps[0].ID), "disk.img")); err != nil {
+	if _, err := os.Stat(filepath.Join(payloadDir(d, snaps[0].ID), "disk.img")); err != nil {
 		t.Fatalf("snapshot disk missing: %v", err)
 	}
 
-	if err := d.DeleteSnapshot("first"); err != nil {
+	if err := Delete(d, "first"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if snaps, _ := d.ListSnapshots(); len(snaps) != 0 {
+	if snaps, _ := List(d); len(snaps) != 0 {
 		t.Fatalf("expected 0 snapshots after delete, got %d", len(snaps))
 	}
 }
 
 func TestSnapshotDuplicateNameRejected(t *testing.T) {
 	d := newTestVMDir(t, "disk")
-	if _, err := d.CreateSnapshot(SnapshotCreateOptions{Name: "dup"}); err != nil {
+	if _, err := Create(d, CreateOptions{Name: "dup"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := d.CreateSnapshot(SnapshotCreateOptions{Name: "dup"}); err == nil {
+	if _, err := Create(d, CreateOptions{Name: "dup"}); err == nil {
 		t.Fatal("expected duplicate-name error, got nil")
 	}
 }
@@ -65,25 +67,25 @@ func TestSnapshotDuplicateNameRejected(t *testing.T) {
 func TestSnapshotCapEnforced(t *testing.T) {
 	d := newTestVMDir(t, "disk")
 	for i := range MaxSnapshots {
-		if _, err := d.CreateSnapshot(SnapshotCreateOptions{Name: string(rune('a' + i))}); err != nil {
+		if _, err := Create(d, CreateOptions{Name: string(rune('a' + i))}); err != nil {
 			t.Fatalf("create %d: %v", i, err)
 		}
 	}
-	if _, err := d.CreateSnapshot(SnapshotCreateOptions{Name: "overflow"}); err == nil {
+	if _, err := Create(d, CreateOptions{Name: "overflow"}); err == nil {
 		t.Fatalf("expected cap (%d) to be enforced", MaxSnapshots)
 	}
 }
 
 func TestSnapshotRevertRestoresDisk(t *testing.T) {
 	d := newTestVMDir(t, "original")
-	if _, err := d.CreateSnapshot(SnapshotCreateOptions{Name: "snap"}); err != nil {
+	if _, err := Create(d, CreateOptions{Name: "snap"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	if err := os.WriteFile(d.DiskURL(), []byte("mutated"), 0o644); err != nil {
 		t.Fatalf("mutate disk: %v", err)
 	}
-	restoredState, err := d.RevertSnapshot("snap")
+	restoredState, err := Revert(d, "snap")
 	if err != nil {
 		t.Fatalf("revert: %v", err)
 	}
@@ -101,7 +103,7 @@ func TestSnapshotRevertRestoresDisk(t *testing.T) {
 
 func TestSnapshotRevertWithStateStagesStateFile(t *testing.T) {
 	d := newTestVMDir(t, "disk")
-	if _, err := d.CreateSnapshot(SnapshotCreateOptions{
+	if _, err := Create(d, CreateOptions{
 		Name: "live",
 		SaveState: func(dst string) error {
 			return os.WriteFile(dst, []byte("ram-state"), 0o600)
@@ -110,12 +112,12 @@ func TestSnapshotRevertWithStateStagesStateFile(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	snap, ok, err := d.SnapshotByRef("live")
+	snap, ok, err := ByRef(d, "live")
 	if err != nil || !ok || !snap.HasState {
 		t.Fatalf("expected a live snapshot with state, got ok=%v snap=%+v err=%v", ok, snap, err)
 	}
 
-	restoredState, err := d.RevertSnapshot("live")
+	restoredState, err := Revert(d, "live")
 	if err != nil {
 		t.Fatalf("revert: %v", err)
 	}
@@ -133,7 +135,7 @@ func TestSnapshotRevertWithStateStagesStateFile(t *testing.T) {
 
 func TestSnapshotRevertUnknownErrors(t *testing.T) {
 	d := newTestVMDir(t, "disk")
-	if _, err := d.RevertSnapshot("nope"); err == nil {
+	if _, err := Revert(d, "nope"); err == nil {
 		t.Fatal("expected error reverting an unknown snapshot")
 	}
 }

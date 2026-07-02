@@ -1,13 +1,19 @@
-// Disk snapshots: named, point-in-time copies of a VM's disk image and
-// persistent firmware (nvram / EFI vars), stored under <vmdir>/snapshots. These
-// are independent of the VZ save/restore "suspend" state (state.vzvmsave): a
-// snapshot captures disk state, imposes no constraints on the running VM
-// configuration, and reverting restores the disk so the VM boots from that
-// point. Copies use APFS copy-on-write (fsutil.CloneFile), so snapshots are
-// near-instant and claim no extra space until written.
+// Package snapshot owns VM disk snapshots: named, point-in-time copies of a
+// VM's disk image and persistent firmware (nvram / EFI vars), stored under
+// <vmdir>/snapshots. These are independent of the VZ save/restore "suspend"
+// state (state.vzvmsave): a snapshot captures disk state, imposes no
+// constraints on the running VM configuration, and reverting restores the
+// disk so the VM boots from that point. Copies use APFS copy-on-write
+// (fsutil.CloneFile), so snapshots are near-instant and claim no extra space
+// until written.
+//
+// Snapshots of a *running* VM go through the run process (only it owns the VZ
+// handle) via the Unix socket protocol in socket.go; the VM layer's
+// CreateSnapshotPaused wires the live RAM/device capture through
+// CreateOptions.SaveState.
 //go:build darwin
 
-package vmdirectory
+package snapshot
 
 import (
 	"encoding/json"
@@ -19,6 +25,7 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/fsutil"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
 // MaxSnapshots is the maximum number of disk snapshots retained per VM.
@@ -36,8 +43,8 @@ type Snapshot struct {
 	HasState    bool      `json:"has_state"`
 }
 
-// SnapshotCreateOptions parameterises CreateSnapshot.
-type SnapshotCreateOptions struct {
+// CreateOptions parameterises Create.
+type CreateOptions struct {
 	Name        string
 	Description string
 	// ExtraRequiredBytes is added to the free-space guard's requirement — used
@@ -54,40 +61,26 @@ type snapshotIndex struct {
 	Snapshots []Snapshot `json:"snapshots"`
 }
 
-// SnapshotsDir is the directory holding every snapshot payload and the index.
-func (d *VMDirectory) SnapshotsDir() string { return filepath.Join(d.BaseURL, "snapshots") }
+// Dir is the directory holding every snapshot payload and the index.
+func Dir(d *vmdirectory.VMDirectory) string { return filepath.Join(d.BaseURL, "snapshots") }
 
-func (d *VMDirectory) snapshotIndexURL() string {
-	return filepath.Join(d.SnapshotsDir(), "index.json")
+func indexURL(d *vmdirectory.VMDirectory) string {
+	return filepath.Join(Dir(d), "index.json")
 }
 
-func (d *VMDirectory) snapshotPayloadDir(id string) string {
-	return filepath.Join(d.SnapshotsDir(), id)
+func payloadDir(d *vmdirectory.VMDirectory, id string) string {
+	return filepath.Join(Dir(d), id)
 }
 
-// firmwareFile returns the persistent firmware file to snapshot for this guest
-// and the basename it takes inside a snapshot payload directory. VZ guests
-// (macOS/Linux) use nvram.bin; Windows (QEMU) guests persist UEFI variables in
-// efi_vars.fd. Detection is by file existence, NOT by reading config.json:
-// config.json holds the run process's fcntl PID lock, and opening it from that
-// same process would release the lock (POSIX fcntl semantics), making weave
-// believe a running VM had stopped.
-func (d *VMDirectory) firmwareFile() (path, name string) {
-	if fsutil.Exists(d.NvramURL()) {
-		return d.NvramURL(), "nvram.bin"
-	}
-	return d.EFIVarsURL(), "efi_vars.fd"
-}
-
-// snapshotRequiredBytes is the worst-case space a snapshot needs: a full copy of
+// requiredBytes is the worst-case space a snapshot needs: a full copy of
 // the disk image plus firmware. APFS copy-on-write usually makes the clone
 // near-free, but this is the safe upper bound used by the free-space guard.
-func (d *VMDirectory) snapshotRequiredBytes() (int64, error) {
+func requiredBytes(d *vmdirectory.VMDirectory) (int64, error) {
 	total, err := fsutil.AllocatedSizeBytes(d.DiskURL())
 	if err != nil {
 		return 0, err
 	}
-	if fwPath, _ := d.firmwareFile(); fsutil.Exists(fwPath) {
+	if fwPath, _ := d.FirmwareFile(); fsutil.Exists(fwPath) {
 		if fw, err := fsutil.AllocatedSizeBytes(fwPath); err == nil {
 			total += fw
 		}
@@ -95,9 +88,9 @@ func (d *VMDirectory) snapshotRequiredBytes() (int64, error) {
 	return total, nil
 }
 
-func (d *VMDirectory) readSnapshotIndex() (snapshotIndex, error) {
+func readIndex(d *vmdirectory.VMDirectory) (snapshotIndex, error) {
 	var idx snapshotIndex
-	data, err := os.ReadFile(d.snapshotIndexURL())
+	data, err := os.ReadFile(indexURL(d))
 	if errors.Is(err, os.ErrNotExist) {
 		return snapshotIndex{}, nil
 	}
@@ -110,15 +103,15 @@ func (d *VMDirectory) readSnapshotIndex() (snapshotIndex, error) {
 	return idx, nil
 }
 
-func (d *VMDirectory) writeSnapshotIndex(idx snapshotIndex) error {
-	if err := os.MkdirAll(d.SnapshotsDir(), 0o755); err != nil {
+func writeIndex(d *vmdirectory.VMDirectory, idx snapshotIndex) error {
+	if err := os.MkdirAll(Dir(d), 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(idx, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(d.snapshotIndexURL(), data, 0o644)
+	return os.WriteFile(indexURL(d), data, 0o644)
 }
 
 func findSnapshot(idx snapshotIndex, ref string) (int, bool) {
@@ -130,27 +123,27 @@ func findSnapshot(idx snapshotIndex, ref string) (int, bool) {
 	return -1, false
 }
 
-// ListSnapshots returns the VM's snapshots in creation order.
-func (d *VMDirectory) ListSnapshots() ([]Snapshot, error) {
-	idx, err := d.readSnapshotIndex()
+// List returns the VM's snapshots in creation order.
+func List(d *vmdirectory.VMDirectory) ([]Snapshot, error) {
+	idx, err := readIndex(d)
 	if err != nil {
 		return nil, err
 	}
 	return idx.Snapshots, nil
 }
 
-// CreateSnapshot clones the VM's current disk and firmware into a new named
+// Create clones the VM's current disk and firmware into a new named
 // snapshot, and — when opts.SaveState is set — also captures the live RAM/device
 // state. The caller quiesces the disk first (the VM must be stopped, or paused
 // via the run process) so the image is consistent. Enforces unique names, the
 // MaxSnapshots cap, and a free-space guard.
-func (d *VMDirectory) CreateSnapshot(opts SnapshotCreateOptions) (Snapshot, error) {
+func Create(d *vmdirectory.VMDirectory, opts CreateOptions) (Snapshot, error) {
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		return Snapshot{}, weaveerrors.ErrGeneric("a snapshot name is required")
 	}
 
-	idx, err := d.readSnapshotIndex()
+	idx, err := readIndex(d)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -167,7 +160,7 @@ func (d *VMDirectory) CreateSnapshot(opts SnapshotCreateOptions) (Snapshot, erro
 	// makes the disk clone near-free, but this keeps a snapshot from being
 	// created on a volume too full to hold its eventual divergence, a non-CoW
 	// fallback copy, or the state file.
-	required, err := d.snapshotRequiredBytes()
+	required, err := requiredBytes(d)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -183,7 +176,7 @@ func (d *VMDirectory) CreateSnapshot(opts SnapshotCreateOptions) (Snapshot, erro
 	}
 
 	id := fsutil.UUID()
-	payload := d.snapshotPayloadDir(id)
+	payload := payloadDir(d, id)
 	if err := os.MkdirAll(payload, 0o755); err != nil {
 		return Snapshot{}, err
 	}
@@ -193,7 +186,7 @@ func (d *VMDirectory) CreateSnapshot(opts SnapshotCreateOptions) (Snapshot, erro
 		cleanup()
 		return Snapshot{}, err
 	}
-	if fwPath, fwName := d.firmwareFile(); fsutil.Exists(fwPath) {
+	if fwPath, fwName := d.FirmwareFile(); fsutil.Exists(fwPath) {
 		if err := fsutil.CloneFile(fwPath, filepath.Join(payload, fwName)); err != nil {
 			cleanup()
 			return Snapshot{}, err
@@ -202,7 +195,7 @@ func (d *VMDirectory) CreateSnapshot(opts SnapshotCreateOptions) (Snapshot, erro
 
 	hasState := false
 	if opts.SaveState != nil {
-		if err := opts.SaveState(d.snapshotStatePath(id)); err != nil {
+		if err := opts.SaveState(statePath(d, id)); err != nil {
 			cleanup()
 			return Snapshot{}, weaveerrors.ErrGeneric("failed to capture VM state: %v", err)
 		}
@@ -217,20 +210,20 @@ func (d *VMDirectory) CreateSnapshot(opts SnapshotCreateOptions) (Snapshot, erro
 		HasState:    hasState,
 	}
 	idx.Snapshots = append(idx.Snapshots, snap)
-	if err := d.writeSnapshotIndex(idx); err != nil {
+	if err := writeIndex(d, idx); err != nil {
 		cleanup()
 		return Snapshot{}, err
 	}
 	return snap, nil
 }
 
-func (d *VMDirectory) snapshotStatePath(id string) string {
-	return filepath.Join(d.snapshotPayloadDir(id), "state.vzvmsave")
+func statePath(d *vmdirectory.VMDirectory, id string) string {
+	return filepath.Join(payloadDir(d, id), "state.vzvmsave")
 }
 
-// SnapshotByRef returns the snapshot matching ref (name or id).
-func (d *VMDirectory) SnapshotByRef(ref string) (Snapshot, bool, error) {
-	idx, err := d.readSnapshotIndex()
+// ByRef returns the snapshot matching ref (name or id).
+func ByRef(d *vmdirectory.VMDirectory, ref string) (Snapshot, bool, error) {
+	idx, err := readIndex(d)
 	if err != nil {
 		return Snapshot{}, false, err
 	}
@@ -240,13 +233,13 @@ func (d *VMDirectory) SnapshotByRef(ref string) (Snapshot, bool, error) {
 	return Snapshot{}, false, nil
 }
 
-// RevertSnapshot restores the VM's disk and firmware from the named snapshot
+// Revert restores the VM's disk and firmware from the named snapshot
 // (matched by name or id), and stages its RAM state (if any) at the VM's state
 // path so the next start resumes the exact moment rather than rebooting. The VM
 // must be stopped — the live disk is replaced. Returns whether RAM state was
 // staged.
-func (d *VMDirectory) RevertSnapshot(ref string) (restoredState bool, err error) {
-	idx, err := d.readSnapshotIndex()
+func Revert(d *vmdirectory.VMDirectory, ref string) (restoredState bool, err error) {
+	idx, err := readIndex(d)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +248,7 @@ func (d *VMDirectory) RevertSnapshot(ref string) (restoredState bool, err error)
 		return false, weaveerrors.ErrGeneric("no snapshot named %q", ref)
 	}
 	snap := idx.Snapshots[i]
-	payload := d.snapshotPayloadDir(snap.ID)
+	payload := payloadDir(d, snap.ID)
 
 	diskSrc := filepath.Join(payload, "disk.img")
 	if !fsutil.Exists(diskSrc) {
@@ -264,7 +257,7 @@ func (d *VMDirectory) RevertSnapshot(ref string) (restoredState bool, err error)
 	if err := fsutil.CloneFile(diskSrc, d.DiskURL()); err != nil {
 		return false, err
 	}
-	if fwPath, fwName := d.firmwareFile(); fsutil.Exists(filepath.Join(payload, fwName)) {
+	if fwPath, fwName := d.FirmwareFile(); fsutil.Exists(filepath.Join(payload, fwName)) {
 		if err := fsutil.CloneFile(filepath.Join(payload, fwName), fwPath); err != nil {
 			return false, err
 		}
@@ -272,7 +265,7 @@ func (d *VMDirectory) RevertSnapshot(ref string) (restoredState bool, err error)
 
 	// Stage (or clear) the RAM state so the next start resumes from it (or boots
 	// fresh for a disk-only snapshot).
-	stateSrc := d.snapshotStatePath(snap.ID)
+	stateSrc := statePath(d, snap.ID)
 	if snap.HasState && fsutil.Exists(stateSrc) {
 		if err := fsutil.CloneFile(stateSrc, d.StateURL()); err != nil {
 			return false, err
@@ -285,10 +278,10 @@ func (d *VMDirectory) RevertSnapshot(ref string) (restoredState bool, err error)
 	return false, nil
 }
 
-// DeleteSnapshot removes the named snapshot (matched by name or id) and its
+// Delete removes the named snapshot (matched by name or id) and its
 // payload. Safe at any VM state — it never touches the live disk.
-func (d *VMDirectory) DeleteSnapshot(ref string) error {
-	idx, err := d.readSnapshotIndex()
+func Delete(d *vmdirectory.VMDirectory, ref string) error {
+	idx, err := readIndex(d)
 	if err != nil {
 		return err
 	}
@@ -297,9 +290,9 @@ func (d *VMDirectory) DeleteSnapshot(ref string) error {
 		return weaveerrors.ErrGeneric("no snapshot named %q", ref)
 	}
 	snap := idx.Snapshots[i]
-	if err := os.RemoveAll(d.snapshotPayloadDir(snap.ID)); err != nil {
+	if err := os.RemoveAll(payloadDir(d, snap.ID)); err != nil {
 		return err
 	}
 	idx.Snapshots = append(idx.Snapshots[:i], idx.Snapshots[i+1:]...)
-	return d.writeSnapshotIndex(idx)
+	return writeIndex(d, idx)
 }

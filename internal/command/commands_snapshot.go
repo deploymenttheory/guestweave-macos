@@ -17,8 +17,8 @@ import (
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
-	"github.com/deploymenttheory/guestweave/internal/vmrun"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
@@ -34,35 +34,35 @@ func openLocalVMDir(name string) (*vmdirectory.VMDirectory, error) {
 // distinguishes a stopped VM (the lock is acquired and the disk cloned directly)
 // from a running one (the lock is held by the run process, which performs the
 // pause/clone/resume over the snapshot socket).
-func CreateSnapshot(vmName, name, description string) (vmdirectory.Snapshot, error) {
+func CreateSnapshot(vmName, name, description string) (snapshot.Snapshot, error) {
 	vmDir, err := openLocalVMDir(vmName)
 	if err != nil {
-		return vmdirectory.Snapshot{}, err
+		return snapshot.Snapshot{}, err
 	}
 	lock, err := vmDir.Lock()
 	if err != nil {
-		return vmdirectory.Snapshot{}, err
+		return snapshot.Snapshot{}, err
 	}
 	defer lock.Close()
 	acquired, err := lock.Trylock()
 	if err != nil {
-		return vmdirectory.Snapshot{}, err
+		return snapshot.Snapshot{}, err
 	}
 	if acquired {
 		// Stopped VM: no RAM to capture, so this is a disk-only snapshot.
 		defer func() { _ = lock.Unlock() }()
-		return vmDir.CreateSnapshot(vmdirectory.SnapshotCreateOptions{Name: name, Description: description})
+		return snapshot.Create(vmDir, snapshot.CreateOptions{Name: name, Description: description})
 	}
-	return vmrun.RequestSnapshotOverSocket(vmDir, name, description)
+	return snapshot.RequestCreateOverSocket(vmDir, name, description)
 }
 
 // ListSnapshots returns vmName's disk snapshots.
-func ListSnapshots(vmName string) ([]vmdirectory.Snapshot, error) {
+func ListSnapshots(vmName string) ([]snapshot.Snapshot, error) {
 	vmDir, err := openLocalVMDir(vmName)
 	if err != nil {
 		return nil, err
 	}
-	return vmDir.ListSnapshots()
+	return snapshot.List(vmDir)
 }
 
 // RevertSnapshot restores vmName's disk from a named snapshot. The VM must be
@@ -84,14 +84,14 @@ func RevertSnapshot(vmName, ref string) error {
 	if acquired {
 		// Stopped VM: revert the files directly.
 		defer func() { _ = lock.Unlock() }()
-		_, err = vmDir.RevertSnapshot(ref)
+		_, err = snapshot.Revert(vmDir, ref)
 		return err
 	}
 
 	// Running VM: ask the run process to revert in place (rebuild + re-point the
 	// window). Fall back to "stop first" if it can't be reverted in-process.
-	if err := vmrun.RequestRevertOverSocket(vmDir, ref); err != nil {
-		if err == vmrun.ErrSnapshotSocketUnavailable {
+	if err := snapshot.RequestRevertOverSocket(vmDir, ref); err != nil {
+		if err == snapshot.ErrSocketUnavailable {
 			return weaveerrors.ErrGeneric("the VM is running; stop it before reverting a snapshot")
 		}
 		return err
@@ -105,7 +105,7 @@ func DeleteSnapshot(vmName, ref string) error {
 	if err != nil {
 		return err
 	}
-	return vmDir.DeleteSnapshot(ref)
+	return snapshot.Delete(vmDir, ref)
 }
 
 // SnapshotCreateCommand creates a named disk snapshot of a VM.

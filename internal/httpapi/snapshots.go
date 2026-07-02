@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 )
 
 func (s *APIServer) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +21,7 @@ func (s *APIServer) handleListSnapshots(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if snapshots == nil {
-		snapshots = []vmdirectory.Snapshot{}
+		snapshots = []snapshot.Snapshot{}
 	}
 	writeJSON(w, http.StatusOK, snapshots)
 }
@@ -35,12 +35,12 @@ func (s *APIServer) handleCreateSnapshot(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "name is required"})
 		return
 	}
-	snapshot, err := weavecommand.CreateSnapshot(chi.URLParam(r, "name"), request.Name, request.Description)
+	snap, err := weavecommand.CreateSnapshot(chi.URLParam(r, "name"), request.Name, request.Description)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, snapshot)
+	writeJSON(w, http.StatusCreated, snap)
 }
 
 func (s *APIServer) handleRevertSnapshot(w http.ResponseWriter, r *http.Request) {
