@@ -6,6 +6,7 @@
 package httpapi
 
 import (
+	"github.com/deploymenttheory/guestweave/internal/vm/archive"
 	"io"
 	"net/http"
 	"os"
@@ -150,7 +151,7 @@ func (s *APIServer) handleExportDownload(w http.ResponseWriter, r *http.Request)
 		writeError(w, err)
 		return
 	}
-	if err := vmDir.ExportToArchive(archivePath); err != nil {
+	if err := archive.Export(vmDir, archivePath); err != nil {
 		writeError(w, err)
 		return
 	}

@@ -6,6 +6,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"github.com/deploymenttheory/guestweave/internal/vm/archive"
 	"os"
 	"strings"
 
@@ -52,7 +53,7 @@ func (c *ImportCommand) Run(ctx context.Context) error {
 
 	// Populate the temporary VM directory with the export file contents.
 	fmt.Println("importing...")
-	if err := tmpVMDir.ImportFromArchive(c.Path); err != nil {
+	if err := archive.Import(tmpVMDir, c.Path); err != nil {
 		return err
 	}
 

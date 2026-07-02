@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/deploymenttheory/guestweave/internal/vm/archive"
 	"os"
 	"strings"
 
@@ -39,7 +40,7 @@ func (c *ExportCommand) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return vmDir.ExportToArchive(correctedPath)
+	return archive.Export(vmDir, correctedPath)
 }
 
 func userWantsOverwrite(filename string) bool {

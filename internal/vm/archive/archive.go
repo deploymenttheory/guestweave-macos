@@ -1,9 +1,10 @@
-// Port of tart's VMDirectory+Archive.swift: export/import of a VM directory
-// using Apple's archive format with LZFSE compression, driving /usr/bin/aa
-// (which produces and consumes the identical .aar format) via os/exec.
+// Package archive exports/imports a VM directory (.tvm) using Apple's
+// archive format with LZFSE compression, driving /usr/bin/aa (which produces
+// and consumes the identical .aar format) via os/exec. Port of tart's
+// VMDirectory+Archive.swift.
 //go:build darwin
 
-package vmdirectory
+package archive
 
 import (
 	"bytes"
@@ -12,10 +13,11 @@ import (
 
 	"github.com/deploymenttheory/guestweave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
-// ExportToArchive ports VMDirectory.exportToArchive(path:).
-func (d *VMDirectory) ExportToArchive(path string) error {
+// Export ports VMDirectory.exportToArchive(path:).
+func Export(d *vmdirectory.VMDirectory, path string) error {
 	if err := runAA([]string{
 		"archive",
 		"-d", d.BaseURL,
@@ -27,8 +29,8 @@ func (d *VMDirectory) ExportToArchive(path string) error {
 	return nil
 }
 
-// ImportFromArchive ports VMDirectory.importFromArchive(path:).
-func (d *VMDirectory) ImportFromArchive(path string) error {
+// Import ports VMDirectory.importFromArchive(path:).
+func Import(d *vmdirectory.VMDirectory, path string) error {
 	if err := runAA([]string{
 		"extract",
 		"-d", d.BaseURL,
