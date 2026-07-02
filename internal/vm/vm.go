@@ -46,7 +46,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/prune"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	idfoundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
@@ -243,7 +243,7 @@ var vmDelegateClass = sync.OnceValue(func() purego.Class {
 })
 
 // NewVM ports VM.init(vmDir:…) for an existing VM directory.
-func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
+func NewVM(vmDir *layout.VMDirectory, options VMOptions) (*VM, error) {
 	config, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return nil, err
@@ -257,7 +257,7 @@ func NewVM(vmDir *vmdirectory.VMDirectory, options VMOptions) (*VM, error) {
 // descriptor to the file releases the process's locks on it). The in-process
 // snapshot-revert rebuild therefore passes the config it already has rather than
 // going through NewVM.
-func NewVMWithConfig(vmDir *vmdirectory.VMDirectory, config *vmconfig.VMConfig, options VMOptions) (*VM, error) {
+func NewVMWithConfig(vmDir *layout.VMDirectory, config *vmconfig.VMConfig, options VMOptions) (*VM, error) {
 	options.normalize()
 
 	if config.Arch != weaveplatform.CurrentArchitecture() {
@@ -428,7 +428,7 @@ func (vm *VM) machineState() idiomatic.VirtualMachineState {
 // NewVMInstallingFromIPSW ports the arm64-only VM.init(vmDir:ipswURL:…):
 // creates NVRAM, disk and config from a restore image, then runs the
 // automated macOS installation.
-func NewVMInstallingFromIPSW(ctx context.Context, vmDir *vmdirectory.VMDirectory, ipswLocation string,
+func NewVMInstallingFromIPSW(ctx context.Context, vmDir *layout.VMDirectory, ipswLocation string,
 	diskSizeGB uint16, diskFormat diskimage.DiskImageFormat, options VMOptions) (*VM, error) {
 	ctx, span := otel.Tracer("weave").Start(ctx, "vm.create_from_ipsw",
 		trace.WithAttributes(attribute.String("vm.name", vmDir.Name())))
@@ -567,7 +567,7 @@ func (vm *VM) install(ctx context.Context, ipswPath string) error {
 }
 
 // VMLinux ports VM.linux(vmDir:diskSizeGB:diskFormat:).
-func VMLinux(vmDir *vmdirectory.VMDirectory, diskSizeGB uint16, diskFormat diskimage.DiskImageFormat) (*VM, error) {
+func VMLinux(vmDir *layout.VMDirectory, diskSizeGB uint16, diskFormat diskimage.DiskImageFormat) (*VM, error) {
 	// Create NVRAM.
 	if _, err := idiomatic.NewEFIVariableStoreCreatingVariableStoreAtURLOptionsError(vmDir.NvramURL(), 0); err != nil {
 		return nil, err

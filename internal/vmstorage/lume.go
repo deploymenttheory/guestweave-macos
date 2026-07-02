@@ -17,7 +17,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
@@ -25,7 +25,7 @@ import (
 // writeLumeConfig builds a weave VMConfig from a lume image's description
 // (per the translation table in docs/registries-and-image-formats.md)
 // and saves it as this directory's config.json.
-func writeLumeConfig(d *vmdirectory.VMDirectory, description *oci.VMDescription) error {
+func writeLumeConfig(d *layout.VMDirectory, description *oci.VMDescription) error {
 	platform, err := lumePlatform(description)
 	if err != nil {
 		return err

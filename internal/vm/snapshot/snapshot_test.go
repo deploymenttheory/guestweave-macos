@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // newTestVMDir lays down a minimal VM bundle (disk + nvram) for snapshot tests.
-func newTestVMDir(t *testing.T, diskContents string) *vmdirectory.VMDirectory {
+func newTestVMDir(t *testing.T, diskContents string) *layout.VMDirectory {
 	t.Helper()
 	base := t.TempDir()
-	d := vmdirectory.NewVMDirectory(base)
+	d := layout.NewVMDirectory(base)
 	if err := os.WriteFile(d.DiskURL(), []byte(diskContents), 0o644); err != nil {
 		t.Fatalf("write disk: %v", err)
 	}

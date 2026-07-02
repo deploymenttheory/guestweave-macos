@@ -15,7 +15,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	"github.com/deploymenttheory/guestweave/internal/prune"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // pullFromRegistry ports VMDirectory.pullFromRegistry(registry:manifest:
@@ -23,7 +23,7 @@ import (
 // dispatch: the manifest's layer media types select the codec (tart or one
 // of the lume variants), and codecs that cannot write a weave config.json
 // themselves return a VMDescription which is translated here.
-func pullFromRegistry(ctx context.Context, d *vmdirectory.VMDirectory, source oci.BlobSource, manifest oci.OCIManifest,
+func pullFromRegistry(ctx context.Context, d *layout.VMDirectory, source oci.BlobSource, manifest oci.OCIManifest,
 	concurrency uint, localLayerCache *oci.LocalLayerCache, deduplicate bool) error {
 	format := oci.DetectImageFormat(manifest)
 	codec, err := oci.CodecFor(format, manifest)
@@ -68,7 +68,7 @@ func pullFromRegistry(ctx context.Context, d *vmdirectory.VMDirectory, source oc
 
 // PushToRegistry ports VMDirectory.pushToRegistry(registry:references:
 // chunkSizeMb:concurrency:labels:).
-func PushToRegistry(ctx context.Context, d *vmdirectory.VMDirectory, registry *oci.Registry, references []string,
+func PushToRegistry(ctx context.Context, d *layout.VMDirectory, registry *oci.Registry, references []string,
 	chunkSizeMb int, concurrency uint, labels map[string]string) (oci.RemoteName, error) {
 	var layers []oci.OCIManifestLayer
 

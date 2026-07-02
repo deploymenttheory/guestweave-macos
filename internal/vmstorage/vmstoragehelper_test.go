@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // TestMissingVMWrapPIDLock verifies missingVMWrap converts a missing PID lock
 // into the exit-2 VM-not-found error, as tart's VMStorageHelper does.
 func TestMissingVMWrapPIDLock(t *testing.T) {
-	_, err := missingVMWrap("ghost", func() (*vmdirectory.VMDirectory, error) {
+	_, err := missingVMWrap("ghost", func() (*layout.VMDirectory, error) {
 		return nil, weaveerrors.ErrPIDLockMissing("no lock")
 	})
 	var vmErr *weaveerrors.VMError

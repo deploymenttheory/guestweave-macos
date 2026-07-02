@@ -17,8 +17,8 @@ package vmstorage
 import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
 	"github.com/deploymenttheory/guestweave/internal/prune"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
 	foundation "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/foundation"
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/obj"
@@ -86,8 +86,8 @@ func EnsureDiskSpace(requiredBytes uint64, initiator prune.Prunable) error {
 		return weaveerrors.ErrGeneric(
 			"not enough disk space for this download: %s required, %s available on the volume hosting %s\n"+
 				"(free up space or prune cached images: weave prune --entries caches)",
-			vmdirectory.ByteCountString(int64(requiredBytes)),
-			vmdirectory.ByteCountString(int64(available)),
+			fsutil.ByteCountString(int64(requiredBytes)),
+			fsutil.ByteCountString(int64(available)),
 			cachePath)
 	}
 	return nil

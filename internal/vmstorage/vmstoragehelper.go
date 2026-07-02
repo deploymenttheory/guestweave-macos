@@ -13,15 +13,15 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/oci"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/errkit"
 )
 
 // VMStorageHelperOpen ports VMStorageHelper.open(_:): dispatches to the OCI
 // or local storage depending on whether name parses as a RemoteName.
-func VMStorageHelperOpen(name string) (*vmdirectory.VMDirectory, error) {
-	return missingVMWrap(name, func() (*vmdirectory.VMDirectory, error) {
+func VMStorageHelperOpen(name string) (*layout.VMDirectory, error) {
+	return missingVMWrap(name, func() (*layout.VMDirectory, error) {
 		if remoteName, err := oci.NewRemoteName(name); err == nil {
 			storage, err := NewVMStorageOCI()
 			if err != nil {
@@ -40,7 +40,7 @@ func VMStorageHelperOpen(name string) (*vmdirectory.VMDirectory, error) {
 
 // VMStorageHelperDelete ports VMStorageHelper.delete(_:).
 func VMStorageHelperDelete(name string) error {
-	_, err := missingVMWrap(name, func() (*vmdirectory.VMDirectory, error) {
+	_, err := missingVMWrap(name, func() (*layout.VMDirectory, error) {
 		if remoteName, err := oci.NewRemoteName(name); err == nil {
 			storage, err := NewVMStorageOCI()
 			if err != nil {
@@ -60,7 +60,7 @@ func VMStorageHelperDelete(name string) error {
 
 // missingVMWrap ports VMStorageHelper.missingVMWrap(_:closure:): PIDLock
 // and file-not-found failures become VMDoesNotExist.
-func missingVMWrap(name string, closure func() (*vmdirectory.VMDirectory, error)) (*vmdirectory.VMDirectory, error) {
+func missingVMWrap(name string, closure func() (*layout.VMDirectory, error)) (*layout.VMDirectory, error) {
 	result, err := closure()
 	if err == nil {
 		return result, nil

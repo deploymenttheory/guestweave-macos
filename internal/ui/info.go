@@ -17,7 +17,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
@@ -151,7 +151,7 @@ func diskSummary(c *vmconfig.VMConfig) string {
 		format = "raw"
 	}
 	if activeVMDir != "" {
-		if gb, err := vmdirectory.NewVMDirectory(activeVMDir).DiskSizeGB(); err == nil && gb > 0 {
+		if gb, err := layout.NewVMDirectory(activeVMDir).DiskSizeGB(); err == nil && gb > 0 {
 			return fmt.Sprintf("%d GB (%s)", gb, format)
 		}
 	}

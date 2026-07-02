@@ -28,7 +28,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/passphrase"
 	"github.com/deploymenttheory/guestweave/internal/screenviewer"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 )
@@ -201,7 +201,7 @@ func StartVMWithVNC(ctx context.Context, name string, password string) (host str
 }
 
 // waitForVMIP resolves the VM's IP, waiting up to secondsToWait.
-func waitForVMIP(ctx context.Context, vmDir *vmdirectory.VMDirectory, secondsToWait uint16) (string, error) {
+func waitForVMIP(ctx context.Context, vmDir *layout.VMDirectory, secondsToWait uint16) (string, error) {
 	vmConfig, err := vmconfig.NewVMConfigFromURL(vmDir.ConfigURL())
 	if err != nil {
 		return "", err

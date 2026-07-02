@@ -7,7 +7,7 @@ package cli
 import (
 	"strings"
 
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 	"github.com/spf13/cobra"
 )
@@ -57,7 +57,7 @@ func listRunningMachines() []string {
 	if localStorage, err := vmstorage.NewVMStorageLocal(); err == nil {
 		if entries, err := localStorage.List(); err == nil {
 			for _, entry := range entries {
-				if state, err := entry.VMDir.State(); err == nil && state == vmdirectory.VMDirectoryStateRunning {
+				if state, err := entry.VMDir.State(); err == nil && state == layout.VMDirectoryStateRunning {
 					names = append(names, normalizeName(entry.Name))
 				}
 			}

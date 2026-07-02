@@ -25,7 +25,7 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/fsutil"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // MaxSnapshots is the maximum number of disk snapshots retained per VM.
@@ -62,20 +62,20 @@ type snapshotIndex struct {
 }
 
 // Dir is the directory holding every snapshot payload and the index.
-func Dir(d *vmdirectory.VMDirectory) string { return filepath.Join(d.BaseURL, "snapshots") }
+func Dir(d *layout.VMDirectory) string { return filepath.Join(d.BaseURL, "snapshots") }
 
-func indexURL(d *vmdirectory.VMDirectory) string {
+func indexURL(d *layout.VMDirectory) string {
 	return filepath.Join(Dir(d), "index.json")
 }
 
-func payloadDir(d *vmdirectory.VMDirectory, id string) string {
+func payloadDir(d *layout.VMDirectory, id string) string {
 	return filepath.Join(Dir(d), id)
 }
 
 // requiredBytes is the worst-case space a snapshot needs: a full copy of
 // the disk image plus firmware. APFS copy-on-write usually makes the clone
 // near-free, but this is the safe upper bound used by the free-space guard.
-func requiredBytes(d *vmdirectory.VMDirectory) (int64, error) {
+func requiredBytes(d *layout.VMDirectory) (int64, error) {
 	total, err := fsutil.AllocatedSizeBytes(d.DiskURL())
 	if err != nil {
 		return 0, err
@@ -88,7 +88,7 @@ func requiredBytes(d *vmdirectory.VMDirectory) (int64, error) {
 	return total, nil
 }
 
-func readIndex(d *vmdirectory.VMDirectory) (snapshotIndex, error) {
+func readIndex(d *layout.VMDirectory) (snapshotIndex, error) {
 	var idx snapshotIndex
 	data, err := os.ReadFile(indexURL(d))
 	if errors.Is(err, os.ErrNotExist) {
@@ -103,7 +103,7 @@ func readIndex(d *vmdirectory.VMDirectory) (snapshotIndex, error) {
 	return idx, nil
 }
 
-func writeIndex(d *vmdirectory.VMDirectory, idx snapshotIndex) error {
+func writeIndex(d *layout.VMDirectory, idx snapshotIndex) error {
 	if err := os.MkdirAll(Dir(d), 0o755); err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func findSnapshot(idx snapshotIndex, ref string) (int, bool) {
 }
 
 // List returns the VM's snapshots in creation order.
-func List(d *vmdirectory.VMDirectory) ([]Snapshot, error) {
+func List(d *layout.VMDirectory) ([]Snapshot, error) {
 	idx, err := readIndex(d)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func List(d *vmdirectory.VMDirectory) ([]Snapshot, error) {
 // state. The caller quiesces the disk first (the VM must be stopped, or paused
 // via the run process) so the image is consistent. Enforces unique names, the
 // MaxSnapshots cap, and a free-space guard.
-func Create(d *vmdirectory.VMDirectory, opts CreateOptions) (Snapshot, error) {
+func Create(d *layout.VMDirectory, opts CreateOptions) (Snapshot, error) {
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		return Snapshot{}, weaveerrors.ErrGeneric("a snapshot name is required")
@@ -217,12 +217,12 @@ func Create(d *vmdirectory.VMDirectory, opts CreateOptions) (Snapshot, error) {
 	return snap, nil
 }
 
-func statePath(d *vmdirectory.VMDirectory, id string) string {
+func statePath(d *layout.VMDirectory, id string) string {
 	return filepath.Join(payloadDir(d, id), "state.vzvmsave")
 }
 
 // ByRef returns the snapshot matching ref (name or id).
-func ByRef(d *vmdirectory.VMDirectory, ref string) (Snapshot, bool, error) {
+func ByRef(d *layout.VMDirectory, ref string) (Snapshot, bool, error) {
 	idx, err := readIndex(d)
 	if err != nil {
 		return Snapshot{}, false, err
@@ -238,7 +238,7 @@ func ByRef(d *vmdirectory.VMDirectory, ref string) (Snapshot, bool, error) {
 // path so the next start resumes the exact moment rather than rebooting. The VM
 // must be stopped — the live disk is replaced. Returns whether RAM state was
 // staged.
-func Revert(d *vmdirectory.VMDirectory, ref string) (restoredState bool, err error) {
+func Revert(d *layout.VMDirectory, ref string) (restoredState bool, err error) {
 	idx, err := readIndex(d)
 	if err != nil {
 		return false, err
@@ -280,7 +280,7 @@ func Revert(d *vmdirectory.VMDirectory, ref string) (restoredState bool, err err
 
 // Delete removes the named snapshot (matched by name or id) and its
 // payload. Safe at any VM state — it never touches the live disk.
-func Delete(d *vmdirectory.VMDirectory, ref string) error {
+func Delete(d *layout.VMDirectory, ref string) error {
 	idx, err := readIndex(d)
 	if err != nil {
 		return err

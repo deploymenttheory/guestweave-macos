@@ -18,11 +18,11 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
-func openLocalVMDir(name string) (*vmdirectory.VMDirectory, error) {
+func openLocalVMDir(name string) (*layout.VMDirectory, error) {
 	storage, err := vmstorage.NewVMStorageLocal()
 	if err != nil {
 		return nil, err

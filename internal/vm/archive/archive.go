@@ -13,11 +13,11 @@ import (
 
 	"github.com/deploymenttheory/guestweave/internal/diskimage"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // Export ports VMDirectory.exportToArchive(path:).
-func Export(d *vmdirectory.VMDirectory, path string) error {
+func Export(d *layout.VMDirectory, path string) error {
 	if err := runAA([]string{
 		"archive",
 		"-d", d.BaseURL,
@@ -30,7 +30,7 @@ func Export(d *vmdirectory.VMDirectory, path string) error {
 }
 
 // Import ports VMDirectory.importFromArchive(path:).
-func Import(d *vmdirectory.VMDirectory, path string) error {
+func Import(d *layout.VMDirectory, path string) error {
 	if err := runAA([]string{
 		"extract",
 		"-d", d.BaseURL,

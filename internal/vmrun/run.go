@@ -49,7 +49,7 @@ import (
 	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 	"github.com/deploymenttheory/guestweave/internal/winimage"
@@ -303,7 +303,7 @@ func (c *Options) Validate() error {
 	if err != nil {
 		return err
 	}
-	if state == vmdirectory.VMDirectoryStateSuspended {
+	if state == layout.VMDirectoryStateSuspended {
 		c.Suspendable = true
 	}
 
@@ -527,7 +527,7 @@ func (c *Session) runMainThread() error {
 // is used both for the initial run and to rebuild the VM for an in-process
 // snapshot revert — the attachments are single-use, so each instance gets its
 // own freshly-resolved set.
-func (c *Session) buildVMInstance(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) (*weavevm.VM, error) {
+func (c *Session) buildVMInstance(vmDir *layout.VMDirectory, vmConfig *vmconfig.VMConfig) (*weavevm.VM, error) {
 	var serialPorts []idvirt.SerialPortConfigurationProvider
 	if c.Serial {
 		ttyFD := weavevm.CreatePTY()
@@ -650,7 +650,7 @@ func (c *Session) TriggerRevert(ref string) bool {
 // revert in place.
 type liveSnapshotHandler struct {
 	s   *Session
-	dir *vmdirectory.VMDirectory
+	dir *layout.VMDirectory
 }
 
 func (h liveSnapshotHandler) CreateLive(name, description string) (snapshot.Snapshot, error) {
@@ -671,7 +671,7 @@ func (h liveSnapshotHandler) RevertInProcess(ref string) bool {
 func (c *Session) driveVM(
 	ctx context.Context,
 	localStorage *vmstorage.VMStorageLocal,
-	vmDir *vmdirectory.VMDirectory,
+	vmDir *layout.VMDirectory,
 	vncImpl weavevnc.VNC,
 	vmConfig *vmconfig.VMConfig,
 ) {
@@ -914,7 +914,7 @@ func (c *Session) resolveClipboard(vmConfig *vmconfig.VMConfig) {
 // layers its override onto the engine's current policy, applies it live, and —
 // when persist is set — writes the resulting policy to the VM config in place
 // (a rename would invalidate this process's fcntl run-lock on config.json).
-func (c *Session) serveClipboardControl(ctx context.Context, vmDir *vmdirectory.VMDirectory, engine *clipboard.Engine) {
+func (c *Session) serveClipboardControl(ctx context.Context, vmDir *layout.VMDirectory, engine *clipboard.Engine) {
 	handler := func(req clipboardctl.Request) (clipboardpolicy.Policy, error) {
 		// An empty override is a pure query (weave clipboard get): return the
 		// current policy without touching the engine.
@@ -993,7 +993,7 @@ func (c *Session) clipboardSummary() string {
 	return strings.Join(parts, " · ")
 }
 
-func (c *Session) suspendVM(vmDir *vmdirectory.VMDirectory, cancelRun context.CancelFunc) {
+func (c *Session) suspendVM(vmDir *layout.VMDirectory, cancelRun context.CancelFunc) {
 	if !weaveplatform.MacOSAtLeast(14) {
 		fmt.Println(
 			weaveerrors.ErrSuspendFailed(

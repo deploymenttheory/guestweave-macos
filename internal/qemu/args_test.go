@@ -9,7 +9,7 @@ import (
 
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 func testSpec(iso string) Spec {
@@ -27,7 +27,7 @@ func testSpec(iso string) Spec {
 			CPUCount:   6,
 			MemorySize: 8 * 1024 * 1024 * 1024,
 		},
-		VMDir:      vmdirectory.NewVMDirectory("/vms/win11"),
+		VMDir:      layout.NewVMDirectory("/vms/win11"),
 		InstallISO: iso,
 		VNCDisplay: 2,
 	}

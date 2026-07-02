@@ -28,7 +28,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/ui"
 	"github.com/deploymenttheory/guestweave/internal/unattended"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 	"github.com/deploymenttheory/guestweave/internal/winimage"
 )
@@ -38,7 +38,7 @@ const windowsStopTimeout = 30 * time.Second
 
 // runWindows boots a Windows guest on the QEMU backend and blocks until it
 // stops (or the operator interrupts via SIGINT / `weave stop`).
-func (c *Session) runWindows(vmDir *vmdirectory.VMDirectory, vmConfig *vmconfig.VMConfig) error {
+func (c *Session) runWindows(vmDir *layout.VMDirectory, vmConfig *vmconfig.VMConfig) error {
 	if vmConfig.Windows == nil {
 		return weaveerrors.ErrGeneric("VM %q is missing its Windows configuration", c.Name)
 	}
@@ -200,7 +200,7 @@ func (c *Session) driveWindowsUEFISetup(ctx context.Context, endpoint string) {
 // presentWindowsVNC reuses weave's VNC viewer plumbing for the QEMU VNC server:
 // it records the endpoint, opens the system viewer, and optionally starts the
 // view-only MJPEG screen server — mirroring driveVM's vncImpl block.
-func (c *Session) presentWindowsVNC(ctx context.Context, vmDir *vmdirectory.VMDirectory, endpoint string) {
+func (c *Session) presentWindowsVNC(ctx context.Context, vmDir *layout.VMDirectory, endpoint string) {
 	vncImpl := weavevnc.NewQEMUVNC(endpoint)
 	vncURL, err := vncImpl.WaitForURL(ctx, false)
 	if err != nil {

@@ -3,7 +3,7 @@
 // plain strings managed with os/path/filepath and fsutil.
 //go:build darwin
 
-package vmdirectory
+package layout
 
 import (
 	"crypto/md5"
@@ -322,7 +322,7 @@ func (d *VMDirectory) resizeRawDisk(sizeGB uint16) error {
 	if desiredDiskFileLength < currentDiskFileLength {
 		f.Close()
 		return weaveerrors.ErrInvalidDiskSize("new disk size of %s should be larger than the current disk size of %s",
-			ByteCountString(desiredDiskFileLength), ByteCountString(currentDiskFileLength))
+			fsutil.ByteCountString(desiredDiskFileLength), fsutil.ByteCountString(currentDiskFileLength))
 	} else if desiredDiskFileLength > currentDiskFileLength {
 		if err := f.Truncate(desiredDiskFileLength); err != nil {
 			f.Close()
@@ -346,7 +346,7 @@ func (d *VMDirectory) resizeASIFDisk(sizeGB uint16) error {
 
 	if desiredSizeBytes < uint64(currentSizeBytes) {
 		return weaveerrors.ErrInvalidDiskSize("New disk size of %s should be larger than the current disk size of %s",
-			ByteCountString(int64(desiredSizeBytes)), ByteCountString(int64(currentSizeBytes)))
+			fsutil.ByteCountString(int64(desiredSizeBytes)), fsutil.ByteCountString(int64(currentSizeBytes)))
 	} else if desiredSizeBytes > uint64(currentSizeBytes) {
 		return d.performASIFResize(sizeGB)
 	}
@@ -501,11 +501,6 @@ func (d *VMDirectory) components() []string {
 		return []string{d.ConfigURL(), d.DiskURL(), d.EFIVarsURL()}
 	}
 	return []string{d.ConfigURL(), d.DiskURL(), d.NvramURL()}
-}
-
-// ByteCountString mirrors ByteCountFormatter().string(fromByteCount:).
-func ByteCountString(byteCount int64) string {
-	return fsutil.ByteCountString(byteCount)
 }
 
 // FirmwareFile returns the persistent firmware file to snapshot for this guest

@@ -20,13 +20,14 @@ import (
 
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
+	"github.com/deploymenttheory/guestweave/internal/fsutil"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	"github.com/deploymenttheory/guestweave/internal/prune"
 	"github.com/deploymenttheory/guestweave/internal/telemetry"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -84,7 +85,7 @@ func (s *VMStorageOCI) hostDirectoryPath(name oci.RemoteName) string {
 
 // Exists ports VMStorageOCI.exists(_:).
 func (s *VMStorageOCI) Exists(name oci.RemoteName) bool {
-	return vmdirectory.NewVMDirectory(s.vmURL(name)).Initialized()
+	return layout.NewVMDirectory(s.vmURL(name)).Initialized()
 }
 
 // Digest ports VMStorageOCI.digest(_:).
@@ -102,8 +103,8 @@ func (s *VMStorageOCI) Digest(name oci.RemoteName) (string, error) {
 }
 
 // Open ports VMStorageOCI.open(_:_:).
-func (s *VMStorageOCI) Open(name oci.RemoteName, accessDate time.Time) (*vmdirectory.VMDirectory, error) {
-	vmDir := vmdirectory.NewVMDirectory(s.vmURL(name))
+func (s *VMStorageOCI) Open(name oci.RemoteName, accessDate time.Time) (*layout.VMDirectory, error) {
+	vmDir := layout.NewVMDirectory(s.vmURL(name))
 
 	if err := vmDir.Validate(name.String()); err != nil {
 		return nil, err
@@ -117,8 +118,8 @@ func (s *VMStorageOCI) Open(name oci.RemoteName, accessDate time.Time) (*vmdirec
 }
 
 // Create ports VMStorageOCI.create(_:overwrite:).
-func (s *VMStorageOCI) Create(name oci.RemoteName, overwrite bool) (*vmdirectory.VMDirectory, error) {
-	vmDir := vmdirectory.NewVMDirectory(s.vmURL(name))
+func (s *VMStorageOCI) Create(name oci.RemoteName, overwrite bool) (*layout.VMDirectory, error) {
+	vmDir := layout.NewVMDirectory(s.vmURL(name))
 	if err := vmDir.Initialize(overwrite); err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func (s *VMStorageOCI) Create(name oci.RemoteName, overwrite bool) (*vmdirectory
 }
 
 // Move ports VMStorageOCI.move(_:from:).
-func (s *VMStorageOCI) Move(name oci.RemoteName, from *vmdirectory.VMDirectory) error {
+func (s *VMStorageOCI) Move(name oci.RemoteName, from *layout.VMDirectory) error {
 	targetPath := s.vmPath(name)
 
 	// Pre-create intermediate directories (e.g. ~/.weave/cache/OCIs/
@@ -169,7 +170,7 @@ func (s *VMStorageOCI) GC() error {
 			return os.Remove(path)
 		}
 
-		vmDir := vmdirectory.NewVMDirectory(resolved)
+		vmDir := layout.NewVMDirectory(resolved)
 		if !vmDir.Initialized() {
 			return nil
 		}
@@ -192,7 +193,7 @@ func (s *VMStorageOCI) GC() error {
 	// Perform garbage collection for digest-based images with no incoming
 	// references.
 	for basePath, incRefCount := range refCounts {
-		vmDir := vmdirectory.NewVMDirectory(basePath)
+		vmDir := layout.NewVMDirectory(basePath)
 		if !vmDir.IsExplicitlyPulled() && incRefCount == 0 {
 			if err := os.RemoveAll(basePath); err != nil {
 				return err
@@ -206,7 +207,7 @@ func (s *VMStorageOCI) GC() error {
 // OCIVMEntry is one element of VMStorageOCI.list()'s result tuple.
 type OCIVMEntry struct {
 	Name      string
-	VMDir     *vmdirectory.VMDirectory
+	VMDir     *layout.VMDirectory
 	IsSymlink bool
 }
 
@@ -220,7 +221,7 @@ func (s *VMStorageOCI) List() ([]OCIVMEntry, error) {
 			return nil
 		}
 
-		vmDir := vmdirectory.NewVMDirectory(path)
+		vmDir := layout.NewVMDirectory(path)
 		if !vmDir.Initialized() {
 			return nil
 		}
@@ -322,7 +323,7 @@ func (s *VMStorageOCI) Pull(ctx context.Context, name oci.RemoteName, source wea
 		ctx, span := telemetry.OTelShared().Tracer.Start(ctx, "pull")
 		defer span.End()
 
-		tmpVMDir, err := vmdirectory.VMDirectoryTemporaryDeterministic(name.String())
+		tmpVMDir, err := layout.VMDirectoryTemporaryDeterministic(name.String())
 		if err != nil {
 			return err
 		}
@@ -362,7 +363,7 @@ func (s *VMStorageOCI) Pull(ctx context.Context, name oci.RemoteName, source wea
 			}
 
 			if localLayerCache != nil {
-				deduplicatedHuman := vmdirectory.ByteCountString(int64(localLayerCache.DeduplicatedBytes))
+				deduplicatedHuman := fsutil.ByteCountString(int64(localLayerCache.DeduplicatedBytes))
 				if deduplicate {
 					logging.DefaultLogger().AppendNewLine(fmt.Sprintf(
 						"found an image %s that will allow us to deduplicate %s, using it as a base...",
@@ -396,7 +397,7 @@ func (s *VMStorageOCI) Pull(ctx context.Context, name oci.RemoteName, source wea
 	} else {
 		// Ensure that images pulled by content digest are excluded from
 		// garbage collection.
-		vmdirectory.NewVMDirectory(s.vmURL(name)).MarkExplicitlyPulled()
+		layout.NewVMDirectory(s.vmURL(name)).MarkExplicitlyPulled()
 	}
 
 	// Explicitly mark the image as being accessed so it won't get pruned
@@ -453,7 +454,7 @@ func (s *VMStorageOCI) ChooseLocalLayerCache(ctx context.Context, name oci.Remot
 
 	type candidate struct {
 		name              string
-		vmDir             *vmdirectory.VMDirectory
+		vmDir             *layout.VMDirectory
 		manifest          oci.OCIManifest
 		deduplicatedBytes uint64
 	}

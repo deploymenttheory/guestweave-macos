@@ -14,7 +14,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
 	"github.com/deploymenttheory/guestweave/internal/oci"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
@@ -79,7 +79,7 @@ func (c *CloneCommand) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	tmpVMDir, err := vmdirectory.VMDirectoryTemporary()
+	tmpVMDir, err := layout.VMDirectoryTemporary()
 	if err != nil {
 		return err
 	}

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 const socketName = "snapshot.sock"
@@ -45,14 +45,14 @@ type socketResponse struct {
 	Error    string    `json:"error,omitempty"`
 }
 
-func socketPath(d *vmdirectory.VMDirectory) string {
+func socketPath(d *layout.VMDirectory) string {
 	return filepath.Join(d.Path(), socketName)
 }
 
 // Serve binds the snapshot socket and handles requests until ctx is
 // cancelled. Best-effort: if binding fails, running-VM snapshots are simply
 // unavailable (the client falls back to reporting the VM is busy).
-func Serve(ctx context.Context, d *vmdirectory.VMDirectory, h LiveHandler) {
+func Serve(ctx context.Context, d *layout.VMDirectory, h LiveHandler) {
 	path := socketPath(d)
 	_ = os.Remove(path)
 	listener, err := net.Listen("unix", path)
@@ -116,7 +116,7 @@ func writeResponse(conn net.Conn, resp socketResponse) {
 // RequestCreateOverSocket asks the run process to snapshot a running VM. The
 // returned error distinguishes "no run process listening" (so the caller can
 // report the VM as not running) via ErrSocketUnavailable.
-func RequestCreateOverSocket(d *vmdirectory.VMDirectory, name, description string) (Snapshot, error) {
+func RequestCreateOverSocket(d *layout.VMDirectory, name, description string) (Snapshot, error) {
 	conn, err := net.DialTimeout("unix", socketPath(d), 5*time.Second)
 	if err != nil {
 		return Snapshot{}, ErrSocketUnavailable
@@ -144,7 +144,7 @@ func RequestCreateOverSocket(d *vmdirectory.VMDirectory, name, description strin
 
 // RequestRevertOverSocket asks the run process to revert a running VM in place.
 // Returns ErrSocketUnavailable when no run process is listening.
-func RequestRevertOverSocket(d *vmdirectory.VMDirectory, ref string) error {
+func RequestRevertOverSocket(d *layout.VMDirectory, ref string) error {
 	conn, err := net.DialTimeout("unix", socketPath(d), 5*time.Second)
 	if err != nil {
 		return ErrSocketUnavailable

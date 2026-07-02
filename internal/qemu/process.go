@@ -15,7 +15,7 @@ import (
 	vtpm2 "github.com/deploymenttheory/go-sdk-vtpm2/emulator"
 	"github.com/deploymenttheory/guestweave/internal/backend"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 const (
@@ -37,7 +37,7 @@ var _ backend.Backend = (*Backend)(nil)
 func New(cacheDir string) *Backend { return &Backend{CacheDir: cacheDir} }
 
 // Start boots the Windows guest described by cfg and returns a handle.
-func (b *Backend) Start(ctx context.Context, vmDir *vmdirectory.VMDirectory, cfg *vmconfig.VMConfig, opts backend.StartOptions) (backend.Instance, error) {
+func (b *Backend) Start(ctx context.Context, vmDir *layout.VMDirectory, cfg *vmconfig.VMConfig, opts backend.StartOptions) (backend.Instance, error) {
 	tc, err := ResolveToolchain(b.CacheDir)
 	if err != nil {
 		return nil, err

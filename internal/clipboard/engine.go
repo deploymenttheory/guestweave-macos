@@ -36,7 +36,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	mainthread "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/tools/grandcentraldispatch/mainthread"
 )
@@ -128,7 +128,7 @@ type Engine struct {
 	mu                 sync.Mutex
 	pendingPolicy      *clipboardpolicy.Policy
 	vmName             string
-	vmDir              *vmdirectory.VMDirectory
+	vmDir              *layout.VMDirectory
 	mac                macaddress.MACAddress
 	user, password     string
 	guestOS, guestArch string
@@ -188,7 +188,7 @@ func (e *Engine) SetSerialChannel(r io.Reader, w io.Writer) {
 
 // NewEngine builds a clipboard engine for one VM. guestOS/guestArch select the
 // agent binary to deploy (e.g. "darwin"/"arm64", "linux"/"amd64").
-func NewEngine(policy clipboardpolicy.Policy, vmName string, vmDir *vmdirectory.VMDirectory, mac macaddress.MACAddress, user, password, guestOS, guestArch string) *Engine {
+func NewEngine(policy clipboardpolicy.Policy, vmName string, vmDir *layout.VMDirectory, mac macaddress.MACAddress, user, password, guestOS, guestArch string) *Engine {
 	return &Engine{
 		policy:    policy,
 		vmName:    vmName,

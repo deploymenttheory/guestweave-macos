@@ -15,7 +15,7 @@ import (
 
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
@@ -28,8 +28,8 @@ import (
 const nsAlertFirstButtonReturn = 1000
 
 // activeVMDirectory wraps the running VM's bundle directory for snapshot calls.
-func activeVMDirectory() *vmdirectory.VMDirectory {
-	return vmdirectory.NewVMDirectory(activeVMDir)
+func activeVMDirectory() *layout.VMDirectory {
+	return layout.NewVMDirectory(activeVMDir)
 }
 
 // takeSnapshotFromMenu is the Control ▸ Snapshots ▸ Take Snapshot action. It

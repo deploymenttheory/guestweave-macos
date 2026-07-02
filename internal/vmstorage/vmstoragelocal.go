@@ -11,7 +11,7 @@ import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	"github.com/deploymenttheory/guestweave/internal/fsutil"
 	"github.com/deploymenttheory/guestweave/internal/prune"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // VMStorageLocal ports tart's VMStorageLocal class.
@@ -38,12 +38,12 @@ func (s *VMStorageLocal) vmURL(name string) string {
 
 // Exists ports VMStorageLocal.exists(_:).
 func (s *VMStorageLocal) Exists(name string) bool {
-	return vmdirectory.NewVMDirectory(s.vmURL(name)).Initialized()
+	return layout.NewVMDirectory(s.vmURL(name)).Initialized()
 }
 
 // Open ports VMStorageLocal.open(_:).
-func (s *VMStorageLocal) Open(name string) (*vmdirectory.VMDirectory, error) {
-	vmDir := vmdirectory.NewVMDirectory(s.vmURL(name))
+func (s *VMStorageLocal) Open(name string) (*layout.VMDirectory, error) {
+	vmDir := layout.NewVMDirectory(s.vmURL(name))
 
 	if err := vmDir.Validate(name); err != nil {
 		return nil, err
@@ -57,8 +57,8 @@ func (s *VMStorageLocal) Open(name string) (*vmdirectory.VMDirectory, error) {
 }
 
 // Create ports VMStorageLocal.create(_:overwrite:).
-func (s *VMStorageLocal) Create(name string, overwrite bool) (*vmdirectory.VMDirectory, error) {
-	vmDir := vmdirectory.NewVMDirectory(s.vmURL(name))
+func (s *VMStorageLocal) Create(name string, overwrite bool) (*layout.VMDirectory, error) {
+	vmDir := layout.NewVMDirectory(s.vmURL(name))
 
 	if err := vmDir.Initialize(overwrite); err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func (s *VMStorageLocal) Create(name string, overwrite bool) (*vmdirectory.VMDir
 }
 
 // Move ports VMStorageLocal.move(_:from:).
-func (s *VMStorageLocal) Move(name string, from *vmdirectory.VMDirectory) error {
+func (s *VMStorageLocal) Move(name string, from *layout.VMDirectory) error {
 	if err := os.MkdirAll(s.BaseURL, 0o755); err != nil {
 		return err
 	}
@@ -82,14 +82,14 @@ func (s *VMStorageLocal) Rename(name string, newName string) error {
 
 // Delete ports VMStorageLocal.delete(_:).
 func (s *VMStorageLocal) Delete(name string) error {
-	return vmdirectory.NewVMDirectory(s.vmURL(name)).Delete()
+	return layout.NewVMDirectory(s.vmURL(name)).Delete()
 }
 
 // LocalVMEntry is one element of VMStorageLocal.list()'s (name, VMDirectory)
 // result tuple.
 type LocalVMEntry struct {
 	Name  string
-	VMDir *vmdirectory.VMDirectory
+	VMDir *layout.VMDirectory
 }
 
 // List ports VMStorageLocal.list().
@@ -104,7 +104,7 @@ func (s *VMStorageLocal) List() ([]LocalVMEntry, error) {
 
 	var dirs []LocalVMEntry
 	for _, entry := range entries {
-		vmDir := vmdirectory.NewVMDirectory(filepath.Join(s.BaseURL, entry.Name()))
+		vmDir := layout.NewVMDirectory(filepath.Join(s.BaseURL, entry.Name()))
 		if !vmDir.Initialized() {
 			continue
 		}

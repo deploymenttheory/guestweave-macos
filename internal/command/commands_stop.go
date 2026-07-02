@@ -10,7 +10,7 @@ import (
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
@@ -35,21 +35,21 @@ func (c *StopCommand) Run(ctx context.Context) error {
 		return err
 	}
 	switch state {
-	case vmdirectory.VMDirectoryStateSuspended:
+	case layout.VMDirectoryStateSuspended:
 		return c.stopSuspended(vmDir)
-	case vmdirectory.VMDirectoryStateRunning:
+	case layout.VMDirectoryStateRunning:
 		return c.stopRunning(ctx, vmDir)
 	default:
 		return weaveerrors.ErrVMNotRunning(c.Name)
 	}
 }
 
-func (c *StopCommand) stopSuspended(vmDir *vmdirectory.VMDirectory) error {
+func (c *StopCommand) stopSuspended(vmDir *layout.VMDirectory) error {
 	_ = os.RemoveAll(vmDir.StateURL())
 	return nil
 }
 
-func (c *StopCommand) stopRunning(ctx context.Context, vmDir *vmdirectory.VMDirectory) error {
+func (c *StopCommand) stopRunning(ctx context.Context, vmDir *layout.VMDirectory) error {
 	lock, err := vmDir.Lock()
 	if err != nil {
 		return err

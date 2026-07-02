@@ -11,7 +11,7 @@ import (
 	"time"
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
@@ -87,7 +87,7 @@ func (c *ListCommand) Infos(ctx context.Context) ([]ListVMInfo, error) {
 	return infos, nil
 }
 
-func (c *ListCommand) VMInfo(source string, name string, vmDir *vmdirectory.VMDirectory) (ListVMInfo, error) {
+func (c *ListCommand) VMInfo(source string, name string, vmDir *layout.VMDirectory) (ListVMInfo, error) {
 	diskGB, err := vmDir.SizeGB()
 	if err != nil {
 		return ListVMInfo{}, err

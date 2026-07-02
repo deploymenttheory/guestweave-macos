@@ -13,7 +13,7 @@ import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weavelock "github.com/deploymenttheory/guestweave/internal/lock"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 
@@ -38,7 +38,7 @@ func (c *ImportCommand) Run(ctx context.Context) error {
 
 	// Create a temporary VM directory to which we will load the export file,
 	// and lock it to prevent garbage collection while we're running.
-	tmpVMDir, err := vmdirectory.VMDirectoryTemporary()
+	tmpVMDir, err := layout.VMDirectoryTemporary()
 	if err != nil {
 		return err
 	}

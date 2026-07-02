@@ -14,7 +14,7 @@ import (
 	"context"
 
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
-	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 )
 
 // StartOptions are engine-agnostic run-time options resolved from CLI flags.
@@ -48,5 +48,5 @@ type Instance interface {
 type Backend interface {
 	// Start boots the VM described by cfg, whose files live in vmDir, and
 	// returns a handle to the running guest.
-	Start(ctx context.Context, vmDir *vmdirectory.VMDirectory, cfg *vmconfig.VMConfig, opts StartOptions) (Instance, error)
+	Start(ctx context.Context, vmDir *layout.VMDirectory, cfg *vmconfig.VMConfig, opts StartOptions) (Instance, error)
 }
