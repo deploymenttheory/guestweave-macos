@@ -14,8 +14,8 @@ import (
 	"syscall"
 
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
-	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 	"github.com/deploymenttheory/guestweave/internal/vm/layout"
+	"github.com/deploymenttheory/guestweave/internal/vm/snapshot"
 
 	"github.com/deploymenttheory/go-bindings-macosplatform/bindings/runtime/purego"
 	appkit "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/appkit"
