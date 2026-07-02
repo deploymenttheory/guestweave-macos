@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 
-	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	vmservice "github.com/deploymenttheory/guestweave/internal/vm/service"
 	"github.com/spf13/cobra"
 )
 
 func newListCommand() *cobra.Command {
-	c := &weavecommand.ListCommand{}
 	var (
+		source string
 		format string
 		quiet  bool
 	)
@@ -29,12 +29,11 @@ func newListCommand() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("unsupported format: %q", format)
 			}
-			c.ISO8601Dates = parsedFormat == FormatJSON
-			if err := c.Validate(); err != nil {
+			if err := vmservice.ValidateListSource(source); err != nil {
 				return err
 			}
 			return runBackground(cmd, func(ctx context.Context) error {
-				infos, err := c.Infos(ctx)
+				infos, err := vmservice.CollectVMInfos(source, parsedFormat == FormatJSON)
 				if err != nil {
 					return err
 				}
@@ -55,7 +54,7 @@ func newListCommand() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&c.Source, "source", "", "restrict the listing to one source (local|oci)")
+	flags.StringVar(&source, "source", "", "restrict the listing to one source (local|oci)")
 	flags.StringVar(&format, "format", "text", "output format (text|json)")
 	flags.BoolVarP(&quiet, "quiet", "q", false, "print VM names only")
 	return cmd

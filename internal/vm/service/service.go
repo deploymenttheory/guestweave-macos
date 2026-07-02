@@ -4,7 +4,7 @@
 // outlive the request that started it (the same reason lume detaches).
 //go:build darwin
 
-package vmservice
+package service
 
 import (
 	"context"
@@ -14,18 +14,42 @@ import (
 	"syscall"
 	"time"
 
-	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
+	"sort"
+
+	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
+	"github.com/deploymenttheory/guestweave/internal/vm/layout"
 	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 
-// CollectVMInfos returns the structured listing for local and/or OCI VMs.
-// source is "", "local" or "oci"; dates are RFC 3339.
-func CollectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
-	command := &weavecommand.ListCommand{Source: source, ISO8601Dates: true}
+// VMInfo is one row of the VM listing: the shared DTO behind `weave list`,
+// the HTTP API and the MCP server. The field names and order are load-bearing:
+// they are the JSON keys, and the CLI renders them reflectively as table
+// headers (skipping the field literally named "Running").
+type VMInfo struct {
+	Source   string
+	Name     string
+	Disk     int
+	Size     int
+	Accessed string
+	Running  bool
+	State    string
+}
 
-	var infos []weavecommand.ListVMInfo
+// ValidateListSource rejects anything but the known listing sources.
+func ValidateListSource(source string) error {
+	if source != "" && source != "local" && source != "oci" {
+		return weaveerrors.ErrGeneric("'%s' is not a valid <source>", source)
+	}
+	return nil
+}
+
+// CollectVMInfos returns the structured listing for local and/or OCI VMs.
+// source is "", "local" or "oci". iso8601 renders access dates as RFC 3339
+// (JSON output, the HTTP API) instead of relative wording (text output).
+func CollectVMInfos(source string, iso8601 bool) ([]VMInfo, error) {
+	var infos []VMInfo
 	if source == "" || source == "local" {
 		localStorage, err := vmstorage.NewVMStorageLocal()
 		if err != nil {
@@ -35,15 +59,15 @@ func CollectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		batch := make([]weavecommand.ListVMInfo, 0, len(entries))
+		batch := make([]VMInfo, 0, len(entries))
 		for _, entry := range entries {
-			info, err := command.VMInfo("local", entry.Name, entry.VMDir)
+			info, err := collectVMInfo("local", entry.Name, entry.VMDir, iso8601)
 			if err != nil {
 				return nil, err
 			}
 			batch = append(batch, info)
 		}
-		infos = append(infos, weavecommand.SortedInfos(batch)...)
+		infos = append(infos, sortedInfos(batch)...)
 	}
 	if source == "" || source == "oci" {
 		ociStorage, err := vmstorage.NewVMStorageOCI()
@@ -54,17 +78,83 @@ func CollectVMInfos(source string) ([]weavecommand.ListVMInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		batch := make([]weavecommand.ListVMInfo, 0, len(entries))
+		batch := make([]VMInfo, 0, len(entries))
 		for _, entry := range entries {
-			info, err := command.VMInfo("OCI", entry.Name, entry.VMDir)
+			info, err := collectVMInfo("OCI", entry.Name, entry.VMDir, iso8601)
 			if err != nil {
 				return nil, err
 			}
 			batch = append(batch, info)
 		}
-		infos = append(infos, weavecommand.SortedInfos(batch)...)
+		infos = append(infos, sortedInfos(batch)...)
 	}
 	return infos, nil
+}
+
+func collectVMInfo(source, name string, vmDir *layout.VMDirectory, iso8601 bool) (VMInfo, error) {
+	diskGB, err := vmDir.SizeGB()
+	if err != nil {
+		return VMInfo{}, err
+	}
+	sizeGB, err := vmDir.AllocatedSizeGB()
+	if err != nil {
+		return VMInfo{}, err
+	}
+	accessDate, err := vmDir.AccessDate()
+	if err != nil {
+		return VMInfo{}, err
+	}
+	running, err := vmDir.Running()
+	if err != nil {
+		return VMInfo{}, err
+	}
+	state, err := vmDir.State()
+	if err != nil {
+		return VMInfo{}, err
+	}
+
+	return VMInfo{
+		Source:   source,
+		Name:     name,
+		Disk:     diskGB,
+		Size:     sizeGB,
+		Accessed: formatAccessDate(accessDate, iso8601),
+		Running:  running,
+		State:    string(state),
+	}, nil
+}
+
+func sortedInfos(infos []VMInfo) []VMInfo {
+	sort.Slice(infos, func(i, j int) bool { return infos[i].Name < infos[j].Name })
+	return infos
+}
+
+// formatAccessDate mirrors List.formatAccessDate: relative wording for text
+// output, ISO 8601 for JSON.
+func formatAccessDate(accessDate time.Time, iso8601 bool) string {
+	if iso8601 {
+		return accessDate.UTC().Format(time.RFC3339)
+	}
+	return relativeDateString(accessDate)
+}
+
+// relativeDateString approximates RelativeDateTimeFormatter's full style.
+func relativeDateString(date time.Time) string {
+	elapsed := time.Since(date)
+	if elapsed < 0 {
+		return "in the future"
+	}
+
+	switch {
+	case elapsed < time.Minute:
+		return fmt.Sprintf("%d seconds ago", int(elapsed.Seconds()))
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%d minutes ago", int(elapsed.Minutes()))
+	case elapsed < 24*time.Hour:
+		return fmt.Sprintf("%d hours ago", int(elapsed.Hours()))
+	default:
+		return fmt.Sprintf("%d days ago", int(elapsed.Hours()/24))
+	}
 }
 
 // VMDetails is the GET /weave/vms/{name} shape (lume's VMDetails).
@@ -119,17 +209,11 @@ func CollectVMDetails(ctx context.Context, name string) (VMDetails, error) {
 	}
 
 	if running {
-		if mac, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String()); ok {
-			if ip, found, err := macaddress.ResolveIP(
-				ctx,
-				mac,
-				macaddress.IPResolutionStrategyDHCP,
-				0,
-				vmDir.ControlSocketURL(),
-			); err == nil &&
-				found {
-				details.IPAddress = ip.String()
-			}
+		if ip, found, err := resolveIPWithConfig(
+			ctx, vmConfig, vmDir.ControlSocketURL(),
+			macaddress.IPResolutionStrategyDHCP, 0,
+		); err == nil && found {
+			details.IPAddress = ip
 		}
 	}
 	return details, nil

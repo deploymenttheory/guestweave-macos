@@ -15,17 +15,17 @@ import (
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
 	"github.com/deploymenttheory/guestweave/internal/diskimage"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
-	"github.com/deploymenttheory/guestweave/internal/vmservice"
+	vmservice "github.com/deploymenttheory/guestweave/internal/vm/service"
 )
 
 func (s *APIServer) handleListVMs(w http.ResponseWriter, r *http.Request) {
-	infos, err := vmservice.CollectVMInfos(r.URL.Query().Get("source"))
+	infos, err := vmservice.CollectVMInfos(r.URL.Query().Get("source"), true)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	if infos == nil {
-		infos = []weavecommand.ListVMInfo{}
+		infos = []vmservice.VMInfo{}
 	}
 	writeJSON(w, http.StatusOK, infos)
 }

@@ -2,7 +2,7 @@
 // the HTTP API's exec, ssh and ip handlers.
 //go:build darwin
 
-package vmservice
+package service
 
 import (
 	"context"
@@ -29,11 +29,24 @@ func ResolveVMIP(
 	if err != nil {
 		return "", false, err
 	}
+	return resolveIPWithConfig(ctx, vmConfig, vmDir.ControlSocketURL(), resolver, wait)
+}
+
+// resolveIPWithConfig is the shared MAC-parse → ResolveIP core used with an
+// already-loaded config (CollectVMDetails) or a freshly-opened one
+// (ResolveVMIP).
+func resolveIPWithConfig(
+	ctx context.Context,
+	vmConfig *vmconfig.VMConfig,
+	controlSocket string,
+	resolver macaddress.IPResolutionStrategy,
+	wait uint16,
+) (string, bool, error) {
 	mac, ok := macaddress.NewMACAddress(vmConfig.MACAddress.String())
 	if !ok {
 		return "", false, weaveerrors.ErrGeneric("failed to parse VM's MAC address")
 	}
-	ip, found, err := macaddress.ResolveIP(ctx, mac, resolver, wait, vmDir.ControlSocketURL())
+	ip, found, err := macaddress.ResolveIP(ctx, mac, resolver, wait, controlSocket)
 	if err != nil || !found {
 		return "", false, err
 	}

@@ -19,7 +19,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmservice"
+	vmservice "github.com/deploymenttheory/guestweave/internal/vm/service"
 	vmstorage "github.com/deploymenttheory/guestweave/internal/vm/storage"
 )
 

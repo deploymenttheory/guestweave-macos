@@ -21,7 +21,7 @@ import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmservice"
+	vmservice "github.com/deploymenttheory/guestweave/internal/vm/service"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -79,7 +79,7 @@ func RunMCPServer(ctx context.Context) error {
 		Name:        "weave_list_vms",
 		Description: "List virtual machines (name, state, disk usage, last access).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listArgs) (*mcp.CallToolResult, any, error) {
-		infos, err := vmservice.CollectVMInfos(args.Source)
+		infos, err := vmservice.CollectVMInfos(args.Source, true)
 		if err != nil {
 			return errorResult(err)
 		}

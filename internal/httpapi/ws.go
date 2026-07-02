@@ -21,7 +21,7 @@ import (
 
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
 	weavessh "github.com/deploymenttheory/guestweave/internal/ssh"
-	"github.com/deploymenttheory/guestweave/internal/vmservice"
+	vmservice "github.com/deploymenttheory/guestweave/internal/vm/service"
 )
 
 // handleExecWS runs the ?cmd= command interactively over SSH (default
