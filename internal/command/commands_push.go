@@ -97,7 +97,7 @@ func (c *PushCommand) Run(ctx context.Context) error {
 				return err
 			}
 		} else {
-			pushedRemoteName, err = localVMDir.PushToRegistry(ctx, registry, references,
+			pushedRemoteName, err = vmstorage.PushToRegistry(ctx, localVMDir, registry, references,
 				c.ChunkSize, c.Concurrency, c.parseLabels())
 			if err != nil {
 				return err

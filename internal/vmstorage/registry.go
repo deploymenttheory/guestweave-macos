@@ -2,7 +2,7 @@
 // to an OCI registry.
 //go:build darwin
 
-package vmdirectory
+package vmstorage
 
 import (
 	"context"
@@ -15,14 +15,15 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/logging"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	"github.com/deploymenttheory/guestweave/internal/prune"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 
-// PullFromRegistry ports VMDirectory.pullFromRegistry(registry:manifest:
+// pullFromRegistry ports VMDirectory.pullFromRegistry(registry:manifest:
 // concurrency:localLayerCache:deduplicate:), extended with image-format
 // dispatch: the manifest's layer media types select the codec (tart or one
 // of the lume variants), and codecs that cannot write a weave config.json
 // themselves return a VMDescription which is translated here.
-func (d *VMDirectory) PullFromRegistry(ctx context.Context, source oci.BlobSource, manifest oci.OCIManifest,
+func pullFromRegistry(ctx context.Context, d *vmdirectory.VMDirectory, source oci.BlobSource, manifest oci.OCIManifest,
 	concurrency uint, localLayerCache *oci.LocalLayerCache, deduplicate bool) error {
 	format := oci.DetectImageFormat(manifest)
 	codec, err := oci.CodecFor(format, manifest)
@@ -46,7 +47,7 @@ func (d *VMDirectory) PullFromRegistry(ctx context.Context, source oci.BlobSourc
 
 	// Lume formats carry VM metadata instead of a weave config.json.
 	if description != nil {
-		if err := d.writeLumeConfig(description); err != nil {
+		if err := writeLumeConfig(d, description); err != nil {
 			return err
 		}
 	}
@@ -67,7 +68,7 @@ func (d *VMDirectory) PullFromRegistry(ctx context.Context, source oci.BlobSourc
 
 // PushToRegistry ports VMDirectory.pushToRegistry(registry:references:
 // chunkSizeMb:concurrency:labels:).
-func (d *VMDirectory) PushToRegistry(ctx context.Context, registry *oci.Registry, references []string,
+func PushToRegistry(ctx context.Context, d *vmdirectory.VMDirectory, registry *oci.Registry, references []string,
 	chunkSizeMb int, concurrency uint, labels map[string]string) (oci.RemoteName, error) {
 	var layers []oci.OCIManifestLayer
 

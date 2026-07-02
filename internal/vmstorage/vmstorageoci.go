@@ -374,7 +374,7 @@ func (s *VMStorageOCI) Pull(ctx context.Context, name oci.RemoteName, source wea
 				}
 			}
 
-			return tmpVMDir.PullFromRegistry(ctx, source, manifest, concurrency, localLayerCache, deduplicate)
+			return pullFromRegistry(ctx, tmpVMDir, source, manifest, concurrency, localLayerCache, deduplicate)
 		})
 		if err != nil {
 			_ = os.RemoveAll(tmpVMDir.BaseURL)

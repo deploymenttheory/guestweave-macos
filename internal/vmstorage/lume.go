@@ -1,10 +1,10 @@
 // Translation of a pulled lume image's metadata (oci.VMDescription) into a
-// weave-schema config.json. Lives here rather than in the oci package so the
-// canonical vmconfig.VMConfig type writes the file — the schema can never
-// drift — without creating an oci→vmconfig import cycle.
+// weave-schema config.json. Lives with the pull pipeline so the canonical
+// vmconfig.VMConfig type writes the file — the schema can never drift — while
+// the oci package stays independent of the config schema.
 //go:build darwin
 
-package vmdirectory
+package vmstorage
 
 import (
 	"encoding/base64"
@@ -17,6 +17,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/oci"
 	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
+	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 
 	idvirt "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"
 )
@@ -24,7 +25,7 @@ import (
 // writeLumeConfig builds a weave VMConfig from a lume image's description
 // (per the translation table in docs/registries-and-image-formats.md)
 // and saves it as this directory's config.json.
-func (d *VMDirectory) writeLumeConfig(description *oci.VMDescription) error {
+func writeLumeConfig(d *vmdirectory.VMDirectory, description *oci.VMDescription) error {
 	platform, err := lumePlatform(description)
 	if err != nil {
 		return err
