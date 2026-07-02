@@ -13,7 +13,7 @@ package network
 
 import (
 	weaveerrors "github.com/deploymenttheory/guestweave/internal/errors"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 )
 
 // Profile names the supported scenario presets.

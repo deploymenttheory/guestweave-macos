@@ -1,6 +1,6 @@
 //go:build darwin
 
-package vmconfig
+package config
 
 import (
 	"encoding/json"

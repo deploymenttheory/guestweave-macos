@@ -5,7 +5,7 @@
 // object via Platform.platformEncodeJSON, mirroring platform.encode(to:).
 //go:build darwin
 
-package vmconfig
+package config
 
 import (
 	"encoding/json"

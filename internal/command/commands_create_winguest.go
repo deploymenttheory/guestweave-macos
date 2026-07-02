@@ -17,7 +17,7 @@ import (
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"
 	weaveplatform "github.com/deploymenttheory/guestweave/internal/platform"
 	"github.com/deploymenttheory/guestweave/internal/qemu"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 	"github.com/deploymenttheory/guestweave/internal/winimage"
 

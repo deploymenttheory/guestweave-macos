@@ -16,7 +16,7 @@ import (
 
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
 	"github.com/deploymenttheory/guestweave/internal/macaddress"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 )
 

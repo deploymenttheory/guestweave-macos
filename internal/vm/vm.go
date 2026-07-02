@@ -31,7 +31,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 
 	"github.com/deploymenttheory/guestweave/internal/controlsocket"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	"github.com/deploymenttheory/guestweave/internal/ci"
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"

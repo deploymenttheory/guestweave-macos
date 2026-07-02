@@ -16,7 +16,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/objcutil"
 	"github.com/deploymenttheory/guestweave/internal/terminal"
 	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 

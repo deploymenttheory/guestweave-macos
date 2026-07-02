@@ -5,7 +5,7 @@ package qemu
 import (
 	"fmt"
 
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 )
 

@@ -5,7 +5,7 @@
 // mixed isolation (e.g. an isolated lab NIC plus a NAT management NIC).
 //go:build darwin
 
-package vmconfig
+package config
 
 import (
 	"crypto/sha256"

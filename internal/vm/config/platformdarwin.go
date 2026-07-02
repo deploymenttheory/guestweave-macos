@@ -2,7 +2,7 @@
 // wrappers provide the constructors and fluent setters.
 //go:build darwin
 
-package vmconfig
+package config
 
 import (
 	"encoding/base64"

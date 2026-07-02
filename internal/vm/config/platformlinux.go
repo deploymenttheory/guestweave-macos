@@ -1,7 +1,7 @@
 // Port of tart's Platform/Linux.swift: the Linux guest platform.
 //go:build darwin
 
-package vmconfig
+package config
 
 import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"

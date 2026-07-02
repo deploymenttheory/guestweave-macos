@@ -3,7 +3,7 @@
 // the VMConfig JSON object exactly like the Swift encode(to:) overloads.
 //go:build darwin
 
-package vmconfig
+package config
 
 import (
 	virtualization "github.com/deploymenttheory/go-bindings-macosplatform/opinionated/idiomatic/framework/virtualization"

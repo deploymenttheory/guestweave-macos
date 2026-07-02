@@ -27,7 +27,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/screenviewer"
 	"github.com/deploymenttheory/guestweave/internal/ui"
 	"github.com/deploymenttheory/guestweave/internal/unattended"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
 	"github.com/deploymenttheory/guestweave/internal/winimage"

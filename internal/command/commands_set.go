@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 
 	"github.com/deploymenttheory/guestweave/internal/clipboardpolicy"
 	weaveconfig "github.com/deploymenttheory/guestweave/internal/config"

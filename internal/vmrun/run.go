@@ -47,7 +47,7 @@ import (
 	"github.com/deploymenttheory/guestweave/internal/ui"
 	"github.com/deploymenttheory/guestweave/internal/unattended"
 	weavevm "github.com/deploymenttheory/guestweave/internal/vm"
-	"github.com/deploymenttheory/guestweave/internal/vmconfig"
+	vmconfig "github.com/deploymenttheory/guestweave/internal/vm/config"
 	"github.com/deploymenttheory/guestweave/internal/vmdirectory"
 	"github.com/deploymenttheory/guestweave/internal/vmstorage"
 	weavevnc "github.com/deploymenttheory/guestweave/internal/vnc"
