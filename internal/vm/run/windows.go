@@ -6,7 +6,7 @@
 // main run path and instead drives the backend lifecycle directly, reusing the
 // existing VNC viewer plumbing (the same vnc:// URL handling driveVM uses).
 
-package vmrun
+package run
 
 import (
 	"context"

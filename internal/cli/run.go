@@ -4,7 +4,7 @@ package cli
 
 import (
 	weavecommand "github.com/deploymenttheory/guestweave/internal/command"
-	"github.com/deploymenttheory/guestweave/internal/vmrun"
+	vmrun "github.com/deploymenttheory/guestweave/internal/vm/run"
 	"github.com/spf13/cobra"
 )
 

@@ -2,7 +2,7 @@
 // from internal/command's port smoke tests).
 //go:build darwin
 
-package vmrun
+package run
 
 import "testing"
 
